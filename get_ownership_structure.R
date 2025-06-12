@@ -22,7 +22,10 @@ state      <- vect("raw/Ownership_Czech/Stát.shp")
 # study area
 aoi        <- vect("raw/core_4.gpkg")
 
-subplots <- vect("raw/dat_czechia.gpkg")
+subplots <- vect("raw/dat_czechia_2023.gpkg")
+
+# drones extent
+drone_ext <- vect("raw/position_drone.gpkg")
 
 # ccheck coordinate system --------
 CRS_5514 <- crs(unknown)
@@ -44,7 +47,7 @@ crs(private) == crs(unknown) &&
 # YES!
 
 
-# clean up the data: i need only field: area, (m2), perimeter (m), FID, SpruceArea
+# clean up the Ownership data: i need only field: area, (m2), perimeter (m), FID, SpruceArea
 
 private_clean <- private[, c("fid_1", "area", "perimeter")] #, "SpruceArea"
 unknown_clean <- unknown[, c("fid_1", "area", "perimeter")]
@@ -60,7 +63,7 @@ company_clean$owner <- 'company'
 state_clean$owner   <- 'state'
 
 # simplify
-my_tolerance =5
+my_tolerance =10
 private_simplified  <- simplifyGeom(private_clean,  tolerance = my_tolerance)
 unknown_simplified  <- simplifyGeom(unknown_clean,  tolerance = my_tolerance)
 village_simplified  <- simplifyGeom(village_clean,  tolerance = my_tolerance)
@@ -78,24 +81,47 @@ all_owners <- rbind(private_simplified,
 all_owners_3035 <- project(all_owners, "EPSG:3035")
 aoi_3035        <- project(aoi, 'EPSG:3035')  # Transforms coordinates
 subplots_3035   <- project(subplots,  'EPSG:3035')
+drone_ext_3035   <- project(drone_ext ,  'EPSG:3035')
+
+# check if tehy all have the same projection
+# are the CRS same? 
+
+crs(all_owners_3035) == crs(aoi_3035) &&
+  crs(subplots_3035) == crs(drone_ext_3035)
+
+
 crs(aoi_3035)
 
 ## PLOT data on map ---------------------------------
 
 # Clean up field data: keep only points within AOI -----------------
-
-
 subplots_in_aoi     <- crop(subplots_3035, aoi_3035)
-subplots_with_owner <- terra::extract(all_owners_3035, subplots_in_aoi)
-# intersect subplots with ownership structure
+# Extract ownership info and preserve point ID
+owner_info <- terra::extract(all_owners_3035, subplots_in_aoi)
 
-# 2. Add 'ID' column to subplots (needed for join)
-subplots_in_aoi$row <- 1:nrow(subplots_in_aoi)
+table(table(owner_info$id.y))
+dim(subplots_in_aoi)
 
-# 3. Join extracted attributes back to the point layer using ID
-subplots_with_owner <- merge(subplots_in_aoi, ownership_info, by.x = "ID", by.y = "ID")
+# I have one point on twoi wnerships, aslo i have NA values: need to summarize data firt!
+owner_summary <- owner_info %>%
+  group_by(id.y) %>%
+  summarise(property_type = paste(unique(owner), collapse = ";"),
+            n_unique_owners = n_distinct(owner)) %>%
+  ungroup()
 
-round(table(subplots_with_owner$owner)/5,0)
+# how many points are problematic?
+owner_summary %>% filter(n_unique_owners > 1)
+
+table(owner_summary$id.y)
+
+# Check column names; assume 'owner' is the relevant attribute
+# Merge back to point layer using ID
+# Initialize and assign ownership info
+subplots_in_aoi$property_type <- NA
+subplots_in_aoi$property_type[owner_summary$id.y] <- owner_summary$property_type
+
+
+table(subplots_in_aoi$property_type)/5
 
 
 # convert to sf for ggplot
@@ -103,16 +129,13 @@ owners_sf <- st_as_sf(all_owners_3035)
 aoi_sf    <- st_as_sf(aoi_3035)
 subplots_sf    <- st_as_sf(subplots_in_aoi)
 
-# add ownership data:
-subplots_sf <- subplots_sf %>% 
-  full_join(subplots_with_owner)
 
 crs(owners_sf) == crs(subplots_sf)
 
 ggplot() +
   geom_sf(data = owners_sf, aes(fill = owner), color = NA, lwd = 1.2) +
   geom_sf(data = subplots_sf, color = "white", size = 3) +
-   geom_sf(data = subplots_sf, aes(fill = owner_type), color = 'black', shape = 21,  size = 2, stroke = 0.8) +
+   geom_sf(data = subplots_sf, aes(fill = property_type), color = 'black', shape = 21,  size = 2, stroke = 0.8) +
   geom_sf(data = aoi_sf, fill =NA, color = "black") +
  # scale_fill_brewer(palette = "Set3") +
   coord_sf(crs = st_crs(3035)) +  # ← forces plot to stay in EPSG:3035
@@ -120,6 +143,11 @@ ggplot() +
 
 
 # export shp with ownership types: 
-
-
 writeVector(subplots_in_aoi, "outData/subplots_by_owner.gpkg", filetype = "GPKG", overwrite = TRUE)
+
+# some cluysters can have mixed ownership! 
+table(subplots_sf$cluster, subplots_sf$property_type )
+
+
+
+# intersect drone position with ownership structure ---------
