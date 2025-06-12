@@ -191,6 +191,6 @@ for (id in drone_ids) {
 
 ownership_summary <- do.call(rbind, ownership_summary_list)
 
-ownership_summary <- ownership_summary %>% 
+ownership_summary2 <- ownership_summary %>% 
   group_by(uav_ID) %>% 
   mutate(extent = sum(area_ha))
