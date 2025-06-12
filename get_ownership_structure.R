@@ -151,3 +151,46 @@ table(subplots_sf$cluster, subplots_sf$property_type )
 
 
 # intersect drone position with ownership structure ---------
+
+# Create an empty raster with 10 m resolution over the extent of ownership layer
+template_raster <- terra::rast(ext(all_owners_3035), resolution = 10, crs = crs(all_owners_3035))
+
+# Rasterize ownership polygons by "owner" field (e.g. 'state', 'private' etc.)
+# This creates a categorical raster
+ownership_raster <- terra::rasterize(all_owners_3035, 
+                                     template_raster, field = "owner")
+
+
+# loop over drones to clip every drone to ownership structure
+# Get unique drone IDs
+drone_ids <- unique(drone_ext_3035$uav_ID)
+
+# Initialize results list
+ownership_summary_list <- list()
+
+for (id in drone_ids) {
+#  id = 'uav5'
+  # Subset footprint for current drone
+  drone_poly <- drone_ext_3035[drone_ext_3035$uav_ID == id, ]
+  
+  # Crop and mask ownership raster to drone footprint
+  cropped <- terra::crop(ownership_raster, drone_poly)
+  masked <- terra::mask(cropped, drone_poly)
+  
+  # Summarize pixel counts by owner
+  freq_table <- terra::freq(masked)
+  
+  # Add UAV ID and calculate area (10m x 10m = 100 m² = 0.01 ha)
+  if (!is.null(freq_table)) {
+    freq_table <- as.data.frame(freq_table)
+    freq_table$uav_ID <- id
+    freq_table$area_ha <- freq_table$count * 0.01
+    ownership_summary_list[[id]] <- freq_table
+  }
+}
+
+ownership_summary <- do.call(rbind, ownership_summary_list)
+
+ownership_summary <- ownership_summary %>% 
+  group_by(uav_ID) %>% 
+  mutate(extent = sum(area_ha))
