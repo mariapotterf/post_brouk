@@ -1,5 +1,8 @@
 
-# Get raster extend  from orthophoto
+# Get raster extend  from heights interpretation -
+
+# extend fpor 2024 is very large!!! not correct!!! 
+# so i will use further 
 
 library(terra)
 
@@ -44,14 +47,20 @@ writeVector(extent_polygons, output_path, filetype = "GPKG", overwrite = TRUE)
 get_extent_polygon <- function(file, year) {
   r <- rast(file)
   
-  valid_area <- !is.na(r[[1]])  # safer if multi-band raster
+  # Mask and get extent of valid data
+  valid_area <- !is.na(r[[1]])
+  cropped <- crop(r, valid_area)  # trim to valid data
   
-  p <- as.polygons(valid_area, dissolve = TRUE)
-  crs(p) <- crs(r)
+  # Convert trimmed extent to polygon
+  p <- as.polygons(ext(cropped), crs = crs(r))
   
+  # Add metadata
   uav_id <- sub(".*uav(\\d+)\\.tif$", "\\1", basename(file))
   p$uav_id <- paste0("uav", uav_id)
-  p$year <- year  # this now works
+  p$year <- year
+  
+  # Calculate area from extent
+  p$area_ha <- terra::expanse(p, unit = "ha")
   
   return(p)
 }
