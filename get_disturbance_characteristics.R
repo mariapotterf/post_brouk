@@ -33,20 +33,22 @@ library(rasterize)
 # extract info by plot level
 # move toanother country
 
-# get paths to rasters -----------------------------------------
+# REad input data --------------------------------
+# get paths to rasters 
 elev_path          <- "raw/dem"
 dist_path          <- "raw/disturb_data" # for year and severity
 
+# study area: C4
+aoi        <- vect("raw/core_4.gpkg")
+subplots <- vect("raw/dat_czechia_2023.gpkg")
 
-# function to loop over ----------------------------------------
 
+
+
+# Test distance to edge: prepare for loop over ----------------------------------------
 
 # list all countries
 country_names <- list("czechia") #austria" 
-
-
-
-
 
 # distances will contain the distance of each point to the nearest edge of its patch
 
@@ -112,11 +114,11 @@ country_name = 'czechia'
 print(country_name)
 
 # read field data 
-country = vect('raw/dat_czechia_2023.gpkg')
-country_proj <- project(country, "EPSG:3035")
+#subplots = vect('raw/dat_czechia_2023.gpkg')
+subplots_proj <- project(subplots, "EPSG:3035")
 
 # select only one point per plot (as I am aggregation information afterwards anyway)
-country_plot <- terra::aggregate(country_proj, by = "cluster", fun = "first")
+subplots_proj <- terra::aggregate(subplots_proj, by = "cluster", fun = "first")
 
 # disturbance year
 disturb_name = paste0('disturbance_year_1986-2020_', country_name, '.tif')
@@ -126,8 +128,8 @@ disturbance  = rast(paste(dist_path, country_name, disturb_name, sep = '/'))
 desired_crs <- crs(disturbance)
 
 # Create a SpatVector from the data frame
-#point_vector <- country_plot[15,]# vect(point_df, geom = c("x", "y"), crs = crs(reclassified_raster))
-point_vector <- country_plot[country_plot$cluster == "14_106", ]
+#point_vector <- subplots_proj[15,]# vect(point_df, geom = c("x", "y"), crs = crs(reclassified_raster))
+point_vector <- subplots_proj[subplots_proj$cluster == "14_106", ]
 crs(point_vector) <- desired_crs
 
 # get buffer: lower to 1 km diostance
@@ -219,10 +221,10 @@ extract_distance_to_edge <- function(country_name, buffer_dist=buffer_dist) {
   
   # Read field data
   country <- vect(paste0('raw/dat_czechia_2023.gpkg'))
-  country_proj <- project(country, "EPSG:3035")
+  subplots_proj <- project(country, "EPSG:3035")
   
   # Aggregate points by cluster
-  #country_plot <- terra::aggregate(country_proj, by = "cluster", fun = "first")
+  #subplots_proj <- terra::aggregate(subplots_proj, by = "cluster", fun = "first")
   
   
   # Read disturbance raster data
@@ -231,8 +233,8 @@ extract_distance_to_edge <- function(country_name, buffer_dist=buffer_dist) {
   disturbance <- project(disturbance, "EPSG:3035")
   
   # Process each point and collect results
-  results <- lapply(1:nrow(country_proj), function(i) {
-    point_vector <- country_proj[i,]
+  results <- lapply(1:nrow(subplots_proj), function(i) {
+    point_vector <- subplots_proj[i,]
     process_point(point_vector, disturbance, buffer_dist)
   })
   
@@ -258,13 +260,89 @@ final_results_distance <- final_results_distance %>%
   mutate(distance = round(distance,0 ))
 
 
+# Get landscape patchiness ----------------------------------------
+# Ensure AOI and fieold data  are in the same CRS as disturbance raster
+aoi_proj <- project(aoi, crs(disturbance))
+subplots_proj <- project(subplots, crs(disturbance))
 
 
+# Crop and mask disturbance raster to AOI extent
+disturbance_crop <- crop(disturbance, aoi_proj)
+disturbance_mask <- mask(disturbance_crop, aoi_proj)
 
+
+# reclassify matrix: disturbances to NAs, only 2018:2020 are coded
+rcl_disturb_matrix <- matrix(c(
+  1986, 2017, NA,   # set all years from 1986 to 2017 to NA
+  2018, 2020, 1     # set 2018 to 2020 to 1
+), ncol = 3, byrow = TRUE)
+
+disturb_simple <- classify(disturbance_mask, rcl_disturb_matrix)
+# convert to binary raster
+disturb_bin <- classify(disturb_simple, rcl = matrix(c(0, 0, NA), ncol = 3, byrow = TRUE))
+
+# Detect contiguous patches of 1s
+disturb_patches <- patches(disturb_bin, directions = 8)  # 4 = rook, 8 = queen
+
+# Optional: check result
+plot(disturb_patches, main = "Disturbance Patches")
+
+
+# Optional: visualize
+plot(disturbance_mask, main = paste("Disturbance in", country_name))
+plot(aoi_proj, add = TRUE)
+
+#writeRaster(disturb_patches, "outData/disturb_patches.tif", overwrite = TRUE)
+
+writeRaster(disturb_patches, "outData/patches_compr.tif", overwrite = TRUE,
+            wopt = list(gdal = "COMPRESS=LZW", datatype = "INT2U"))
+
+# Get patch sizes
+patch_sizes <- freq(disturb_patches)
+
+# Add area if you want size in m² (assuming projected CRS)
+patch_sizes_df <- as.data.frame(patch_sizes)
+patch_sizes_df$area_ha <- patch_sizes_df$count * res(disturb_simple)[1] * res(disturb_simple)[2] / 10000
+
+# Sort by size if useful
+patch_sizes_df <- patch_sizes_df[order(-patch_sizes_df$area_ha), ]
+
+hist(patch_sizes_df$area_ha)
+
+### extract patch information to field observation  ---------
+
+# Step 2: Extract patch ID for each point (NA if not in disturbed patch)
+subplots_proj$patch_id <- terra::extract(disturb_patches, subplots_proj)[,2]
+
+# add patch informtion: size, area..
+subplots_proj_sf <- subplots_proj %>% 
+  st_as_sf() %>% 
+  dplyr::right_join(patch_sizes_df,by = c("patch_id" = "value"))
+
+
+# get summary statistics
+
+# 1. Count how many unique clusters fall into each patch
+clusters_per_patch <- subplots_proj_sf %>%
+  distinct(patch_id, cluster) %>%
+  count(patch_id, name = "n_clusters") #%>% 
+  #dplyr::filter(n_clusters > 2)
+
+# 2. Summary statistics for patch area
+patch_stats_summary <- subplots_proj_sf %>%
+  distinct(patch_id, area_ha) %>%
+  summarise(
+    mean_area = mean(area_ha, na.rm = TRUE),
+    q25 = quantile(area_ha, 0.25, na.rm = TRUE),
+    median = median(area_ha, na.rm = TRUE),
+    q75 = quantile(area_ha, 0.75, na.rm = TRUE),
+    max_area = max(area_ha, na.rm = TRUE),
+    min_area = min(area_ha, na.rm = TRUE)
+  )
+patch_stats_summary
 
 
 # Extract disturbance and elevation data --------------------------
-
 
 
 # Function to read or create a dummy raster
@@ -307,7 +385,7 @@ extract_disturb_info <- function(country_name) {
   
   # read field data 
   country = vect(paste0('outData/dat_', country_name, '.gpkg'))
-  country_proj <- project(country, "EPSG:3035")
+  subplots_proj <- project(country, "EPSG:3035")
   
   # disturbance year
   disturb_name = paste0('disturbance_year_1986-2020_', country_name, '.tif')
@@ -322,13 +400,13 @@ extract_disturb_info <- function(country_name) {
   severity_proj = terra::project(x = severity, y = disturbance,  method="near")
   
   # disturbance agent
-  #read_or_dummy_raster(paste(dist_path, agent_name, sep = '/'), country_proj)
+  #read_or_dummy_raster(paste(dist_path, agent_name, sep = '/'), subplots_proj)
   agent_name = paste0('fire_wind_barkbeetle_', country_name, '.tif')
   agent      = read_or_dummy_raster(paste(dist_path, agent_name, sep = '/'))
   crs(agent) <-desired_crs
   agent_proj = terra::project(x = agent, y = disturbance,  method="near")
   
-  crs(country_proj)
+  crs(subplots_proj)
   crs(disturbance)
   crs(severity_proj)
   crs(agent_proj)
@@ -348,7 +426,7 @@ extract_disturb_info <- function(country_name) {
                          "elevation")
   
   # extract elevation for every point
-  plots.disturbance <- terra::extract(dist.stack, country_proj, method = "simple", bind=TRUE)
+  plots.disturbance <- terra::extract(dist.stack, subplots_proj, method = "simple", bind=TRUE)
   
   # export plot
   return(plots.disturbance)
@@ -449,7 +527,7 @@ crs(elevation_proj) == crs(agent)
 
 
 # Process data ------------------------------------------------------
-country_proj <- project(country, "EPSG:3035")
+subplots_proj <- project(country, "EPSG:3035")
 
 # create raster stacks
 dim(disturbance)
@@ -470,7 +548,7 @@ names(dist.stack) <- c("disturbance_year",
 
 
 # extract elevation for every point
-plots.disturbance <- extract(dist.stack, country_proj, method = "simple", bind=TRUE)
+plots.disturbance <- extract(dist.stack, subplots_proj, method = "simple", bind=TRUE)
 
 
 
