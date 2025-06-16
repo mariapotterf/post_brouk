@@ -25,7 +25,7 @@ aoi        <- vect("raw/core_4.gpkg")
 subplots <- vect("raw/dat_czechia_2023.gpkg")
 
 # drones extent
-drone_ext <- vect("raw/position_drone.gpkg")
+drone_ext <- vect("raw/position_drone.gpkg") # manually derived
 
 # ccheck coordinate system --------
 CRS_5514 <- crs(unknown)
@@ -92,7 +92,7 @@ crs(all_owners_3035) == crs(aoi_3035) &&
 
 crs(aoi_3035)
 
-## PLOT data on map ---------------------------------
+## Filter field data on study area ------------------
 
 # Clean up field data: keep only points within AOI -----------------
 subplots_in_aoi     <- crop(subplots_3035, aoi_3035)
@@ -110,7 +110,7 @@ owner_summary <- owner_info %>%
   ungroup()
 
 # how many points are problematic?
-owner_summary %>% filter(n_unique_owners > 1)
+owner_summary %>% dplyr::filter(n_unique_owners > 1)
 
 table(owner_summary$id.y)
 
@@ -123,6 +123,7 @@ subplots_in_aoi$property_type[owner_summary$id.y] <- owner_summary$property_type
 
 table(subplots_in_aoi$property_type)/5
 
+# PLOT data on map ---------------------------------
 
 # convert to sf for ggplot
 owners_sf <- st_as_sf(all_owners_3035)
@@ -167,6 +168,7 @@ drone_ids <- unique(drone_ext_3035$uav_ID)
 
 # Initialize results list
 ownership_summary_list <- list()
+cropped_rasters_list <- list()  # This will store cropped ownership rasters
 
 for (id in drone_ids) {
 #  id = 'uav5'
@@ -176,6 +178,9 @@ for (id in drone_ids) {
   # Crop and mask ownership raster to drone footprint
   cropped <- terra::crop(ownership_raster, drone_poly)
   masked <- terra::mask(cropped, drone_poly)
+  
+  # Save the masked raster
+  cropped_rasters_list[[id]] <- masked
   
   # Summarize pixel counts by owner
   freq_table <- terra::freq(masked)
@@ -193,4 +198,22 @@ ownership_summary <- do.call(rbind, ownership_summary_list)
 
 ownership_summary2 <- ownership_summary %>% 
   group_by(uav_ID) %>% 
-  mutate(extent = sum(area_ha))
+  mutate(extent = sum(area_ha),
+         share = round(area_ha/extent*100) ) %>% 
+  mutate(
+    uav_num = as.numeric(stringr::str_extract(uav_ID, "\\d+")),
+    year = if_else(uav_num <= 21, 2023, 2024)
+  ) %>%
+  dplyr::select(-uav_num)  # optional
+
+
+# how many done images have ownership structure > 50% state?
+ownership_summary2 %>% 
+  dplyr::filter(value == 'state' & share > 50)# %>% 
+  group_by(year) %>% 
+  dplyr::summarize(n = dplyr::n())
+  
+
+plot(cropped_rasters_list[[30]])
+
+write.csv(ownership_summary2, "outTable/ownership_drones.csv", row.names = FALSE)
