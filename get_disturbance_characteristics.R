@@ -39,8 +39,9 @@ elev_path          <- "raw/dem"
 dist_path          <- "raw/disturb_data" # for year and severity
 
 # study area: C4
+# read field data
 aoi        <- vect("raw/core_4.gpkg")
-subplots <- vect("raw/dat_czechia_2023.gpkg")
+subplots   <- vect("raw/dat_czechia_2023.gpkg")
 
 
 
@@ -220,7 +221,7 @@ extract_distance_to_edge <- function(country_name, buffer_dist=buffer_dist) {
   print(paste("Processing", country_name))
   
   # Read field data
-  country <- vect(paste0('raw/dat_czechia_2023.gpkg'))
+  subplots <- vect(paste0('raw/dat_czechia_2023.gpkg'))
   subplots_proj <- project(country, "EPSG:3035")
   
   # Aggregate points by cluster
@@ -309,7 +310,7 @@ patch_sizes_df <- patch_sizes_df[order(-patch_sizes_df$area_ha), ]
 
 hist(patch_sizes_df$area_ha)
 
-### extract patch information to field observation  ---------
+### extract patch information to field observation  --------- : add it as a ratser to disturbances?
 
 # Step 2: Extract patch ID for each point (NA if not in disturbed patch)
 subplots_proj$patch_id <- terra::extract(disturb_patches, subplots_proj)[,2]
@@ -320,7 +321,7 @@ subplots_proj_sf <- subplots_proj %>%
   dplyr::right_join(patch_sizes_df,by = c("patch_id" = "value"))
 
 
-# get summary statistics
+# get summary statistics -----------------------------------
 
 # 1. Count how many unique clusters fall into each patch
 clusters_per_patch <- subplots_proj_sf %>%
@@ -359,9 +360,7 @@ read_or_dummy_raster <- function(path, reference_raster) {
 }
 
 
-country_name = 'luxembourg'
-
-
+country_name = 'czechia'
 
 
 
@@ -384,7 +383,7 @@ extract_disturb_info <- function(country_name) {
   }
   
   # read field data 
-  country = vect(paste0('outData/dat_', country_name, '.gpkg'))
+  subplots <- vect(paste0('raw/dat_czechia_2023.gpkg'))
   subplots_proj <- project(country, "EPSG:3035")
   
   # disturbance year
@@ -433,7 +432,7 @@ extract_disturb_info <- function(country_name) {
   
 }
 
-out <- extract_disturb_info('switzerland')
+out <- extract_disturb_info('czechia')
 View(as.data.frame(out))
 # list all countries
 #country_names <- list( "austria", "czechia") #austria" 
@@ -463,92 +462,6 @@ disturbance_df <- disturbance_df %>%
 
 fwrite(disturbance_df, 'outData/disturbance_chars.csv')
 fwrite(final_results_distance, 'outData/distance_to_edge.csv')
-
-
-# If NA, fill disturbance values of remaining plots 
-load("outData/plots_env.Rdata")
-# length(unique(final_results_distance$ID))
-# 
-#IDs_distance <- unique(final_results_distance$ID)
-# IDs_climate <- unique(final_climate$ID)
-# 
-# setdiff(IDs_distance, IDs_climate)
-# 
-# setdiff(c('a', 'b'), c('b'))
-# 
-# 
-# final_climate %>% 
-#   filter(ID == "11_25_116_4")
-
-#11_11_101
-# export final table --------------------------------------------------------------------------
-#save(#disturbance_ls,          # disturbance data, elevation 
-#     disturbance_df,
-#     final_results_distance,  # distance to edge
-#     file="outData/plots_env.Rdata")
-
-
-
-
-
-
-
-
-
-# Test for single country -------------------------------------------------
-
-
-# read field data for one country --------------------------------
-country = vect(paste0('outData/dat_', country_name, '.gpkg'))
-
-# read raster data
-# make sure the resolution is the same
-desired_crs <- crs(disturbance)
-
-# disturbance year
-disturb_name = paste0('disturbance_year_', country_name, '.tif')
-disturbance  = rast(paste(dist_path, country_name, disturb_name, sep = '/'))
-
-# disturbace severity
-severity_name = paste0('disturbance_severity_', country_name, '.tif')
-severity      = rast(paste(dist_path, country_name, severity_name, sep = '/'))
-
-agent_name = paste0('fire_wind_barkbeetle_', country_name, '.tif')
-agent      = rast(paste(dist_path, agent_name, sep = '/'))
-crs(agent) <-desired_crs
-
-elev_name      <- paste0(toupper(substr(country_name, 1, 1)), tolower(substr(country_name, 2, nchar(country_name))))
-elevation      <- rast(paste0(elev_path, '/dem_', elev_name, '.tif'))
-elevation_proj <- terra::project(x = elevation, y = disturbance,  method="near")
-#elevation_proj <- resample(x = elevation_proj, y = disturbance, method="near")
-
-crs(elevation_proj) == crs(disturbance)
-crs(elevation_proj) == crs(agent)
-
-
-# Process data ------------------------------------------------------
-subplots_proj <- project(country, "EPSG:3035")
-
-# create raster stacks
-dim(disturbance)
-dim(severity)
-dim(agent)
-dim(disturbance)
-
-crs(disturbance)
-crs(severity)
-crs(agent)
-crs(elevation_proj)
-
-dist.stack <- c(disturbance, severity, agent, elevation_proj)
-names(dist.stack) <- c("disturbance_year", 
-                       "disturbance_severity", 
-                       "disturbance_agent", 
-                       "elevation")
-
-
-# extract elevation for every point
-plots.disturbance <- extract(dist.stack, subplots_proj, method = "simple", bind=TRUE)
 
 
 
