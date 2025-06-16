@@ -214,6 +214,6 @@ ownership_summary2 %>%
   dplyr::summarize(n = dplyr::n())
   
 
-plot(cropped_rasters_list[[30]])
+plot(cropped_rasters_list[[15 ]])
 
 write.csv(ownership_summary2, "outTable/ownership_drones.csv", row.names = FALSE)
