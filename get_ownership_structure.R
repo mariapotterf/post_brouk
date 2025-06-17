@@ -21,7 +21,6 @@ state      <- vect("raw/Ownership_Czech/Stát.shp")
 
 # study area
 aoi        <- vect("raw/core_4.gpkg")
-
 subplots <- vect("raw/dat_czechia_2023.gpkg")
 
 # drones extent
