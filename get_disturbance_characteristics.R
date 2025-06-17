@@ -33,7 +33,7 @@ library(rasterize)
 # extract info by plot level
 # move toanother country
 
-# REad input data --------------------------------
+# Read input data --------------------------------
 # get paths to rasters 
 elev_path          <- "raw/dem"
 dist_path          <- "raw/disturb_data" # for year and severity
@@ -52,8 +52,18 @@ aoi_proj <- project(aoi, crs(disturbance))
 
 # Test distance to edge: prepare for loop over ----------------------------------------
 
-# list all countries
+#Variables
 country_names <- list("czechia") 
+country_name = 'czechia'
+buffer_dist = 1500
+
+# define reclassification matrix: for distance_to_edge (distance to values, 
+# first i need to convert disturbances 2018-2020 to NAs)
+reclass_matrix_distance <- matrix(c(0,0,0,
+                           1985, 2017.1, 1,
+                           2017.5, 2021, NA),
+                         ncol=3,
+                         byrow=TRUE)
 
 # distances will contain the distance of each point to the nearest edge of its patch
 
@@ -77,13 +87,13 @@ process_point <- function(point, disturbance, buffer_dist) {
   disturbance_mask[is.na(disturbance_mask)] <- 0
   
   
-  # Reclassify the raster
-  reclass_matrix <- matrix(c(0,0,0,
-                             1985, 2017.1, 1,
-                             2017.5, 2021, NA), 
-                           ncol=3, 
-                           byrow=TRUE)
-  reclassified_raster <- classify(disturbance_mask, reclass_matrix)
+  # # Reclassify the raster
+  # reclass_matrix <- matrix(c(0,0,0,
+  #                            1985, 2017.1, 1,
+  #                            2017.5, 2021, NA), 
+  #                          ncol=3, 
+  #                          byrow=TRUE)
+  reclassified_raster <- classify(disturbance_mask, reclass_matrix_distance)
   
   # Calculate the distance to the nearest NA
   distance_to_value <- distance(reclassified_raster)
@@ -96,7 +106,6 @@ process_point <- function(point, disturbance, buffer_dist) {
 
 
 # Loop over all countries
-buffer_dist = 1500
 extract_distance_to_edge <- function(country_name, buffer_dist=buffer_dist) {
   print(paste("Processing", country_name))
   
@@ -136,9 +145,9 @@ all_results <- lapply(country_names, function(cn) {
 
 # Combine results from all countries
 final_results_distance <- do.call(rbind, all_results)
-
 final_results_distance <- final_results_distance %>% 
-  mutate(distance = round(distance,0 ))
+  mutate(distance = round(distance,0 )) %>% 
+  dplyr::select(-country, -dist_ID )
 
 
 # Get landscape patchiness ----------------------------------------
@@ -161,6 +170,7 @@ disturb_bin <- classify(disturb_simple, rcl = matrix(c(0, 0, NA), ncol = 3, byro
 
 # Detect contiguous patches of 1s
 disturb_patches <- patches(disturb_bin, directions = 8)  # 4 = rook, 8 = queen
+crs(disturb_patches) <- "EPSG:3035"
 
 # Optional: check result
 plot(disturb_patches, main = "Disturbance Patches")
@@ -170,12 +180,12 @@ plot(disturb_patches, main = "Disturbance Patches")
 plot(disturbance_mask, main = paste("Disturbance in", country_name))
 plot(aoi_proj, add = TRUE)
 
-#writeRaster(disturb_patches, "outData/disturb_patches.tif", overwrite = TRUE)
+writeRaster(disturb_patches, "outData/disturb_patches.tif", overwrite = TRUE)
 
-writeRaster(disturb_patches, "outData/patches_compr.tif", overwrite = TRUE,
-            wopt = list(gdal = "COMPRESS=LZW", datatype = "INT2U"))
+#writeRaster(disturb_patches, "outData/patches_compr.tif", overwrite = TRUE,
+#            wopt = list(gdal = "COMPRESS=LZW", datatype = "INT2U"))
 
-# Get patch sizes
+# Get patch sizes over C4
 patch_sizes <- freq(disturb_patches)
 
 # Add area if you want size in m² (assuming projected CRS)
@@ -198,7 +208,13 @@ subplots_proj_sf <- subplots_proj %>%
   dplyr::right_join(patch_sizes_df,by = c("patch_id" = "value"))
 
 
-# get summary statistics -----------------------------------
+subplots_proj_df <- subplots_proj_sf %>% 
+  sf::st_drop_geometry() %>%
+  as.data.frame() %>% 
+  dplyr::select(-country, -region, -layer) %>% 
+  rename(pxl_count = count)
+
+### Patch size: get summary statistics -----------------------------------
 
 # 1. Count how many unique clusters fall into each patch
 clusters_per_patch <- subplots_proj_sf %>%
@@ -236,11 +252,6 @@ read_or_dummy_raster <- function(path, reference_raster) {
   }
 }
 
-
-country_name = 'czechia'
-
-
-
 # function to extract all data
 extract_disturb_info <- function(country_name) {
   # country_name = 'germany' 
@@ -260,15 +271,15 @@ extract_disturb_info <- function(country_name) {
   }
   
   # read field data 
-  subplots <- vect(paste0('raw/dat_czechia_2023.gpkg'))
-  subplots_proj <- project(country, "EPSG:3035")
+  #subplots <- vect(paste0('raw/dat_czechia_2023.gpkg'))
+  #subplots_proj <- project(country, "EPSG:3035")
   
   # disturbance year
   disturb_name = paste0('disturbance_year_1986-2020_', country_name, '.tif')
   disturbance  = rast(paste(dist_path, country_name, disturb_name, sep = '/'))
   
   # read raster data
-  desired_crs <- crs(disturbance)
+  # desired_crs <- crs(disturbance)
   
   # disturbace severity
   severity_name = paste0('disturbance_severity_1986-2020_', country_name, '.tif')
@@ -277,15 +288,15 @@ extract_disturb_info <- function(country_name) {
   
   # disturbance agent
   #read_or_dummy_raster(paste(dist_path, agent_name, sep = '/'), subplots_proj)
-  agent_name = paste0('fire_wind_barkbeetle_', country_name, '.tif')
-  agent      = read_or_dummy_raster(paste(dist_path, agent_name, sep = '/'))
-  crs(agent) <-desired_crs
-  agent_proj = terra::project(x = agent, y = disturbance,  method="near")
-  
-  crs(subplots_proj)
-  crs(disturbance)
-  crs(severity_proj)
-  crs(agent_proj)
+  # agent_name = paste0('fire_wind_barkbeetle_', country_name, '.tif')
+  # agent      = read_or_dummy_raster(paste(dist_path, agent_name, sep = '/'))
+  # crs(agent) <- desired_crs
+  # agent_proj = terra::project(x = agent, y = disturbance,  method="near")
+  # 
+  # crs(subplots_proj)
+  # crs(disturbance)
+  # crs(severity_proj)
+  # crs(agent_proj)
   
   
   # elevation
@@ -295,10 +306,12 @@ extract_disturb_info <- function(country_name) {
   elevation_proj <- terra::resample(x = elevation_proj, y = disturbance, method="near")
   
   # create raster stacks
-  dist.stack <- c(disturbance, severity_proj, agent_proj, elevation_proj)
+  dist.stack <- c(disturbance, 
+                  severity_proj, #agent_proj, 
+                  elevation_proj)
   names(dist.stack) <- c("disturbance_year", 
                          "disturbance_severity", 
-                         "disturbance_agent", 
+                       #  "disturbance_agent", 
                          "elevation")
   
   # extract elevation for every point
@@ -309,36 +322,40 @@ extract_disturb_info <- function(country_name) {
   
 }
 
-out <- extract_disturb_info('czechia')
-View(as.data.frame(out))
-# list all countries
-#country_names <- list( "austria", "czechia") #austria" 
+#out <- extract_disturb_info('czechia')
+#View(as.data.frame(out))
 
 out_ls <- lapply(country_names, extract_disturb_info)
 
 # merge them all in one file
 disturbance_ls <- do.call("rbind", out_ls)
 
-disturbance_df <- data.frame(disturbance_ls)
+disturbance_df_all <- data.frame(disturbance_ls)
 
 
 # replace NA by the values in the same cluster (~ 20 points in total, lay at the edge of the pixel)
-disturbance_df <- disturbance_df %>%
+disturbance_df <- disturbance_df_all %>%
   mutate(ID_short = gsub('.{2}$', '', ID)) %>%
   group_by(ID_short) %>%
   arrange(ID_short, disturbance_year) %>% # Arrange if necessary to ensure the first value is non-NA
-  fill(disturbance_year,     .direction = "down") %>% 
-  fill(disturbance_severity, .direction = "down") %>% 
-  fill(disturbance_agent,    .direction = "down") %>% # Fill NAs downwards 
+  fill(disturbance_year,     .direction = "downup") %>% 
+  fill(disturbance_severity, .direction = "downup") %>% 
+ # fill(disturbance_agent,    .direction = "down") %>% # Fill NAs downwards 
   ungroup(.) %>% 
   dplyr::select(-ID_short) %>% 
-  mutate(disturbance_year = if_else(ID == '11_19_137_4', 2019, disturbance_year))
-
+  mutate(disturbance_year = if_else(ID == '11_19_137_4', 2019, disturbance_year)) %>% 
+  
+  # add distance to edge
+  left_join(final_results_distance, by = join_by(ID)) %>%  
+  left_join(subplots_proj_df, by = join_by(ID, patch_id)) %>%  
+  tidyr::drop_na()  # remove values that are outside of C4
+ 
 #11_19_137_4 - fallen outside of teh pixel, checked manually
 
+# merge in patch characteristics
+# Export final table ---------------------------
 
 fwrite(disturbance_df, 'outData/disturbance_chars.csv')
-fwrite(final_results_distance, 'outData/distance_to_edge.csv')
 
 
 
@@ -362,11 +379,11 @@ plot(example_raster, main = "Raster with NA as 0")
 
 # Reclassify the raster - change values '2' to NA
 #reclass_matrix <- matrix(c(0.8,2, NA), ncol=3, byrow=TRUE)  #matrix(c(1, NA), ncol=2, byrow=TRUE)
-reclass_matrix <- matrix(c(0.8, 2, NA, 
+reclass_matrix_distance <- matrix(c(0.8, 2, NA, 
                            3, 3, 3,     # Keep value 3 as-is
                            0, 0, 0),    # Keep placeholder 0 as-is
                          ncol = 3, byrow = TRUE)
-reclassified_raster <- classify(example_raster, reclass_matrix)
+reclassified_raster <- classify(example_raster, reclass_matrix_distance)
 plot(reclassified_raster)
 # Assuming reclassified_raster is your raster
 # Create a data frame with the coordinates of the point
@@ -432,12 +449,8 @@ plot(point_vector, main="", add = T)
 disturbance_mask[is.na(disturbance_mask)] <- 0
 
 # reclassify matrix: disturbances to NAs
-reclass_matrix <- matrix(c(#0,0,0,
-  1985, 2017.1, 1,
-  2017.5, 2021, NA), 
-  ncol=3, 
-  byrow=TRUE)
-reclassified_raster <- classify(disturbance_mask, reclass_matrix)
+
+reclassified_raster <- classify(disturbance_mask, reclass_matrix_distance)
 
 
 plot(disturbance_mask)
