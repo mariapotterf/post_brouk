@@ -49,11 +49,11 @@ subplots   <- vect("raw/dat_czechia_2023.gpkg")
 # Test distance to edge: prepare for loop over ----------------------------------------
 
 # list all countries
-country_names <- list("czechia") #austria" 
+country_names <- list("czechia") 
 
 # distances will contain the distance of each point to the nearest edge of its patch
 
-# working example ------------------------------------------------------------------
+### TEST example ------------------------------------------------------------------
 
 
 # Create a small example raster
@@ -101,7 +101,7 @@ plot(point_vector, main="", add = T)
 # Measure the distance from the point to the nearest NA
 point_distance <- extract(distance_to_edge, point_vector)
 (point_distance)
-plot(distance_to_edge, main="Distance to Nearest NA")
+plot(distance_to_edge, main="Distance to Nearest Edge")
 plot(point_vector, main="", add = T)
 
 
@@ -111,8 +111,6 @@ plot(point_vector, main="", add = T)
 
 # distance to edge: test for single country -----------------------------------------------------------
 country_name = 'czechia'
-
-print(country_name)
 
 # read field data 
 #subplots = vect('raw/dat_czechia_2023.gpkg')
@@ -134,7 +132,7 @@ point_vector <- subplots_proj[subplots_proj$cluster == "14_106", ]
 crs(point_vector) <- desired_crs
 
 # get buffer: lower to 1 km diostance
-buff <- buffer(point_vector, 1500)
+buff <- buffer(point_vector, 100)
 crs(buff) <- desired_crs
 
 # crop data and then mask them to have a circle
@@ -151,7 +149,7 @@ plot(point_vector, main="", add = T)
 disturbance_mask[is.na(disturbance_mask)] <- 0
 
 # reclassify matrix: disturbances to NAs
-reclass_matrix <- matrix(c(0,0,0,
+reclass_matrix <- matrix(c(#0,0,0,
                            1985, 2017.1, 1,
                            2017.5, 2021, NA), 
                          ncol=3, 
@@ -159,22 +157,22 @@ reclass_matrix <- matrix(c(0,0,0,
 reclassified_raster <- classify(disturbance_mask, reclass_matrix)
 
 
-
+plot(disturbance_mask)
 plot(reclassified_raster)
 plot(point_vector, main="", add = T)
 
 # Calculate the distance to the nearest NA
-distance_to_na <- distance(reclassified_raster)
+distance_to_edge <- distance(reclassified_raster)
 
 # Plotting to visualize the results
 plot(reclassified_raster, main="Reclassified Raster")
-plot(distance_to_na, main="Distance to Nearest NA")
+plot(distance_to_edge, main="Distance to Nearest Edge")
 plot(point_vector, main="", add = T)
 
 # Measure the distance from the point to the nearest NA
-point_distance <- terra::extract(distance_to_na, point_vector)
+point_distance <- terra::extract(distance_to_edge, point_vector)
 (point_distance)
-plot(distance_to_na, main="Distance to Nearest NA")
+plot(distance_to_edge, main="Distance to Nearest Edge")
 plot(disturbance_mask)
 plot(point_vector, main="", add = T)
 
