@@ -69,3 +69,8 @@ subplot_proj$cluster_id <- db$cluster  # 0 means noise
 #do it using subplot_proj$cluster_id <- ifelse(subplot_proj$cluster_id == 0, NA, subplot_proj$cluster_id)
 # Export to GeoPackage
 st_write(subplot_proj, "outData/subplot_with_clusters.gpkg", delete_layer= TRUE)
+
+
+# Interpret table:  ---------------------------------------------
+# get species, counts, vertical classes per plot and cluster
+
