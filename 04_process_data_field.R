@@ -186,9 +186,14 @@ small_h  <- standardize_columns(small, "small")
 combined <- dplyr::bind_rows(mature_h, adv_h, small_h)
 
 
+head(combined)
 
+combined$cluster_id
 
 # LOOP ----TESt START ----------------------------------------------------
+# some plot_id can be the same across tables and recordiong dates:
+# instead, prepare unique plot_key - a combination betwen plot_id and a recording date
+# to link between spatial data and no geometry tables
 
 library(sf)
 library(DBI)
@@ -221,9 +226,19 @@ subplot_all <- lapply(gpkg_files, function(path) {
   }, error = function(e) NULL)
 })
 
+
+# make a unique plot key: combination of plot it and redording date (folder name)
 subplot_all <- do.call(rbind, subplot_all)
 subplot_all <- st_transform(subplot_all, 3035)
 subplot_all$plot_key <- paste(subplot_all$plot_id, subplot_all$source_folder, sep = "_")
+
+
+# test the plotting
+ggplot(subplot_all) +
+  geom_sf() +
+  ggtitle("Spatial distribution of subplots") +
+  theme_minimal()
+
 
 # ---- Cluster globally ----
 coords <- st_coordinates(subplot_all)
@@ -233,29 +248,33 @@ subplot_all$cluster_id <- ifelse(db$cluster == 0, NA, db$cluster)
 # For merging later
 cluster_lookup <- subplot_all |> 
   st_drop_geometry() |> 
-  dplyr::select(plot_id, source_folder, cluster_id) |>
-  mutate(plot_key = paste(plot_id, source_folder, sep = "__"))
+  dplyr::select(plot_id, source_folder, cluster_id, plot_key)# |>
+#  mutate(plot_key = paste(plot_id, source_folder, sep = "__"))
 
 # Save spatial subplot data with cluster IDs
 st_write(subplot_all, "outData/subplot_with_clusters_global.gpkg", delete_layer = TRUE)
 
 # ---- PHASE 2: Process vegetation data ----
 
+# defien columsn to keep 
+cols_needed <- c(
+  "height", "count", "dbh",
+  "dmg_terminal", "dmg_terminal_photo",      
+  "dmg_foliage", "dmg_stem_horizont", "dmg_stem_horizont_photo",  
+  "dmg_root_stem", "dmg_root_stem_horiz_photo", "dmg_stem",                
+  "dmg_stem_cause", "dmg_root_stem_horizon", "dmg_root_stem_vert",       
+  "dmg_root_stem_cause", "dmg_foliage_leaf_int", "dmg_stem_vert_photo",   
+  "plot_id", "dmg_stem_vertical", "dmg_root_stem_vert_photo",
+  "dmg_stem_grass", "dmg_term_sample", "dmg_stem_sample",       
+  "dmg_foliage_sample", "dmg_term_similar", "dmg_foliage_similar",    
+  "dmg_foliage_detail_photo", "dmg_foliage_overall_photo", "dmg_root_stem_sample",    
+  "dmg_type", "dmg_bool", "dmg_jedinec"
+)
+
+
+
 # Harmonization function
 standardize_columns <- function(df, vegtype, source_folder) {
-  cols_needed <- c(
-    "height", "count", "dbh",
-    "dmg_terminal", "dmg_terminal_photo",      
-    "dmg_foliage", "dmg_stem_horizont", "dmg_stem_horizont_photo",  
-    "dmg_root_stem", "dmg_root_stem_horiz_photo", "dmg_stem",                
-    "dmg_stem_cause", "dmg_root_stem_horizon", "dmg_root_stem_vert",       
-    "dmg_root_stem_cause", "dmg_foliage_leaf_int", "dmg_stem_vert_photo",   
-    "plot_id", "dmg_stem_vertical", "dmg_root_stem_vert_photo",
-    "dmg_stem_grass", "dmg_term_sample", "dmg_stem_sample",       
-    "dmg_foliage_sample", "dmg_term_similar", "dmg_foliage_similar",    
-    "dmg_foliage_detail_photo", "dmg_foliage_overall_photo", "dmg_root_stem_sample",    
-    "dmg_type", "dmg_bool", "dmg_jedinec"
-  )
   
   df$VegType <- vegtype
   for (col in cols_needed) {
@@ -271,19 +290,7 @@ standardize_columns <- function(df, vegtype, source_folder) {
   if (!"plot_key" %in% names(cluster_lookup)) stop("cluster_lookup missing plot_key column")
   if (!"plot_key" %in% names(df)) stop("df missing plot_key column")
   
-  
-  # Merge cluster ID
-  df <- dplyr::left_join(df, cluster_lookup, by = "plot_key")
-  
-  # Clean up — keep key columns only
-  df <- df %>%
-    dplyr::select(
-      all_of(c("plot_key", "source_folder", "species_id", "acc", "VegType", "cluster_id")),
-      everything(), 
-      -plot_id
-    )
-  
-  
+  df$source_folder <- source_folder
   df$dmg_type_terminal <- ifelse(!is.na(df$dmg_terminal), vegtype, NA)
   df$dmg_type_foliage  <- ifelse(!is.na(df$dmg_foliage),  vegtype, NA)
   return(df)
@@ -317,10 +324,10 @@ for (gpkg_path in gpkg_files) {
     source_folder <- basename(dirname(gpkg_path))
     
     # replace numberic species_id by acronyms
-    get_species_code <- function(df) {
-      merge(df, species[, c("Value", "acc")], by.x = "species_id", by.y = "Value", all.x = TRUE)
-    }
-    
+    # get_species_code <- function(df) {
+    #   merge(df, species[, c("Value", "acc")], by.x = "species_id", by.y = "Value", all.x = TRUE)
+    # }
+    # 
     tables$mature_test$VegType         <- "mature"
     tables$regeneration_adv2$VegType   <- "advanced"
     tables$regeneration_small$VegType  <- "small"
@@ -329,20 +336,39 @@ for (gpkg_path in gpkg_files) {
     adv    <- get_species_code(tables$regeneration_adv2)
     small  <- get_species_code(tables$regeneration_small)
     
+    mature <- dplyr::mutate(mature, source_folder = source_folder)
+    adv    <- dplyr::mutate(adv, source_folder = source_folder)
+    small <- dplyr::mutate(small, source_folder = source_folder)
+    
     mature_h <- standardize_columns(mature, "mature", source_folder)
     adv_h    <- standardize_columns(adv, "advanced", source_folder)
     small_h  <- standardize_columns(small, "small", source_folder)
     
     combined <- bind_rows(mature_h, adv_h, small_h)
     combined$source_file <- basename(gpkg_path)
-    all_combined[[length(all_combined) + 1]] <- combined
+    combined$plot_key <- paste(combined$plot_id, combined$source_folder, sep = "_")
+    
+    combined2<- combined %>% 
+      dplyr::select(-plot_id, -source_folder, -source_file     )
+    
+    all_combined[[length(all_combined) + 1]] <- combined2
   }, silent = TRUE)
 }
 
 combined_vegetation_data <- bind_rows(all_combined)
 
-head(combined_vegetation_data)
-fwrite(combined_vegetation_data, "outData/combined_vegetation_data.csv")
+# add cluster indication from spatial data
+subplot_all_df <- subplot_all %>% 
+  st_drop_geometry() %>%
+  # your dplyr operations continue here
+  dplyr::select(-plot_id, -source_folder, -source_file     )
+
+# remove folder and plot_id
+combined_vegetation_data2 <- combined_vegetation_data %>% 
+  full_join(subplot_all_df)
+
+head(combined_vegetation_data2)
+fwrite(combined_vegetation_data2, "outData/combined_vegetation_data.csv")
 
 
       
