@@ -34,7 +34,7 @@ library(stringr)
 species <- fread(paste0(raw_path, "/look_up_tables/full_sp_list.csv"))
 
 dmg_cause_lookup <- tibble::tibble(
-  dmg_stem_cause = 1:5,
+  dmg_cause = 1:5,
   cause_label = c(
     "zver",
     "mechanizace",
@@ -68,10 +68,10 @@ cols_needed <- c(# "plot_id",
 
 # Test on single file -----------------------------------------------------
 # paths
-raw_path   <- "raw/outField"
-tablet     <- "T2_AH_20250528"
-file_name  <- paste0("forest_structure_survey_v2[1]_", tablet, ".gpkg")
-gpkg_path  <- paste(raw_path, tablet, file_name, sep = "/") 
+# raw_path   <- "raw/outField"
+# tablet     <- "T2_AH_20250528"
+# file_name  <- paste0("forest_structure_survey_v2[1]_", tablet, ".gpkg")
+# gpkg_path  <- paste(raw_path, tablet, file_name, sep = "/") 
 
 
 
@@ -133,10 +133,9 @@ cluster_lookup <- subplot_all |>
 # Save spatial subplot data with cluster IDs
 st_write(subplot_all, "outData/subplot_with_clusters_2025.gpkg", delete_layer = TRUE)
 
+
+
 # ---- PHASE 2: Process vegetation data ----
-
-
-
 
 
 # Harmonization function:
@@ -170,7 +169,7 @@ standardize_columns <- function(df, vegtype, source_folder) {
 # ---- Process all gpkg vegetation data ----
 all_combined <- list()
 
-# keep the table iven is no species is present
+# keep the table even is no species is present - fill in with NAs
 safe_get_species_table <- function(df, vegtype, source_folder) {
   if (!is.null(df) && nrow(df) > 0) {
     df$VegType <- vegtype
@@ -190,6 +189,7 @@ safe_get_species_table <- function(df, vegtype, source_folder) {
   return(df)
 }
 
+# run for loop to prcess the all gpkgs
 for (gpkg_path in gpkg_files) {
   message("Processing vegetation: ", gpkg_path)
   #gpkg_path = "raw/outField/T1_Jitka_20250514/T1_forest_structure_survey_v2.gpkg"
@@ -247,8 +247,21 @@ subplot_all_df <- subplot_all %>%
 combined_vegetation_data2 <- combined_vegetation_data %>% 
   full_join(subplot_all_df)
 
-head(combined_vegetation_data2)
-fwrite(combined_vegetation_data2, "outData/combined_vegetation_data.csv")
+# add damage cause infomration
+combined_vegetation_data2 <- combined_vegetation_data2 %>%
+  dplyr::mutate(dmg_type = as.integer(dmg_type)) %>%  # ensure matching type
+  dplyr::left_join(dmg_cause_lookup, by = c("dmg_type" = "dmg_cause")) %>% 
+  mutate(count = as.integer(count))
+
+dat_subplot <- combined_vegetation_data2 %>% 
+  group_by(cluster_id) %>% 
+  mutate(n_plots = dplyr::n_distinct(plot_key)) %>% 
+  dplyr::filter(n_plots %in% c( 4:6)) #%>% 
+  
+
+
+head(dat_subplot)
+fwrite(dat_subplot, "outData/combined_vegetation_data.csv")
 
 
 # Summary: -----------------------------------------------------------------------
@@ -259,13 +272,9 @@ fwrite(combined_vegetation_data2, "outData/combined_vegetation_data.csv")
 # vertical categories
 # keep only correct number of plots
 # analyze on level of subplot, not yet on level of clusters
-dat_subplot <- combined_vegetation_data2 %>% 
-  group_by(cluster_id) %>% 
-  mutate(n_plots = dplyr::n_distinct(plot_key)) %>% 
-  dplyr::filter(n_plots %in% c( 4:6))
 
 
-# how many clusters?
+## how many clusters? ----------------
 n_clusters <- length(unique(dat_subplot$cluster_id))  # 35-38
 n_samples_terminal <- dat_subplot %>%
   dplyr::filter(!is.na(dmg_term_sample)) %>%
@@ -273,7 +282,7 @@ n_samples_terminal <- dat_subplot %>%
   dplyr::pull(dmg_term_sample) %>%
   unique() 
 
-
+##  how many samples? -------
 n_samples_foliage <- dat_subplot %>%
   dplyr::filter(!is.na(dmg_foliage_sample )) %>%
   dplyr::filter(str_starts(dmg_foliage_sample, "T")) %>%
@@ -300,16 +309,22 @@ n_samples_root_stem
 n_samples_stem
 
 
-# -----------------------------------------------------------
-head(dat_subplot)
-
-# check vzroky kmen? 
-dat_subplot %>% 
-  dplyr::filter(!is.na(dmg_stem_sample   )) %>%
-  View()
-
-
 
 # Analysis: -----------------------------------------------------------------------
-# on level on plot
+
+# are there any empty plots?
+# what type of damage?
+# on plot level: 
+
+# 
+# table(combined_vegetation_data2$cause_label)
+# 
+# ine bioticke  mechanizace     mysovite         zver 
+# 102           61            4           22 
+
 # on cluster level
+
+df_cluster <- combined_vegetation_data2 %>% 
+  group_by(cluster_id, acc) %>% 
+  mutate()
+  
