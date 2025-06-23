@@ -314,7 +314,7 @@ n_samples_stem
 
 # are there any empty plots?
 # what type of damage?
-# on plot level: 
+## on plot level: ------------------------------------------------------
 
 # 
 # table(combined_vegetation_data2$cause_label)
@@ -322,9 +322,17 @@ n_samples_stem
 # ine bioticke  mechanizace     mysovite         zver 
 # 102           61            4           22 
 
-# on cluster level
+## on cluster level ----------------------------------------------------
 
-df_cluster <- combined_vegetation_data2 %>% 
+df_cluster <- dat_subplot %>% 
   group_by(cluster_id, acc) %>% 
-  mutate()
+  mutate(area = n_plots *4,
+         scaling_factor = 10000/area,
+         stem_density = count*scaling_factor) %>%   # study site area
+  summarize(stem_density = sum(stem_density, na.rm = T))
+
+
+df_cluster %>% 
+  ggplot(aes(x = acc, y = stem_density, fill = acc)) + 
+  geom_boxplot() + geom_jitter()
   
