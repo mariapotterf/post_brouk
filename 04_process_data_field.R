@@ -33,6 +33,17 @@ library(stringr)
 # look up tables
 species <- fread(paste0(raw_path, "/look_up_tables/full_sp_list.csv"))
 
+dmg_cause_lookup <- tibble::tibble(
+  dmg_stem_cause = 1:5,
+  cause_label = c(
+    "zver",
+    "mechanizace",
+    "mysovite",
+    "ine bioticke",
+    "nejasna"
+  )
+)
+
 # replace numberic species_id by acronyms
 get_species_code <- function(df) {
   df <- dplyr::mutate(df, species_id = suppressWarnings(as.integer(species_id)))
@@ -122,20 +133,6 @@ identical(tables$species_list2$species, tables$species_list$species)
 
 
 ### merge to species table to get the Value -----------------
-tables$species_list <- merge(
-  tables$species_list,
-  species,
-  by = c("Value", "species"),
-  all.x = TRUE,
-  sort = FALSE
-) 
-
-
-
-# ideal strcuture
-
-# cluster_id  subplot VegTYpe (mature, advanced, small) acc (species_acronym) height dbh dmg_terminal dmg_foliage ..
-
 
 # Add type column
 tables$mature_test$VegType <- "mature"
@@ -144,9 +141,9 @@ tables$regeneration_small$VegType <- "small"
 
 
 # Combine and annotate species
-mature <- get_species_code(tables$mature_test, tables$species_list)
-adv    <- get_species_code(tables$regeneration_adv2, tables$species_list)
-small  <- get_species_code(tables$regeneration_small, tables$species_list)
+mature <- get_species_code(tables$mature_test)
+adv    <- get_species_code(tables$regeneration_adv2)
+small  <- get_species_code(tables$regeneration_small)
 
 # Step 1: Join cluster_id
 subplot_cols <- subplot_proj[, c("plot_id", "cluster_id")]
@@ -260,7 +257,7 @@ cluster_lookup <- subplot_all |>
 #  mutate(plot_key = paste(plot_id, source_folder, sep = "__"))
 
 # Save spatial subplot data with cluster IDs
-st_write(subplot_all, "outData/subplot_with_clusters_global.gpkg", delete_layer = TRUE)
+st_write(subplot_all, "outData/subplot_with_clusters_2025.gpkg", delete_layer = TRUE)
 
 # ---- PHASE 2: Process vegetation data ----
 
@@ -312,6 +309,7 @@ standardize_columns <- function(df, vegtype, source_folder) {
 # ---- Process all gpkg vegetation data ----
 all_combined <- list()
 
+# keep the table iven is no species is present
 safe_get_species_table <- function(df, vegtype, source_folder) {
   if (!is.null(df) && nrow(df) > 0) {
     df$VegType <- vegtype
@@ -451,7 +449,6 @@ dat_subplot %>%
 
 
 
-# how many stems/plot/species? 
-dat_subplot %>% 
-  ggplot(aes())
-      
+# Analysis: -----------------------------------------------------------------------
+# on level on plot
+# on cluster level
