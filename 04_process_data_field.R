@@ -28,7 +28,7 @@ library(ggplot2)
 library(dbscan)
 library(data.table)
 library(dplyr)
-
+library(stringr)
 
 # look up tables
 species <- fread(paste0(raw_path, "/look_up_tables/full_sp_list.csv"))
@@ -381,7 +381,8 @@ str(combined_vegetation_data)
 subplot_all_df <- subplot_all %>% 
   st_drop_geometry() %>%
   # your dplyr operations continue here
-  dplyr::select(-plot_id, -source_folder, -source_file     )
+  dplyr::select(-plot_id, -source_folder, -source_file ,
+                -time, -plot_uuid                )
 
 # remove folder and plot_id
 combined_vegetation_data2 <- combined_vegetation_data %>% 
@@ -398,14 +399,59 @@ fwrite(combined_vegetation_data2, "outData/combined_vegetation_data.csv")
 # dominant species
 # vertical categories
 # keep only correct number of plots
-dat <- combined_vegetation_data2 %>% 
+# analyze on level of subplot, not yet on level of clusters
+dat_subplot <- combined_vegetation_data2 %>% 
   group_by(cluster_id) %>% 
   mutate(n_plots = dplyr::n_distinct(plot_key)) %>% 
-  dplyr::filter(n_plots == 5)
+  dplyr::filter(n_plots %in% c( 4:6))
 
 
 # how many clusters?
-length(unique(dat$cluster_id))  # 35
+n_clusters <- length(unique(dat_subplot$cluster_id))  # 35-38
+n_samples_terminal <- dat_subplot %>%
+  dplyr::filter(!is.na(dmg_term_sample)) %>%
+  dplyr::filter(str_starts(dmg_term_sample, "T")) %>%
+  dplyr::pull(dmg_term_sample) %>%
+  unique() 
 
-head(dat)
+
+n_samples_foliage <- dat_subplot %>%
+  dplyr::filter(!is.na(dmg_foliage_sample )) %>%
+  dplyr::filter(str_starts(dmg_foliage_sample, "T")) %>%
+  dplyr::pull(dmg_foliage_sample)%>%
+  unique() 
+
+
+n_samples_root_stem <- dat_subplot %>%
+  dplyr::filter(!is.na(dmg_root_stem_sample  )) %>%
+  dplyr::filter(str_starts(dmg_root_stem_sample, "T")) %>%
+  dplyr::pull(dmg_root_stem_sample ) %>%
+  unique() 
+
+n_samples_stem <- dat_subplot %>%
+  dplyr::filter(!is.na(dmg_stem_sample   )) %>%
+  dplyr::filter(str_starts(dmg_stem_sample, "T")) %>%
+  dplyr::pull(dmg_stem_sample  )%>%
+  unique() 
+
+
+n_samples_terminal
+n_samples_foliage
+n_samples_root_stem
+n_samples_stem
+
+
+# -----------------------------------------------------------
+head(dat_subplot)
+
+# check vzroky kmen? 
+dat_subplot %>% 
+  dplyr::filter(!is.na(dmg_stem_sample   )) %>%
+  View()
+
+
+
+# how many stems/plot/species? 
+dat_subplot %>% 
+  ggplot(aes())
       
