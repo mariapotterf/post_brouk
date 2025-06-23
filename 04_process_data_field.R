@@ -12,6 +12,13 @@
 # identify unique name by cluster
 # make clusters automatically
 
+# make summary stat5istics: 
+# how many cluysters
+# species composition
+# stem density
+# damage characteristics
+# context information
+
 gc()
 
 library(terra)
@@ -20,16 +27,25 @@ library(DBI)
 library(ggplot2)
 library(dbscan)
 library(data.table)
+library(dplyr)
 
 
-# paths -----------------
+# look up tables
+species <- fread(paste0(raw_path, "/look_up_tables/full_sp_list.csv"))
+
+# replace numberic species_id by acronyms
+get_species_code <- function(df) {
+  df <- dplyr::mutate(df, species_id = suppressWarnings(as.integer(species_id)))
+  dplyr::left_join(df, species[, c("Value", "acc")], by = c("species_id" = "Value"))
+}
+
+# Test on single file -----------------------------------------------------
+# paths
 raw_path   <- "raw/outField"
 tablet     <- "T2_AH_20250528"
 file_name  <- paste0("forest_structure_survey_v2[1]_", tablet, ".gpkg")
 gpkg_path  <- paste(raw_path, tablet, file_name, sep = "/") 
 
-# look up tables
-species <- fread(paste0(raw_path, "/look_up_tables/full_sp_list.csv"))
 
 # Load data field data: spatial geometry
 subplot <- st_read(gpkg_path, layer = "subplot")
@@ -59,7 +75,7 @@ ggplot(subplot) +
   theme_minimal()
 
 
-# create unique cluster ID based on distance -----------------
+## create unique cluster ID based on distance -----------------
 
 # Ensure geometry is in meters (projected CRS like EPSG:3035)
 subplot_proj <- st_transform(subplot, 3035)
@@ -79,7 +95,7 @@ subplot_proj$cluster_id <- db$cluster  # 0 means noise
 st_write(subplot_proj, "outData/subplot_with_clusters.gpkg", delete_layer= TRUE)
 
 
-# Interpret table:  ---------------------------------------------
+## Interpret table:  ---------------------------------------------
 # get species, counts, vertical classes per plot and cluster
 # investigate individual outputs
 # overall, get the list of species and aboundaces per plot
@@ -93,7 +109,7 @@ identical(tables$species_list2$species, tables$species_list$species)
 
 
 
-# Create whole database: -------------------------------------------------------------
+## Create whole database: -------------------------------------------------------------
 
 # correctly interpret: 
 #  - species type
@@ -115,11 +131,7 @@ tables$species_list <- merge(
 ) 
 
 
-# Helper: get species acronym
-get_species_code <- function(df, species_list) {
-  df <- merge(df, species_list[, c("Value", "acc")], by.x = "species_id", by.y = "Value", all.x = TRUE)
-  return(df)
-}
+
 # ideal strcuture
 
 # cluster_id  subplot VegTYpe (mature, advanced, small) acc (species_acronym) height dbh dmg_terminal dmg_foliage ..
@@ -190,19 +202,15 @@ head(combined)
 
 combined$cluster_id
 
+
+
+
 # LOOP ----TESt START ----------------------------------------------------
 # some plot_id can be the same across tables and recordiong dates:
 # instead, prepare unique plot_key - a combination betwen plot_id and a recording date
 # to link between spatial data and no geometry tables
 
-library(sf)
-library(DBI)
-library(data.table)
-library(dplyr)
-library(dbscan)
 
-# ---- Setup ----
-species <- fread("raw/outField/look_up_tables/full_sp_list.csv")
 
 # List relevant .gpkg files
 gpkg_files <- list.files(
@@ -216,8 +224,8 @@ gpkg_files
 
 # ---- PHASE 1: Collect all subplot geometries ----
 subplot_all <- lapply(gpkg_files, function(path) {
-  print(path)
-  print(basename(dirname(path)))
+ # print(path)
+#  print(basename(dirname(path)))
   tryCatch({
     df <- st_read(path, layer = "subplot", quiet = TRUE)
     df$source_file <- basename(path)
@@ -257,14 +265,14 @@ st_write(subplot_all, "outData/subplot_with_clusters_global.gpkg", delete_layer 
 # ---- PHASE 2: Process vegetation data ----
 
 # defien columsn to keep 
-cols_needed <- c(
+cols_needed <- c(# "plot_id", 
   "height", "count", "dbh",
   "dmg_terminal", "dmg_terminal_photo",      
   "dmg_foliage", "dmg_stem_horizont", "dmg_stem_horizont_photo",  
   "dmg_root_stem", "dmg_root_stem_horiz_photo", "dmg_stem",                
   "dmg_stem_cause", "dmg_root_stem_horizon", "dmg_root_stem_vert",       
   "dmg_root_stem_cause", "dmg_foliage_leaf_int", "dmg_stem_vert_photo",   
-  "plot_id", "dmg_stem_vertical", "dmg_root_stem_vert_photo",
+  "dmg_stem_vertical", "dmg_root_stem_vert_photo",
   "dmg_stem_grass", "dmg_term_sample", "dmg_stem_sample",       
   "dmg_foliage_sample", "dmg_term_similar", "dmg_foliage_similar",    
   "dmg_foliage_detail_photo", "dmg_foliage_overall_photo", "dmg_root_stem_sample",    
@@ -273,13 +281,18 @@ cols_needed <- c(
 
 
 
-# Harmonization function
+# Harmonization function:
+# read data in, fill in vegetattion type: mature, advanced, small
+# make all columsn to allow merge the data
+# create unique plot_key: combines plot_id and collection date
 standardize_columns <- function(df, vegtype, source_folder) {
   
   df$VegType <- vegtype
+  
   for (col in cols_needed) {
     if (!col %in% names(df)) df[[col]] <- NA
   }
+  
   df <- df[, c("plot_id", "species_id", "acc", "VegType", cols_needed)]
   
   # Add plot_key using known folder
@@ -287,12 +300,11 @@ standardize_columns <- function(df, vegtype, source_folder) {
   df$plot_key <- paste(df$plot_id, df$source_folder, sep = "_")
   
   # DEBUG: Check if plot_key exists in both sides
-  if (!"plot_key" %in% names(cluster_lookup)) stop("cluster_lookup missing plot_key column")
-  if (!"plot_key" %in% names(df)) stop("df missing plot_key column")
+  #if (!"plot_key" %in% names(cluster_lookup)) stop("cluster_lookup missing plot_key column")
+  #if (!"plot_key" %in% names(df)) stop("df missing plot_key column")
   
-  df$source_folder <- source_folder
-  df$dmg_type_terminal <- ifelse(!is.na(df$dmg_terminal), vegtype, NA)
-  df$dmg_type_foliage  <- ifelse(!is.na(df$dmg_foliage),  vegtype, NA)
+  #df$dmg_type_terminal <- ifelse(!is.na(df$dmg_terminal), vegtype, NA)
+ # df$dmg_type_foliage  <- ifelse(!is.na(df$dmg_foliage),  vegtype, NA)
   return(df)
 }
 
@@ -300,9 +312,28 @@ standardize_columns <- function(df, vegtype, source_folder) {
 # ---- Process all gpkg vegetation data ----
 all_combined <- list()
 
+safe_get_species_table <- function(df, vegtype, source_folder) {
+  if (!is.null(df) && nrow(df) > 0) {
+    df$VegType <- vegtype
+    df <- get_species_code(df)
+  } else {
+    df <- data.frame(
+      species_id = NA_integer_,
+      acc = NA_character_,
+      VegType = vegtype,
+      height = NA, count = NA, dbh = NA,
+      dmg_terminal = NA, dmg_foliage = NA,
+      plot_id = NA_integer_,
+      stringsAsFactors = FALSE
+    )
+  }
+  df$source_folder <- source_folder
+  return(df)
+}
+
 for (gpkg_path in gpkg_files) {
   message("Processing vegetation: ", gpkg_path)
-  
+  #gpkg_path = "raw/outField/T1_Jitka_20250514/T1_forest_structure_survey_v2.gpkg"
   try({
     con <- dbConnect(RSQLite::SQLite(), gpkg_path)
     tabs <- dbListTables(con)
@@ -322,40 +353,29 @@ for (gpkg_path in gpkg_files) {
     }
     # Extract source_folder
     source_folder <- basename(dirname(gpkg_path))
+    print(source_folder)
     
-    # replace numberic species_id by acronyms
-    # get_species_code <- function(df) {
-    #   merge(df, species[, c("Value", "acc")], by.x = "species_id", by.y = "Value", all.x = TRUE)
-    # }
-    # 
-    tables$mature_test$VegType         <- "mature"
-    tables$regeneration_adv2$VegType   <- "advanced"
-    tables$regeneration_small$VegType  <- "small"
-    
-    mature <- get_species_code(tables$mature_test)
-    adv    <- get_species_code(tables$regeneration_adv2)
-    small  <- get_species_code(tables$regeneration_small)
-    
-    mature <- dplyr::mutate(mature, source_folder = source_folder)
-    adv    <- dplyr::mutate(adv, source_folder = source_folder)
-    small <- dplyr::mutate(small, source_folder = source_folder)
+    mature <- safe_get_species_table(tables$mature_test, "mature", source_folder)
+    adv    <- safe_get_species_table(tables$regeneration_adv2, "advanced", source_folder)
+    small  <- safe_get_species_table(tables$regeneration_small, "small", source_folder)
     
     mature_h <- standardize_columns(mature, "mature", source_folder)
     adv_h    <- standardize_columns(adv, "advanced", source_folder)
     small_h  <- standardize_columns(small, "small", source_folder)
     
     combined <- bind_rows(mature_h, adv_h, small_h)
-    combined$source_file <- basename(gpkg_path)
-    combined$plot_key <- paste(combined$plot_id, combined$source_folder, sep = "_")
+   # combined$source_file <- basename(gpkg_path)
+    #combined$plot_key <- paste(combined$plot_id, combined$source_folder, sep = "_")
     
     combined2<- combined %>% 
-      dplyr::select(-plot_id, -source_folder, -source_file     )
+      dplyr::select(-plot_id, -source_folder )
     
     all_combined[[length(all_combined) + 1]] <- combined2
-  }, silent = TRUE)
+  }, silent = FALSE)
 }
 
 combined_vegetation_data <- bind_rows(all_combined)
+str(combined_vegetation_data)
 
 # add cluster indication from spatial data
 subplot_all_df <- subplot_all %>% 
@@ -371,4 +391,21 @@ head(combined_vegetation_data2)
 fwrite(combined_vegetation_data2, "outData/combined_vegetation_data.csv")
 
 
+# Summary: -----------------------------------------------------------------------
+# file contains aslo empty and erroneous plots
+# calculate how many plot_key I have per cluster_id? - keep only oones with proper counts
+# Calculate: stem density 
+# dominant species
+# vertical categories
+# keep only correct number of plots
+dat <- combined_vegetation_data2 %>% 
+  group_by(cluster_id) %>% 
+  mutate(n_plots = dplyr::n_distinct(plot_key)) %>% 
+  dplyr::filter(n_plots == 5)
+
+
+# how many clusters?
+length(unique(dat$cluster_id))  # 35
+
+head(dat)
       
