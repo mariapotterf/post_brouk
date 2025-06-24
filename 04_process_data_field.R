@@ -29,9 +29,19 @@ library(dbscan)
 library(data.table)
 library(dplyr)
 library(stringr)
+library(purrr)
 
 # look up tables
 species <- fread(paste0(raw_path, "/look_up_tables/full_sp_list.csv"))
+
+# Test on single file -----------------------------------------------------
+# paths
+raw_path   <- "raw/outField"
+# tablet     <- "T2_AH_20250528"
+# file_name  <- paste0("forest_structure_survey_v2[1]_", tablet, ".gpkg")
+gpkg_path  <- paste(raw_path, tablet, file_name, sep = "/") 
+
+
 
 dmg_cause_lookup <- tibble::tibble(
   dmg_cause = 1:5,
@@ -65,13 +75,6 @@ cols_needed <- c(# "plot_id",
   "dmg_foliage_detail_photo", "dmg_foliage_overall_photo", "dmg_root_stem_sample",    
   "dmg_type", "dmg_bool", "dmg_jedinec"
 )
-
-# Test on single file -----------------------------------------------------
-# paths
-# raw_path   <- "raw/outField"
-# tablet     <- "T2_AH_20250528"
-# file_name  <- paste0("forest_structure_survey_v2[1]_", tablet, ".gpkg")
-# gpkg_path  <- paste(raw_path, tablet, file_name, sep = "/") 
 
 
 
@@ -130,8 +133,6 @@ cluster_lookup <- subplot_all |>
   dplyr::select(plot_id, source_folder, cluster_id, plot_key)# |>
 #  mutate(plot_key = paste(plot_id, source_folder, sep = "__"))
 
-# Save spatial subplot data with cluster IDs
-st_write(subplot_all, "outData/subplot_with_clusters_2025.gpkg", delete_layer = TRUE)
 
 
 
@@ -197,7 +198,8 @@ for (gpkg_path in gpkg_files) {
     con <- dbConnect(RSQLite::SQLite(), gpkg_path)
     tabs <- dbListTables(con)
     
-    non_spatial_tables <- c("mature_test", "regeneration_adv2", "regeneration_small")
+    non_spatial_tables <- c("mature_test", "regeneration_adv2", "regeneration_small", 
+                            "context")
     tables <- lapply(non_spatial_tables, function(tbl) {
       if (tbl %in% tabs) dbReadTable(con, tbl) else NULL
     })
@@ -222,12 +224,33 @@ for (gpkg_path in gpkg_files) {
     adv_h    <- standardize_columns(adv, "advanced", source_folder)
     small_h  <- standardize_columns(small, "small", source_folder)
     
-    combined <- bind_rows(mature_h, adv_h, small_h)
-   # combined$source_file <- basename(gpkg_path)
-    #combined$plot_key <- paste(combined$plot_id, combined$source_folder, sep = "_")
-    
-    combined2<- combined %>% 
+    # combine tree layeras: mature, adv, small
+    combined_veg <- bind_rows(mature_h, adv_h, small_h)
+  
+      
+    combined_veg<- combined_veg %>% 
       dplyr::select(-plot_id, -source_folder )
+    
+    
+    # add context information
+    context <- tables$context %>%
+      dplyr::select(-context_uuid, -plot_uuid, -time) %>%
+      dplyr::mutate(source_folder = source_folder,
+                    plot_key = paste(plot_id, source_folder, sep = "_"))
+    
+    # combine if teh information is split between two columns (eg is NA in one row but filled in another)
+    # keeps simply teh first value that is not NA - eg, if I have true/false, it keeeps TRUE (fiurst value)
+    context_dedup <- context %>%
+      group_by(plot_key) %>%
+      summarise(across(
+        .cols = -c(plot_id, source_folder),
+        .fns = ~ reduce(.x, coalesce),
+        .names = "{.col}"
+      )) %>%
+      ungroup()
+    
+    # Left join context info to vegetation
+    combined2 <- left_join(combined_veg, context_dedup, by = c("plot_key"))
     
     all_combined[[length(all_combined) + 1]] <- combined2
   }, silent = FALSE)
@@ -336,3 +359,11 @@ df_cluster %>%
   ggplot(aes(x = acc, y = stem_density, fill = acc)) + 
   geom_boxplot() + geom_jitter()
   
+
+# save files: -------------------
+fwrite(dat_subplot, 'outData/subplot_full.csv')
+fwrite(df_cluster, 'outData/df_cluster.csv')
+
+# Save spatial subplot data with cluster IDs
+st_write(subplot_all, "outData/subplot_with_clusters_2025.gpkg", delete_layer = TRUE)
+
