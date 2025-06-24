@@ -113,7 +113,7 @@ table(cz_wide2$n)
 
 # because: 1 = >16, 2 = 1, 3 = 2,...17 = 16
 
-cz_wide2 <- cz_wide2 %>%
+cz_wide3 <- cz_wide2 %>%
   mutate(
     n_corr = case_when(
       vegtype %in% c("small", "advanced") & n == 1 ~ 17,
@@ -131,8 +131,17 @@ cz_wide2 <- cz_wide2 %>%
          stem_density = n_corr*scaling_factor) 
 
 
-cz_wide2_cluster <- cz_wide2 %>% 
+cz_wide3 %>% 
+  dplyr::filter(ID == "13_15_118_1") %>% 
+  dplyr::select(ID,   vegtype,  species,n, n_corr  )
+
+
+cz_wide2_cluster <- cz_wide3 %>% 
   group_by(species, cluster) %>% 
   summarize(stem_density = sum(stem_density, na.rm = T))
+
+# update the script! take stem density values potentially from teh original data
+# rfom raw data - get fine vertical cllasses, damage Y/N...
+
 
 
