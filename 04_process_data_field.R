@@ -36,9 +36,7 @@ species <- fread(paste0(raw_path, "/look_up_tables/full_sp_list.csv"))
 
 # Test on single file -----------------------------------------------------
 # paths
-raw_path   <- "raw/outField"
-# tablet     <- "T2_AH_20250528"
-# file_name  <- paste0("forest_structure_survey_v2[1]_", tablet, ".gpkg")
+raw_path   <- "raw/collected_2025"
 gpkg_path  <- paste(raw_path, tablet, file_name, sep = "/") 
 
 
@@ -61,7 +59,7 @@ get_species_code <- function(df) {
 }
 
 
-# defien columsn to keep 
+# define columns to keep 
 cols_needed <- c(# "plot_id", 
   "height", "count", "dbh",
   "dmg_terminal", "dmg_terminal_photo",      
@@ -88,7 +86,7 @@ cols_needed <- c(# "plot_id",
 
 # List relevant .gpkg files
 gpkg_files <- list.files(
-  "raw/outField",
+  "raw/collected_2025",
   pattern = "forest_structure_survey_v2.*\\.gpkg$",
   full.names = TRUE,
   recursive = TRUE
@@ -193,7 +191,7 @@ safe_get_species_table <- function(df, vegtype, source_folder) {
 # run for loop to prcess the all gpkgs
 for (gpkg_path in gpkg_files) {
   message("Processing vegetation: ", gpkg_path)
-  #gpkg_path = "raw/outField/T1_Jitka_20250514/T1_forest_structure_survey_v2.gpkg"
+  #gpkg_path = "raw/collected_2025/T1_Jitka_20250514/T1_forest_structure_survey_v2.gpkg"
   try({
     con <- dbConnect(RSQLite::SQLite(), gpkg_path)
     tabs <- dbListTables(con)
@@ -232,9 +230,9 @@ for (gpkg_path in gpkg_files) {
       dplyr::select(-plot_id, -source_folder )
     
     
-    # add context information
+    # add context information per subplot (4m2)
     context <- tables$context %>%
-      dplyr::select(-context_uuid, -plot_uuid, -time) %>%
+      dplyr::select(-context_uuid, -plot_uuid) %>%
       dplyr::mutate(source_folder = source_folder,
                     plot_key = paste(plot_id, source_folder, sep = "_"))
     
@@ -258,6 +256,7 @@ for (gpkg_path in gpkg_files) {
 
 combined_vegetation_data <- bind_rows(all_combined)
 str(combined_vegetation_data)
+View(combined_vegetation_data)
 
 # add cluster indication from spatial data
 subplot_all_df <- subplot_all %>% 
@@ -279,13 +278,8 @@ combined_vegetation_data2 <- combined_vegetation_data2 %>%
 dat_subplot <- combined_vegetation_data2 %>% 
   group_by(cluster_id) %>% 
   mutate(n_plots = dplyr::n_distinct(plot_key)) %>% 
-  dplyr::filter(n_plots %in% c( 4:6)) #%>% 
+  dplyr::filter(n_plots %in% c( 4:8)) #%>% 
   
-
-
-head(dat_subplot)
-fwrite(dat_subplot, "outData/combined_vegetation_data.csv")
-
 
 # Summary: -----------------------------------------------------------------------
 # file contains aslo empty and erroneous plots
@@ -361,8 +355,8 @@ df_cluster %>%
   
 
 # save files: -------------------
-fwrite(dat_subplot, 'outData/subplot_full.csv')
-fwrite(df_cluster, 'outData/df_cluster.csv')
+fwrite(dat_subplot, 'outData/subplot_full_2025.csv')
+fwrite(df_cluster, 'outData/df_cluster_2025.csv')
 
 # Save spatial subplot data with cluster IDs
 st_write(subplot_all, "outData/subplot_with_clusters_2025.gpkg", delete_layer = TRUE)
