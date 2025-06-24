@@ -24,7 +24,14 @@ library(stringr)
 library(purrr)
 
 
-# save files: -------------------
+# Read files --------------------------------------
+
+# 2023 
+
+
+
+
+# 2025
 dat25_subplot <- fread('outData/subplot_full_2025.csv')
 dat25_cluster <- fread('outData/df_cluster_2025.csv')
 
