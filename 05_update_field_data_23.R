@@ -11,19 +11,24 @@ library(RSQLite)
 library(tidyverse)
 library(data.table)
 
-# read the cleaned df:
-
-dat <- fread("raw/collected_2023/cleaned_data_frame.csv")
-
-unique(dat$country)
-unique(dat$region)
-
-dat_cz <- dat %>% 
-  dplyr::filter(region %in% c(15, 26)) #%>% 
- # nrow()
-
-# 680 rows
-
+# # read the cleaned df:
+# 
+# dat <- fread("raw/collected_2023/cleaned_data_frame.csv")
+# 
+# unique(dat$country)
+# unique(dat$region)
+# 
+# dat_cz <- dat %>% 
+#   dplyr::filter(region %in% c(15, 26)) %>% 
+#   mutate(group = group +100) %>%  
+#   mutate(cluster_ID_corr =  paste(region, group, '_'))
+#  # nrow()
+# 
+# # 680 rows
+# length(unique(dat_cz$region))
+# length(unique(dat_cz$ID))
+# length(unique(dat_cz$cluster_ID_corr))
+# 
 
 # Paths to the uploaded GPKG files---------------------------------------------------
 gpkg1 <- "raw/collected_2023/cz_final_2023.gpkg"
@@ -72,7 +77,7 @@ reshape_layer <- function(df, prefix, traits = c("n", "hgt", "dmg", "dbh")) {
       names_to = "variable",
       values_to = "value"
     ) %>%
-    filter(!is.na(value)) %>%
+  #  filter(!is.na(value)) %>%
     extract(variable, into = c("vegtype", "species", "trait"),
             regex = paste0("^(", prefix, ")_([a-z0-9]+)_(", paste(traits, collapse = "|"), ")$")) %>%
     mutate(value = as.numeric(value))
