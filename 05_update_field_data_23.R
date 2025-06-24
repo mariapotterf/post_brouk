@@ -135,3 +135,4 @@ cz_wide2_cluster <- cz_wide2 %>%
   group_by(species, cluster) %>% 
   summarize(stem_density = sum(stem_density, na.rm = T))
 
+
