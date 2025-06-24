@@ -74,3 +74,64 @@ cz_wide <- cz_full %>%
 
 
 head(cz_wide)
+
+# recode the metrix: ---------------------------
+
+# helper to recode 1 = NA, 2 = 1 (TRUE), 3 = 0 (FALSE)
+recode_binary <- function(x) {
+  x <- as.numeric(x)
+  case_when(
+    x == 1 ~ NA_real_,
+    x == 2 ~ 1,
+    x == 3 ~ 0,
+    TRUE ~ NA_real_
+  )
+}
+
+
+cz_wide2 <- cz_wide %>%
+ # dplyr::filter(dist == TRUE) %>%
+  mutate(
+    planting      = recode_binary(planting),
+    anti_browsing = recode_binary(anti_browsing),
+    windthrow     = recode_binary(windthrow),
+    deadwood      = recode_binary(deadwood),
+    logging_trail = ifelse(logging_trail == 1, 1, 0),
+    clear         = ifelse(clear == 1, 1, 0),
+    grndwrk       = ifelse(grndwrk == 1, 1, 0)
+  ) %>%
+  mutate(
+    manag_intensity      = logging_trail + clear + grndwrk + planting + anti_browsing,
+    salvage_intensity    = logging_trail + clear + grndwrk,
+    protection_intensity = planting + anti_browsing
+  )
+
+# check how counts are looking?
+table(cz_wide2$n)
+
+# need to change categorie!::
+
+# because: 1 = >16, 2 = 1, 3 = 2,...17 = 16
+
+cz_wide2 <- cz_wide2 %>%
+  mutate(
+    n_corr = case_when(
+      vegtype %in% c("small", "advanced") & n == 1 ~ 17,
+      vegtype %in% c("small", "advanced")         ~ n-1,
+     # vegtype == "mature" & n == 5                ~ ">4",
+     # vegtype == "mature"                         ~ as.character(n),
+      TRUE                                        ~ NA_integer_
+    )
+  ) %>% 
+  group_by(cluster) %>%
+  mutate(n_plots = n_distinct(ID)) %>%
+  ungroup() %>% 
+  mutate(area = n_plots *4,
+         scaling_factor = 10000/area,
+         stem_density = n_corr*scaling_factor) 
+
+
+cz_wide2_cluster <- cz_wide2 %>% 
+  group_by(species, cluster) %>% 
+  summarize(stem_density = sum(stem_density, na.rm = T))
+
