@@ -89,7 +89,7 @@ recode_binary <- function(x) {
 }
 
 
-cz_wide2 <- cz_wide %>%
+cz_wide_recode <- cz_wide %>%
  # dplyr::filter(dist == TRUE) %>%
   mutate(
     planting      = recode_binary(planting),
@@ -107,15 +107,15 @@ cz_wide2 <- cz_wide %>%
   )
 
 # check how counts are looking?
-table(cz_wide2$n)
+table(cz_wide_recode$n)
 
 # need to change categorie!::
 
 # because: 1 = >16, 2 = 1, 3 = 2,...17 = 16
 
-cz_wide3 <- cz_wide2 %>%
+cz_wide_corrected <- cz_wide_recode %>%
   mutate(
-    n_corr = case_when(
+    n = case_when(
       vegtype %in% c("small", "advanced") & n == 1 ~ 17,
       vegtype %in% c("small", "advanced")         ~ n-1,
      # vegtype == "mature" & n == 5                ~ ">4",
@@ -128,22 +128,26 @@ cz_wide3 <- cz_wide2 %>%
   ungroup() %>% 
   mutate(area = n_plots *4,
          scaling_factor = 10000/area,
-         stem_density = n_corr*scaling_factor) 
+         stem_density = n*scaling_factor) %>% 
+  dplyr::select(-fid, -group, -point, -region)
 
 
-cz_wide3 %>% 
+cz_wide_corrected %>% 
   filter(cluster == "15_102") %>% 
-  dplyr::filter(ID == "13_15_102_6") %>% 
+  #dplyr::filter(ID == "13_15_102_6") %>% 
 #  dplyr::select(ID,   vegtype,  species,n, n_corr  ) %>% 
   View()
 
-
-cz_wide2_cluster <- cz_wide3 %>% 
+# summarize on cluster level
+cz_wide_corrected_cluster <- cz_wide_corrected %>% 
   group_by(species, cluster) %>% 
-  summarize(stem_density = sum(stem_density, na.rm = T))
+  summarize(sum_stem_density = sum(stem_density, na.rm = T))
 
 # update the script! take stem density values potentially from teh original data
 # rfom raw data - get fine vertical cllasses, damage Y/N...
 
-
+cz_wide_corrected_cluster %>% 
+  dplyr::filter(cluster == "26_159") #%>%
+  #dplyr::filter(stem_density >0) %>% 
+  dplyr::select(species, n, n_corr, n_plots, area, scaling_factor, sum_stem_density)
 
