@@ -141,7 +141,7 @@ subplot_all <- do.call(rbind, subplot_all)
 subplot_all <- st_transform(subplot_all, 3035)
 subplot_all$plot_key <- paste(subplot_all$plot_id, subplot_all$source_folder, sep = "_")
 
-
+length(unique(subplot_all$plot_key))
 # test the plotting
 ggplot(subplot_all) +
   geom_sf() +
@@ -157,7 +157,9 @@ subplot_all$cluster_id <- ifelse(db$cluster == 0, NA, db$cluster)
 # For merging later
 cluster_lookup <- subplot_all |> 
   st_drop_geometry() |> 
-  dplyr::select(plot_id, source_folder, cluster_id, plot_key)# |>
+  dplyr::select(plot_id, source_folder, cluster_id, plot_key) |>
+  dplyr::distinct()  # how to filter dusplicated values????
+# need to figure it out!!
 #  mutate(plot_key = paste(plot_id, source_folder, sep = "__"))
 
 
@@ -363,7 +365,7 @@ n_samples_stem
 ## on plot level: ------------------------------------------------------
 
 # 
-# table(combined_vegetation_data2$cause_label)
+table(combined_vegetation_data2$cause_label)
 # 
 # ine bioticke  mechanizace     mysovite         zver 
 # 102           61            4           22 
@@ -390,3 +392,4 @@ fwrite(df_cluster, 'outData/df_cluster_2025.csv')
 # Save spatial subplot data with cluster IDs
 st_write(subplot_all, "outData/subplot_with_clusters_2025.gpkg", delete_layer = TRUE)
 
+st_write(subplot_all, "outData/google_my_map/subplot_with_clusters_2025.kml", driver = "KML", delete_dsn = TRUE)
