@@ -132,8 +132,10 @@ cz_wide3 <- cz_wide2 %>%
 
 
 cz_wide3 %>% 
-  dplyr::filter(ID == "13_15_118_1") %>% 
-  dplyr::select(ID,   vegtype,  species,n, n_corr  )
+  filter(cluster == "15_102") %>% 
+  dplyr::filter(ID == "13_15_102_6") %>% 
+#  dplyr::select(ID,   vegtype,  species,n, n_corr  ) %>% 
+  View()
 
 
 cz_wide2_cluster <- cz_wide3 %>% 
