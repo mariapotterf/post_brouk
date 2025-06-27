@@ -109,7 +109,7 @@ cz_wide_recode <- cz_wide %>%
 # check how counts are looking?
 table(cz_wide_recode$n)
 
-# need to change categorie!::
+# Corrent counts need to change categorie!::
 
 # because: 1 = >16, 2 = 1, 3 = 2,...17 = 16
 
@@ -143,11 +143,9 @@ cz_wide_corrected_cluster <- cz_wide_corrected %>%
   group_by(species, cluster) %>% 
   summarize(sum_stem_density = sum(stem_density, na.rm = T))
 
-# update the script! take stem density values potentially from teh original data
-# rfom raw data - get fine vertical cllasses, damage Y/N...
 
-cz_wide_corrected_cluster %>% 
-  dplyr::filter(cluster == "26_159") #%>%
-  #dplyr::filter(stem_density >0) %>% 
-  dplyr::select(species, n, n_corr, n_plots, area, scaling_factor, sum_stem_density)
 
+
+# save files: -------------------
+fwrite(cz_wide_corrected, 'outData/subplot_full_2023.csv')
+fwrite(cz_wide_corrected_cluster, 'outData/df_cluster_2023.csv')
