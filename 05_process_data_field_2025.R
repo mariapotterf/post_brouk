@@ -152,12 +152,12 @@ ggplot(subplot_all) +
 # ---- Cluster globally ----
 coords <- st_coordinates(subplot_all)
 db <- dbscan::dbscan(coords, eps = 30, minPts = 2)
-subplot_all$cluster_id <- ifelse(db$cluster == 0, NA, db$cluster)
+subplot_all$cluster <- ifelse(db$cluster == 0, NA, db$cluster)
 
 # For merging later
 cluster_lookup <- subplot_all |> 
   st_drop_geometry() |> 
-  dplyr::select(plot_id, source_folder, cluster_id, plot_key) |>
+  dplyr::select(plot_id, source_folder, cluster, plot_key) |>
   dplyr::distinct()  # how to filter dusplicated values????
 # need to figure it out!!
 #  mutate(plot_key = paste(plot_id, source_folder, sep = "__"))
@@ -307,14 +307,14 @@ combined_vegetation_data2 <- combined_vegetation_data2 %>%
   mutate(count = as.integer(count))
 
 dat_subplot <- combined_vegetation_data2 %>% 
-  group_by(cluster_id) %>% 
+  group_by(cluster) %>% 
   mutate(n_plots = dplyr::n_distinct(plot_key)) %>% 
   dplyr::filter(n_plots %in% c( 4:8)) #%>% 
   
 
 # Summary: -----------------------------------------------------------------------
 # file contains aslo empty and erroneous plots
-# calculate how many plot_key I have per cluster_id? - keep only oones with proper counts
+# calculate how many plot_key I have per cluster? - keep only oones with proper counts
 # Calculate: stem density 
 # dominant species
 # vertical categories
@@ -323,7 +323,7 @@ dat_subplot <- combined_vegetation_data2 %>%
 
 
 ## how many clusters? ----------------
-n_clusters <- length(unique(dat_subplot$cluster_id))  # 35-38
+n_clusters <- length(unique(dat_subplot$cluster))  # 35-38
 n_samples_terminal <- dat_subplot %>%
   dplyr::filter(!is.na(dmg_term_sample)) %>%
   dplyr::filter(str_starts(dmg_term_sample, "T")) %>%
@@ -373,7 +373,7 @@ table(combined_vegetation_data2$cause_label)
 ## on cluster level ----------------------------------------------------
 
 df_cluster <- dat_subplot %>% 
-  group_by(cluster_id, acc) %>% 
+  group_by(cluster, acc) %>% 
   mutate(area = n_plots *4,
          scaling_factor = 10000/area,
          stem_density = count*scaling_factor) %>%   # study site area
