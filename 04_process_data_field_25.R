@@ -40,29 +40,30 @@ raw_path   <- "raw/collected_2025"
 # look up tables
 species <- fread(paste0(raw_path, "/look_up_tables/full_sp_list.csv"))
 
-# test counts: compare counts for czechia: if my new data and old data show the same numbers
-# new one
-new_counts  <- fread("raw/collected_2023/cleaned_data_frame_2023.csv")
-old_counts  <- fread("raw/collected_2023/sub_plots_counts_DBH_2023.csv")
-
-# filter only Czechia:
-#new_counts_cz <- 
-  new_counts %>% 
-  dplyr::filter(country == 13) %>% 
-  mutate(group = group + 100) %>% 
-  mutate(ID = paste(country, region, group, point, sep = "_"),
-         cluster = paste(region, group, sep = "_")) %>% 
-    dplyr::filter(r_piab_n == 17)#
-  #filter(ID_corr == "13_15_102_4")
-
-#old_counts_cz <- 
-  old_counts %>% 
-  dplyr::filter(country == "CZ") %>% 
- # dplyr::filter(count > 0) %>% 
-    dplyr::filter(cluster == "15_102") %>% 
-    arrange(-count)
-#  filter(ID == "13_15_102_4")
-
+# # test counts: compare counts for czechia: if my new data and old data show the same numbers
+# # new one
+# new_counts  <- fread("raw/collected_2023/cleaned_data_frame_2023.csv")
+# old_counts  <- fread("raw/collected_2023/sub_plots_counts_DBH_2023.csv")
+# 
+# # filter only Czechia:
+# #new_counts_cz <- 
+#   new_counts %>% 
+#   dplyr::filter(country == 13) %>% 
+#   mutate(group = group + 100) %>% 
+#   mutate(ID = paste(country, region, group, point, sep = "_"),
+#          cluster = paste(region, group, sep = "_")) %>% 
+#    # dplyr::filter(r_piab_n == 17)#
+#     dplyr::filter(cluster == "15_102") %>%
+#     View()
+# 
+# #old_counts_cz <- 
+#   old_counts %>% 
+#   dplyr::filter(country == "CZ") %>% 
+#   dplyr::filter(count > 0) #%>% 
+#     dplyr::filter(cluster == "15_102") %>% 
+#     arrange(-count)
+# #  filter(ID == "13_15_102_4")
+# 
 
 
 
