@@ -40,44 +40,87 @@ dat23_5514 <- dat23_5514 %>%
 
 #st_geometry(dat23_5514) <- "geom"
 
+# Start fresh from dat23_5514 — raw points with correct geometry
 dat23_clusters <- dat23_5514 %>%
   group_by(cluster) %>%
-  summarise(
-    year = first(year),
-    geometry = st_centroid(st_union(st_geometry(.)))
-  ) %>%
-  st_as_sf() %>%
-  ungroup()
+  summarise(year = first(year), geometry = st_centroid(st_union(st_geometry(.)))) %>%
+  ungroup() %>%
+  st_as_sf()
 
-
-# Convert to terra vect
+# Then convert to terra vector
 cluster_vect <- vect(dat23_clusters)
 
+
 # Create buffer (150m) and add ID
-buffer_150m <- buffer(cluster_vect, width = 150)
-buffer_150m$ID <- seq_len(nrow(buffer_150m))  # consistent ID
+buffer_60 <- buffer(cluster_vect, width = 60)
+buffer_60$ID <- seq_len(nrow(buffer_60))  # consistent ID
 
 # ───────────────────────────────────────────────────────────────
 # 
+r <- chm_rasters[[1]]
+plot(r)
+points(dat23_clusters, col = "red", pch = 3)
+
+# Convert cluster points to terra and buffer
+v <- vect(dat23_clusters)
+buf <- terra::buffer(v[1, ], width = 150)
+
+# Check overlap
+plot(r)
+plot(buf, add = TRUE, border = "red")
+
+
+
+# test run: buffer 26_111 overlaps with drone uav6
+r <- chm_rasters$CHM_uav6
+buf <- buffer_60[buffer_60$cluster == "26_111", ]
+
+# Extract values
+vals <- terra::extract(r, dat23_5514, ID = TRUE)
+
+
+plot(r)
+points(buf, col = "red")
+points(dat23_5514, col = 'red')
+points(dat23_clusters, col = 'green')
+
+
+
+
+
+plot(chm_rasters$CHM_uav6)
+plot(buffer_60, add = T)
+plot(dat23_clusters)
+
+
 # Function to extract CHM data for buffers
 extract_chm_for_image <- function(image, image_name, buffer_vect) {
+  # Get intersecting buffer indices
   intersecting <- relate(buffer_vect, image, relation = "intersects")[, 1]
   if (length(intersecting) == 0) return(NULL)
   
   buffer_subset <- buffer_vect[intersecting, ]
+  
+  # Extract values
   vals <- terra::extract(image, buffer_subset, ID = FALSE)
   
-  if (nrow(vals) == 0) return(NULL)  # <- SKIP if no data returned
+  if (nrow(vals) == 0 || all(is.na(vals[[1]]))) {
+    message("No valid data in ", image_name, " for overlapping buffers.")
+    return(NULL)
+  }
   
   vals$ID <- buffer_subset$ID
   
+  # Join metadata
   lookup <- as.data.frame(buffer_subset) %>%
     dplyr::select(ID, cluster, year)
   
   vals <- left_join(vals, lookup, by = "ID")
   vals$image <- image_name
+  
   return(vals)
 }
+
 
 
 # Run extraction across all CHM images
