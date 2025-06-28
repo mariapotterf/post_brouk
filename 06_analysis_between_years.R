@@ -7,13 +7,15 @@
 # read data: spatial and vegetation from 2023
 
 # identify the overlapping clusters -> make common_clust_ID
-# changes in stem density: oevrall, between species
-# get sites history - from tree density cover, 
+# - changes in stem density: oevrall, between species
+# - get sites history - from tree density cover, dominant leaf type
 # compare stem density, dominant tree species, species diversity
 # vertical and horizontal structure among 2023-2025
 
-# identify damaged terminal: from raw data czechia 20203
-# identify types of damages: 2025
+# identify damaged terminal: from raw data czechia 20203 - export gpkg
+# identify types of damages: 2025 - export gpkg
+# Drones: 
+# - get vertical strucure
 
 gc()
 
@@ -58,7 +60,7 @@ st_geometry(dat23_sf) <- "geom"
 st_geometry(dat25_sf) <- "geom"
 
 
-# Summarize to cluster centroids
+# Summarize to cluster centroids -. get proximity only for centroids
 centroids_2023 <- dat23_sf %>%
   group_by(cluster) %>%
   summarise(do_union = TRUE) %>%
@@ -88,7 +90,7 @@ overlaps
 st_write(overlaps, "outData/overlaps.gpkg", delete_layer = TRUE)
 
 
-# get pre-disturbance forest characteristics ----------------
+# Get pre-disturbance forest characteristics ----------------
 # Step 2: Get target CRS from one of the rasters
 target_crs <- crs(tree_cover_dens15)
 
@@ -102,19 +104,19 @@ dat25_sf$year <- 2025
 
 # Calculate mean coords per cluster and keep one point per cluster
 # Add x/y coordinates as new columns
-dat23_sf <- dat23_sf %>%
+dat23_sf_mean <- dat23_sf %>%
   mutate(x = st_coordinates(.)[, 1],
          y = st_coordinates(.)[, 2])
 
 
-dat25_sf <- dat25_sf %>%
+dat25_sf_mean <- dat25_sf %>%
   mutate(x = st_coordinates(.)[, 1],
          y = st_coordinates(.)[, 2])
 
 
 
-# Then summarize by cluster
-dat23_clusters <- dat23_sf %>%
+# Unify number of columns between two years
+dat23_clusters <- dat23_sf_mean %>%
   group_by(cluster) %>%
   summarise(
     x = mean(x),
@@ -123,7 +125,7 @@ dat23_clusters <- dat23_sf %>%
   ) %>%
   st_as_sf(coords = c("x", "y"), crs = target_crs)
 
-dat25_clusters <- dat25_sf %>%
+dat25_clusters <- dat25_sf_mean %>%
   group_by(cluster) %>%
   summarise(
     x = mean(x),
@@ -141,13 +143,14 @@ combined_clusters <- bind_rows(dat23_clusters, dat25_clusters)
 # Convert to terra vect
 cluster_vect <- vect(combined_clusters)
 
+# Step 3: Buffer 150m around points
+buffer_150m <- buffer(cluster_vect, width = 150)
+
 # Step 1: Make lookup table
 buffer_lookup <- as.data.frame(buffer_150m) %>%
   mutate(ID = row_number()) %>%
   dplyr::select(ID, cluster, year)
 
-# Step 3: Buffer 150m around points
-buffer_150m <- buffer(cluster_vect, width = 150)
 
 # Step 4: Extract raster values for both rasters
 vals_cover <- terra::extract(tree_cover_dens15, buffer_150m, ID = TRUE)
@@ -158,7 +161,7 @@ vals_cover <- left_join(vals_cover, buffer_lookup, by = "ID")
 vals_leaf  <- left_join(vals_leaf,  buffer_lookup, by = "ID")
 
 # Calculate coniferous share per cluster buffer !!! need to finalize! I think i have only one value per 
-# clluster!
+# cluster! aslo, get some sort of aggregation/dispersion of coniferous forests
 leaf_stats <- vals_leaf %>%
   dplyr::filter(!is.na(DLT_2015_020m_CR)) %>%
   group_by(cluster) %>%
@@ -168,7 +171,7 @@ leaf_stats <- vals_leaf %>%
   )
 
 
-# Step 5: Summarize statistics for each point ID
+# Get summarize statistics for continuous distribution: density for each point ID
 summary_stats <- function(df, value_col) {
   df %>%
     group_by(cluster) %>%
@@ -215,3 +218,6 @@ ggplot(cv_long, aes(x = variable, y = cv)) +
 
 hist(combined_stats$median_cover)
 hist(combined_stats$median_leaf)
+
+
+
