@@ -3,6 +3,8 @@
 # extract height information
 # maybe some additional classification?
 
+gc()
+
 library(terra)
 library(dplyr)
 library(purrr)
@@ -42,10 +44,15 @@ dat23_5514 <- dat23_5514 %>%
 
 # Start fresh from dat23_5514 — raw points with correct geometry
 dat23_clusters <- dat23_5514 %>%
+  as.data.frame() %>% 
   group_by(cluster) %>%
-  summarise(year = first(year), geometry = st_centroid(st_union(st_geometry(.)))) %>%
-  ungroup() %>%
-  st_as_sf()
+  summarise(
+    x = mean(x),
+    y = mean(y),
+    year = first(year),
+    .groups = "drop"
+  ) %>%
+  st_as_sf(coords = c("x", "y"), crs = st_crs(dat23_5514))  # Use correct CRS
 
 # Then convert to terra vector
 cluster_vect <- vect(dat23_clusters)
@@ -55,7 +62,7 @@ cluster_vect <- vect(dat23_clusters)
 buffer_60 <- buffer(cluster_vect, width = 60)
 buffer_60$ID <- seq_len(nrow(buffer_60))  # consistent ID
 
-# ───────────────────────────────────────────────────────────────
+#--------------------------------------------------------
 # 
 r <- chm_rasters[[1]]
 plot(r)
@@ -76,7 +83,7 @@ r <- chm_rasters$CHM_uav6
 buf <- buffer_60[buffer_60$cluster == "26_111", ]
 
 # Extract values
-vals <- terra::extract(r, dat23_5514, ID = TRUE)
+vals <- terra::extract(r, buf, ID = TRUE)
 
 
 plot(r)
