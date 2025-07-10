@@ -289,7 +289,16 @@ combined_vegetation_data2 <- combined_vegetation_data %>%
   full_join(subplot_all_df)
 
 # add damage cause infomration
-combined_vegetation_data2 <- combined_vegetation_data2 %>%
+combined_vegetation_data_recode <- 
+  combined_vegetation_data2 %>%
+  mutate(
+    dmg_terminal = recode(
+      dmg_terminal,
+      "1" = "zivy",
+      "2" = "chybajuci",
+      "3" = "odumrety",
+    )
+  ) %>% 
   mutate(
     dmg_type = recode(
       dmg_type,
@@ -300,7 +309,7 @@ combined_vegetation_data2 <- combined_vegetation_data2 %>%
     )
   ) %>% 
   mutate(across(
-    .cols = contains("_cause"),
+    .cols = contains("_cause"),  # for cause of damage
     .fns = ~ dplyr::recode(
       .,
       `1` = "zver",
@@ -310,14 +319,86 @@ combined_vegetation_data2 <- combined_vegetation_data2 %>%
       `5` = "nejasna"
     )
   )) %>% 
+    mutate(
+      dmg_stem = recode(
+        dmg_stem,
+        "1" = "cerstve",
+        "2" = "stare"
+      )
+    ) %>% 
+  mutate(
+    dmg_stem_horizont = recode(
+      dmg_stem_horizont,
+      "1" = "0-20",
+      "2" = "20-40",
+      "3" = "40-60",
+      "4" = "60-80",
+      "5" = "80-100"
+    )
+  ) %>% 
+  mutate(
+    dmg_stem_vertical = recode(
+      dmg_stem_vertical,
+      "1" = "0-10",
+      "2" = "10-20",
+      "3" = "20-30",
+      "4" = ">30"
+    )
+  ) %>% 
+  mutate(
+    dmg_root_stem_horizon = recode(
+      dmg_root_stem_horizon,
+      "1" = "0-20",
+      "2" = "20-40",
+      "3" = "40-60",
+      "4" = "60-80",
+      "5" = "80-100"
+    )
+  ) %>% 
+  mutate(
+    dmg_root_stem_vert = recode(
+      dmg_root_stem_vert,
+      "1" = "0-5",
+      "2" = "5-10",
+      "3" = ">10"
+    )
+  ) %>%
+    mutate(
+      dmg_root_stem = recode(
+        dmg_root_stem,
+        "1" = "cerstve",
+        "2" = "stare"
+      )
+    ) %>% 
+    mutate(
+      dmg_foliage = recode(
+        dmg_foliage,
+        "1" = "0-20",
+        "2" = "20-40",
+        "3" = "40-60",
+        "4" = "60-80",
+        "5" = "80-100"
+      )
+    ) %>% 
+    mutate(
+      dmg_foliage_leaf_int = recode(
+        dmg_foliage_leaf_int,
+        "1" = "0-20",
+        "2" = "20-40",
+        "3" = "40-60",
+        "4" = "60-80",
+        "5" = "80-100"
+      )
+    ) %>% 
   mutate(count = as.integer(count))
 
-dat_subplot <- combined_vegetation_data2 %>% 
+dat_subplot <- combined_vegetation_data_recode %>% 
   group_by(cluster) %>% 
   mutate(n_plots = dplyr::n_distinct(plot_key)) %>% 
   dplyr::filter(n_plots %in% c( 4:8)) #%>% 
   
-# create only a database to chcek for poltID, damage type, sample and photo: damage indication
+
+# create only a database to chcek for poltID, damage type, sample and photo: damage indication -----------------
 dat_dmg <-  dat_subplot %>%
   dplyr::select(
     species_id,
@@ -330,9 +411,48 @@ dat_dmg <-  dat_subplot %>%
     ends_with("_sample"),
   )
 
+# convert from wide format to long format: keep record of all samples and photos 
+# filter only record that have sample, and also a photo (many have instead of sample name 'mraz')
+dat_dmg_filtered <- dat_dmg %>%
+  dplyr::filter(
+    if_any(ends_with("_sample"), ~ !is.na(.)) |
+      if_any(ends_with("_photo"), ~ !is.na(.) & . != "")
+  )
+
+dat_dmg_filtered_min <- dat_dmg_filtered %>%
+  dplyr::select(
+    acc, plot_key, cluster,VegType,
+    matches("(_sample|_photo)$")
+  )
 
 
+# Define a mapping of sample-photo pairs: which sample belong to wchih photo (as I have several categorises for photos)
+sample_photo_map <- tibble::tribble(
+  ~part,         ~sample_col,              ~photo_col,                  ~photo_type,
+  "terminal",    "dmg_term_sample",        "dmg_terminal_photo",        NA,
+  "stem",        "dmg_stem_sample",        "dmg_stem_horizont_photo",   "horizontal",
+  "stem",        "dmg_stem_sample",        "dmg_stem_vert_photo",       "vertical",
+  "foliage",     "dmg_foliage_sample",     "dmg_foliage_detail_photo",  "detail",
+  "foliage",     "dmg_foliage_sample",     "dmg_foliage_overall_photo", "overall",
+  "root_stem",   "dmg_root_stem_sample",   "dmg_root_stem_horiz_photo", "horizontal",
+  "root_stem",   "dmg_root_stem_sample",   "dmg_root_stem_vert_photo",  "vertical"
+)
 
+# Pivot to long based on the mapping
+dat_long <- sample_photo_map %>%
+  pmap_dfr(function(part, sample_col, photo_col, photo_type) {
+    dat_dmg_filtered_min %>%
+      select(plot_key, acc, cluster, 
+             sample = all_of(sample_col),
+             photo = all_of(photo_col)) %>%
+      mutate(part = part,
+             photo_type = photo_type)
+  }) %>%
+  filter(!is.na(sample) & sample != "")
+
+# filter only proper samples, not descripitons (Okus, mraz)
+dat_long_T <- dat_long %>%
+  filter(str_starts(sample, "T"))
 
 # Summary: -----------------------------------------------------------------------
 # file contains aslo empty and erroneous plots
