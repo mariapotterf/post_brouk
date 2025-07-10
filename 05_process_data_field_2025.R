@@ -457,7 +457,7 @@ dat_long_T <- dat_long %>%
 
 
 # export final table as csv
-fwrite(dat_long_T, 'outTable/samples.csv')
+fwrite(dat_long_T, 'outTable/samples_list.csv')
 
 # Summary: -----------------------------------------------------------------------
 # file contains aslo empty and erroneous plots
