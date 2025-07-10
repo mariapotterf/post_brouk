@@ -19,6 +19,8 @@
 # damage characteristics
 # context information
 
+# plot_key = surrender for plot_id - note, that they can be duplicated!!! need to figure this out
+
 gc()
 
 library(terra)
@@ -65,11 +67,6 @@ species <- fread(paste0(raw_path, "/look_up_tables/full_sp_list.csv"))
 # #  filter(ID == "13_15_102_4")
 # 
 
-
-
-
-
-
 dmg_cause_lookup <- tibble::tibble(
   dmg_cause = 1:5,
   cause_label = c(
@@ -80,6 +77,8 @@ dmg_cause_lookup <- tibble::tibble(
     "nejasna"
   )
 )
+
+
 
 # replace numberic species_id by acronyms
 get_species_code <- function(df) {
@@ -311,6 +310,21 @@ dat_subplot <- combined_vegetation_data2 %>%
   mutate(n_plots = dplyr::n_distinct(plot_key)) %>% 
   dplyr::filter(n_plots %in% c( 4:8)) #%>% 
   
+# create only a database to chcek for poltID, damage type, sample and photo: damage indication
+dat_dmg <-  dat_subplot %>%
+  dplyr::select(
+    species_id,
+    acc,
+    VegType,
+    starts_with("dmg_"),
+    plot_key,
+    comments,
+    cluster
+  )
+
+
+
+
 
 # Summary: -----------------------------------------------------------------------
 # file contains aslo empty and erroneous plots
