@@ -5,7 +5,7 @@
 # what stem density?
 # heights?
 # damages?
-# make a cluster based on 
+# make a cluster based on  proximity
 
 # read gpkg - has location as point, and additional vegetation classes,
 # damages, context
@@ -21,6 +21,7 @@
 
 # plot_key = surrender for plot_id - note, that they can be duplicated!!! need to figure this out
 
+# read throught photos - copy them all iin a single 'damage_photo' folder
 gc()
 
 library(terra)
@@ -66,18 +67,6 @@ species <- fread(paste0(raw_path, "/look_up_tables/full_sp_list.csv"))
 #     arrange(-count)
 # #  filter(ID == "13_15_102_4")
 # 
-
-dmg_cause_lookup <- tibble::tibble(
-  dmg_cause = 1:5,
-  cause_label = c(
-    "zver",
-    "mechanizace",
-    "mysovite",
-    "ine bioticke",
-    "nejasna"
-  )
-)
-
 
 
 # replace numberic species_id by acronyms
@@ -301,8 +290,26 @@ combined_vegetation_data2 <- combined_vegetation_data %>%
 
 # add damage cause infomration
 combined_vegetation_data2 <- combined_vegetation_data2 %>%
-  dplyr::mutate(dmg_type = as.integer(dmg_type)) %>%  # ensure matching type
-  dplyr::left_join(dmg_cause_lookup, by = c("dmg_type" = "dmg_cause")) %>% 
+  mutate(
+    dmg_type = recode(
+      dmg_type,
+      "1" = "terminal",
+      "2" = "kmen",
+      "3" = "baze_kmene",
+      "4" = "olistení"
+    )
+  ) %>% 
+  mutate(across(
+    .cols = contains("_cause"),
+    .fns = ~ dplyr::recode(
+      .,
+      `1` = "zver",
+      `2` = "mechanizace",
+      `3` = "mysovite",
+      `4` = "ine bioticke",
+      `5` = "nejasna"
+    )
+  )) %>% 
   mutate(count = as.integer(count))
 
 dat_subplot <- combined_vegetation_data2 %>% 
@@ -319,7 +326,8 @@ dat_dmg <-  dat_subplot %>%
     starts_with("dmg_"),
     plot_key,
     comments,
-    cluster
+    cluster,
+    ends_with("_sample"),
   )
 
 
