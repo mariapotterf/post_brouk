@@ -448,11 +448,16 @@ dat_long <- sample_photo_map %>%
       mutate(part = part,
              photo_type = photo_type)
   }) %>%
-  filter(!is.na(sample) & sample != "")
+  dplyr::filter(!is.na(sample) & sample != "")
 
 # filter only proper samples, not descripitons (Okus, mraz)
 dat_long_T <- dat_long %>%
-  filter(str_starts(sample, "T"))
+  dplyr::filter(str_starts(sample, "T")) %>% 
+  mutate(photo = str_remove(photo, "^DCIM/")) # remove DCIM/ from photo name
+
+
+# export final table as csv
+fwrite(dat_long_T, 'outTable/samples.csv')
 
 # Summary: -----------------------------------------------------------------------
 # file contains aslo empty and erroneous plots
