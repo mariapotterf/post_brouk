@@ -28,6 +28,7 @@ library(data.table)
 library(dplyr)
 library(stringr)
 library(purrr)
+library(tidyr)
 
 
 # Read files --------------------------------------
@@ -49,8 +50,8 @@ dat25_sf <- st_read("outData/subplot_with_clusters_2025.gpkg")
 
 
 # get forest pre-disturbance characteristics: tree density, dominant leaft type
-tree_cover_dens15    <- rast("raw/forest_heights_composition/TCD_2015_020m_CR.tif")
-dominant_leaf_type15 <- rast("raw/forest_heights_composition/DLT_2015_020m_CR.tif")
+tree_cover_dens15    <- rast("raw/forest_heights_composition/TCD_2015_020m_CR.tif") # tree cover density
+dominant_leaf_type15 <- rast("raw/forest_heights_composition/DLT_2015_020m_CR.tif") # dominant leaf type
 
 # tree cover density: 0-100%
 # leaf type: 1 - deciduous, 2 - coniferous 
@@ -143,32 +144,56 @@ combined_clusters <- bind_rows(dat23_clusters, dat25_clusters)
 # Convert to terra vect
 cluster_vect <- vect(combined_clusters)
 
-# Step 3: Buffer 150m around points
-buffer_150m <- buffer(cluster_vect, width = 150)
+# Step 3: Buffer XXm around points
+my_buffer <- buffer(cluster_vect, width = 60)
 
 # Step 1: Make lookup table
-buffer_lookup <- as.data.frame(buffer_150m) %>%
+buffer_lookup <- as.data.frame(buffer_60m) %>%
   mutate(ID = row_number()) %>%
   dplyr::select(ID, cluster, year)
 
 
 # Step 4: Extract raster values for both rasters
-vals_cover <- terra::extract(tree_cover_dens15, buffer_150m, ID = TRUE)
-vals_leaf  <- terra::extract(dominant_leaf_type15, buffer_150m, ID = TRUE)
+vals_cover <- terra::extract(tree_cover_dens15, my_buffer, ID = TRUE)
+vals_leaf  <- terra::extract(dominant_leaf_type15, my_buffer, ID = TRUE)
 
 # Step 2: Join to extracted values
 vals_cover <- left_join(vals_cover, buffer_lookup, by = "ID")
 vals_leaf  <- left_join(vals_leaf,  buffer_lookup, by = "ID")
 
+
+# Recode leaf type to factor for clarity
+vals_leaf_recode <- vals_leaf %>%
+  mutate(leaf_type = factor(DLT_2015_020m_CR,
+                            levels = c(1, 2),
+                            labels = c("deciduous", "coniferous")))
+
+# Compute Shannon diversity index per buffer
+leaf_diversity <- vals_leaf_recode %>%
+  dplyr::filter(!is.na(DLT_2015_020m_CR)) %>%
+  group_by(cluster, leaf_type) %>%
+  tally() %>%
+  group_by(cluster) %>%
+  mutate(p = n / sum(n)) %>%
+  summarise(shannon = -sum(p * log(p)), .groups = "drop")
+
+hist(leaf_diversity$shannon)
+
+
 # Calculate coniferous share per cluster buffer !!! need to finalize! I think i have only one value per 
 # cluster! aslo, get some sort of aggregation/dispersion of coniferous forests
 leaf_stats <- vals_leaf %>%
-  dplyr::filter(!is.na(DLT_2015_020m_CR)) %>%
   group_by(cluster) %>%
   summarise(
-    coniferous_share = mean(DLT_2015_020m_CR == 2),
+    total_cells = n(),  # all cells, including NA
+    n_coniferous = sum(DLT_2015_020m_CR == 2, na.rm = TRUE),
+    n_deciduous  = sum(DLT_2015_020m_CR == 1, na.rm = TRUE),
+    forest_cells = n_coniferous + n_deciduous,
+    share_coniferous = ifelse(forest_cells > 0, n_coniferous / forest_cells, NA_real_),
     .groups = "drop"
-  )
+  ) %>% 
+  left_join(leaf_diversity)
+
 
 
 # Get summarize statistics for continuous distribution: density for each point ID
@@ -194,8 +219,8 @@ cover_stats_renamed <- cover_stats %>%
 combined_stats <- full_join(cover_stats_renamed, leaf_stats, by = c("cluster"))
 
 combined_stats %>% 
-  ggplot(aes(x = cv_cover,
-             y = coniferous_share)) + 
+  ggplot(aes(x = shannon,
+             y = share_coniferous)) + 
   geom_point() +
   geom_smooth()
 
@@ -220,4 +245,86 @@ hist(combined_stats$median_cover)
 hist(combined_stats$median_leaf)
 
 
+# get stem density and shannon for field data -----------------------------------
 
+
+# make working example: 
+
+dd <- data.frame(
+  cluster = c(1, 1,   
+              2, 2, 2,  
+              3,   
+              4, 
+              5),
+  species = c("a", "b",
+              "a", "b", "d",
+              NA, 
+              "d",
+              "d"),
+  basal_area = c(5, 5,  
+                 1, 1, 8,  
+                 0,  
+                 10, 
+                 0.5)
+)
+
+# Define Shannon + Effective Species Number
+shannon_stats <- function(ba) {
+  total <- sum(ba)
+  if (total == 0) return(c(H = 0, ESN = 0))
+  p <- ba / total
+  H <- -sum(p * log(p), na.rm = TRUE) # shannon index
+  ESN <- exp(H)  # effective number of species
+  c(H = H, ESN = ESN)
+}
+
+# All clusters
+all_clusters <- dd %>% distinct(cluster)
+
+# Compute diversity only for rows with species info
+shannon_summary <- dd %>%
+  filter(!is.na(species)) %>%
+  group_by(cluster) %>%
+  reframe(
+    shannon = shannon_stats(basal_area)[["H"]],
+    effective_species = shannon_stats(basal_area)[["ESN"]]
+  )
+
+# Merge back to include missing clusters
+shannon_per_cluster <- all_clusters %>%
+  left_join(shannon_summary, by = "cluster") %>%
+  mutate(
+    shannon = replace_na(shannon, 0),
+    effective_species = replace_na(effective_species, 0)
+  )
+
+print(shannon_per_cluster)
+
+# summarize across species: get shannon per subplot, per plot
+dat23_subplot_sum_cl <- dat23_subplot %>% 
+  group_by( cluster, species ) %>% 
+  summarise(stem_density = sum(stem_density, na.rm = T))
+  
+
+# calculate shannon index: --------------------------
+# 1. Total stem density per cluster
+total_stems <- dat23_subplot_sum_cl %>%
+  group_by(cluster) %>%
+  summarise(total_density = sum(stem_density), .groups = "drop")
+
+# 2. Shannon index only for clusters with regeneration
+shannon_nonzero <- dat23_subplot_sum_cl %>%
+  left_join(total_stems, by = "cluster") %>%
+  dplyr::filter(total_density > 0) %>%
+  mutate(p = stem_density / total_density) %>%
+  group_by(cluster) %>%
+  summarise(shannon_index = -sum(p * log(p)), .groups = "drop")
+
+# 3. Join with all clusters, assigning 0 to those with no regeneration
+shannon_all <- total_stems %>%
+  left_join(shannon_nonzero, by = "cluster") %>%
+  mutate(shannon_index = if_else(is.na(shannon_index), 0, shannon_index))
+
+# View result
+head(shannon_all)
+hist(shannon_all$shannon_index)
