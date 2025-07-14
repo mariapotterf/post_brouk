@@ -136,6 +136,8 @@ ggplot(subplot_all) +
   ggtitle("Spatial distribution of subplots") +
   theme_minimal()
 
+table(subplot_all$cluster)
+
 
 # ---- Cluster globally ----
 coords <- st_coordinates(subplot_all)
@@ -395,8 +397,10 @@ combined_vegetation_data_recode <-
 dat_subplot <- combined_vegetation_data_recode %>% 
   group_by(cluster) %>% 
   mutate(n_plots = dplyr::n_distinct(plot_key)) %>% 
-  dplyr::filter(n_plots %in% c( 4:8)) #%>% 
+  dplyr::filter(n_plots >4 ) #%>% 
   
+
+table(dat_subplot$cluster)
 
 # create only a database to chcek for poltID, damage type, sample and photo: damage indication -----------------
 dat_dmg <-  dat_subplot %>%
@@ -538,5 +542,4 @@ fwrite(df_cluster, 'outData/df_cluster_2025.csv')
 
 # Save spatial subplot data with cluster IDs
 st_write(subplot_all, "outData/subplot_with_clusters_2025.gpkg", delete_layer = TRUE)
-
 st_write(subplot_all, "outData/google_my_map/subplot_with_clusters_2025.kml", driver = "KML", delete_dsn = TRUE)
