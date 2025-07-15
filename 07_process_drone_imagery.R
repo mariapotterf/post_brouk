@@ -48,32 +48,31 @@ dat23_subset <- st_intersection(dat23_5514, drone_5514)
 dat23_subset <- dat23_subset %>%
   mutate(field_year = 2023,
          x = st_coordinates(.)[, 1],
-         y = st_coordinates(.)[, 2])
+         y = st_coordinates(.)[, 2]) %>% 
+  mutate(uav_ID = paste0("CHM_", uav_ID)) %>% 
+  rename(plot_ID = ID) %>% 
+  st_as_sf(coords = c("x", "y"), crs = target_crs)  # U
 
 # Start fresh from dat23_5514 — raw points with correct geometry
-dat23_clusters <- dat23_subset %>%
-  as.data.frame() %>% 
-  group_by(cluster) %>%
-  summarise(
-    x = mean(x),
-    y = mean(y),
-    drone_year  = first(drone_year),
-    field_year  = first(field_year),
-    uav_ID = first(uav_ID),
-    .groups = "drop"
-  ) %>%
-  mutate(uav_ID = paste0("CHM_", uav_ID)) %>% 
-  st_as_sf(coords = c("x", "y"), crs = target_crs)  # Use correct CRS
+# dat23_clusters <- dat23_subset %>%
+#   as.data.frame() %>% 
+#   group_by(cluster) %>%
+#   summarise(
+#     x = mean(x),
+#     y = mean(y),
+#     drone_year  = first(drone_year),
+#     field_year  = first(field_year),
+#     uav_ID = first(uav_ID),
+#     .groups = "drop"
+#   ) %>%
+#   mutate(uav_ID = paste0("CHM_", uav_ID)) %>% 
+#   st_as_sf(coords = c("x", "y"), crs = target_crs)  # Use correct CRS
 
 # Convert to terra vector
-cluster_vect <- vect(dat23_clusters)
+cluster_vect <- vect(dat23_subset)
 
 data.frame(cluster_vect)
 
-# Create buffer  and add ID
-buff_width = 60
-buffs <- buffer(cluster_vect, width = buff_width)
-buffs$ID <- seq_len(nrow(buffs))  # consistent ID
 
 #--------------------------------------------------------
 
@@ -86,10 +85,10 @@ plot(buf, add = TRUE, border = "red")
 
 
 # Ensure cluster_vect is a data.frame (not SpatVector or sf)
-cluster_lookup <- as.data.frame(cluster_vect)[, c("cluster", "uav_ID")]
+cluster_lookup <- as.data.frame(cluster_vect)[, c("plot_ID", "uav_ID")]
 
 # Define buffer widths to test
-buffer_sizes <- c(5, 10, 30, 60)
+buffer_sizes <- c(1, 2.5, 5, 7.5, 10)
 
 # Prepare output list
 all_cluster_heights <- list()
@@ -104,30 +103,32 @@ for (buff_width in buffer_sizes) {
   
   # Loop through drone rasters
   cluster_heights <- lapply(names(chm_rasters), function(drone_id) {
+    #drone_id = "CHM_uav6"
     r <- chm_rasters[[drone_id]]
     r_name <- names(r)[1]
     
     # Get clusters linked to this drone
     matching_clusters <- cluster_lookup %>%
-      filter(uav_ID == drone_id) %>%
-      pull(cluster)
+      dplyr::filter(uav_ID == drone_id) %>%
+      pull(plot_ID)
     
-    buffers_this_drone <- buffs[buffs$cluster %in% matching_clusters, ]
+    buffers_this_drone <- buffs[buffs$plot_ID %in% matching_clusters, ]
     
     if (nrow(buffers_this_drone) == 0) return(NULL)
     
     # Extract
     vals <- terra::extract(r, buffers_this_drone, ID = TRUE)
-    vals$cluster <- buffers_this_drone$cluster[vals$ID]
+    vals$ID <- buffers_this_drone$plot_ID[vals$ID]
     
     # Summarize
     vals %>%
       as_tibble() %>%
-      group_by(cluster) %>%
+      group_by(ID) %>%
       summarize(
         drone       = drone_id,
         buffer_size = buff_width,
         mean_height = mean(.data[[r_name]], na.rm = TRUE),
+        median_height = median(.data[[r_name]], na.rm = TRUE),
         sd_height   = sd(.data[[r_name]], na.rm = TRUE),
         cv_height   = sd_height / mean_height,
         max_height  = max(.data[[r_name]], na.rm = TRUE),
