@@ -67,40 +67,6 @@ str(dat23_subplot)
 # - 1 - deciduous, 
 # - 2 - coniferous 
 
-# Find overlapping clusters -----------------------------------
-st_geometry(dat23_sf) <- "geom"
-st_geometry(dat25_sf) <- "geom"
-
-
-# Summarize to cluster centroids -. get proximity only for centroids
-centroids_2023 <- dat23_sf %>%
-  group_by(cluster) %>%
-  summarise(do_union = TRUE) %>%
-  st_centroid() %>%
-  rename(cluster_2023 = cluster)
-
-centroids_2025 <- dat25_sf %>%
-  group_by(cluster) %>%
-  summarise(do_union = TRUE) %>%
-  st_centroid() %>%
-  rename(cluster_2025 = cluster)
-
-
-# Match CRS
-centroids_2023 <- st_transform(centroids_2023, st_crs(centroids_2025))
-
-# Find clusters within 50 m
-overlaps <- st_join(centroids_2025, centroids_2023, join = st_is_within_distance, dist = 25) %>%
-  dplyr::filter(!is.na(cluster_2023)) %>%
-  mutate(common_cluster_ID = paste0("c_", cluster_2023, "_", cluster_2025))
-
-overlaps
-
-# export overlaps -----------------------------------
-
-# Save spatial subplot data with cluster IDs
-st_write(overlaps, "outData/overlaps.gpkg", delete_layer = TRUE)
-
 
 # Get pre-disturbance forest characteristics in point sdurrounding ----------------
 
