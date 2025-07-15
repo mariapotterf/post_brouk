@@ -41,188 +41,57 @@ dat23_sf <- st_read("outData/sf_context_2023.gpkg")
 
 
 # 2025
-dat25_subplot <- fread('outData/subplot_full_2025.csv')
-dat25_cluster <- fread('outData/df_cluster_2025.csv')
+#dat25_subplot <- fread('outData/subplot_full_2025.csv')
+#dat25_cluster <- fread('outData/df_cluster_2025.csv')
 
 # Save spatial subplot data with cluster IDs
-dat25_sf <- st_read("outData/subplot_with_clusters_2025.gpkg")
+#dat25_sf <- st_read("outData/subplot_with_clusters_2025.gpkg")
 
 # Read drone CHM summary
 drone_cv <- fread("outTable/chm_buff_summary.csv")
 
-# get forest pre-disturbance characteristics: tree density, dominant leaf type
-tree_cover_dens15    <- rast("raw/forest_heights_composition/TCD_2015_020m_CR.tif") # tree cover density
-dominant_leaf_type15 <- rast("raw/forest_heights_composition/DLT_2015_020m_CR.tif") # dominant leaf type
+# read pre-disturbance site history
+pre_dist_history <- fread("outTable/pre_disturb_history_raster.csv")
+
+pre_dist_history <- pre_dist_history %>%
+  mutate(field_year = if_else(str_detect(cluster, "_"), 2023, 2025))
+
+pre_dist_history_2023 <- pre_dist_history %>%   # filed only pre dicturbancs history for sites collected in 2023
+  dplyr::filter(field_year == "2023")
 
 
-# recode 23 values if neede:
+# Sumarize field observation per cluster  --------------------------------------
 
-str(dat23_subplot)
-
-
-# tree cover density: 0-100%
-# leaf type: 
-# - 1 - deciduous, 
-# - 2 - coniferous 
-
-
-# Get pre-disturbance forest characteristics in point sdurrounding ----------------
-
-# Get target CRS from one of the rasters
-target_crs <- crs(tree_cover_dens15)
-
-# Reproject both sf objects to match raster CRS
-dat23_sf <- st_transform(dat23_sf, target_crs)
-dat25_sf <- st_transform(dat25_sf, target_crs)
-
-# Step 4: Add year and combine
-dat23_sf$year <- 2023
-dat25_sf$year <- 2025
-
-# Calculate mean coords per cluster and keep one point per cluster
-# Add x/y coordinates as new columns
-dat23_sf_mean <- dat23_sf %>%
-  mutate(x = st_coordinates(.)[, 1],
-         y = st_coordinates(.)[, 2])
-
-
-dat25_sf_mean <- dat25_sf %>%
-  mutate(x = st_coordinates(.)[, 1],
-         y = st_coordinates(.)[, 2])
+# guestimate dbh and ba per individual based on height distribution -------------------------
+dat23_subplot2 <- dat23_subplot %>% 
+  mutate(
+    dbh_est = case_when(
+      vegtype == "mature"           ~ case_when(
+        dbh == "10–20cm" ~ 15.0,
+        dbh == "20–40cm" ~ 30.0,
+        dbh == "40–60cm" ~ 50.0,
+        TRUE             ~ NA_real_
+      ),
+      hgt == "0.2–0.4"              ~ 0.2,
+      hgt == "0.4–0.6"              ~ 0.4,
+      hgt == "0.6–0.8"              ~ 0.7,
+      hgt == "0.8–1.0"              ~ 1.0,
+      hgt == "1.0–1.3"              ~ 1.5,
+      hgt == "1.3–2.0"              ~ 2.5,
+      hgt == "2–4"                  ~ 4.5,
+      hgt == ">4"                   ~ 7.0,
+      TRUE                          ~ NA_real_
+    ),
+    basal_area_cm2 = pi * (dbh_est / 2)^2
+  )
 
 
 
-# Unify number of columns between two years
-dat23_clusters <- dat23_sf_mean %>%
-  group_by(cluster) %>%
-  summarise(
-    x = mean(x),
-    y = mean(y),
-    year = first(year)
-  ) %>%
-  st_as_sf(coords = c("x", "y"), crs = target_crs)
 
-dat25_clusters <- dat25_sf_mean %>%
-  group_by(cluster) %>%
-  summarise(
-    x = mean(x),
-    y = mean(y),
-    year = first(year)
-  ) %>%
-  st_as_sf(coords = c("x", "y"), crs = target_crs) %>% 
-  mutate(cluster = as.character(cluster))
-
-
-
-# Combine both years
-combined_clusters <- bind_rows(dat23_clusters, dat25_clusters)
-
-# Convert to terra vect
-cluster_vect <- vect(combined_clusters)
-
-# Step 3: Buffer XXm around points
-my_buffer <- buffer(cluster_vect, width = 60)
-
-# Step 1: Make lookup table
-buffer_lookup <- as.data.frame(my_buffer) %>%
-  mutate(ID = row_number()) %>%
-  dplyr::select(ID, cluster, year)
-
-
-# Step 4: Extract raster values for both rasters
-vals_cover <- terra::extract(tree_cover_dens15, my_buffer, ID = TRUE)
-vals_leaf  <- terra::extract(dominant_leaf_type15, my_buffer, ID = TRUE)
-
-# Step 2: Join to extracted values
-vals_cover <- left_join(vals_cover, buffer_lookup, by = "ID")
-vals_leaf  <- left_join(vals_leaf,  buffer_lookup, by = "ID")
-
-
-# Recode leaf type to factor for clarity
-vals_leaf_recode <- vals_leaf %>%
-  mutate(leaf_type = factor(DLT_2015_020m_CR,
-                            levels = c(1, 2),
-                            labels = c("deciduous", "coniferous")))
-
-# Compute Shannon diversity index per buffer
-leaf_diversity <- vals_leaf_recode %>%
-  dplyr::filter(!is.na(DLT_2015_020m_CR)) %>%
-  group_by(cluster, leaf_type) %>%
-  tally() %>%
-  group_by(cluster) %>%
-  mutate(p = n / sum(n)) %>%
-  summarise(shannon = -sum(p * log(p)), .groups = "drop")
-
-hist(leaf_diversity$shannon)
-
-
-# Calculate coniferous share per cluster buffer !!! need to finalize! I think i have only one value per 
-# cluster! aslo, get some sort of aggregation/dispersion of coniferous forests
-leaf_stats <- vals_leaf %>%
-  group_by(cluster) %>%
-  summarise(
-    total_cells = n(),  # all cells, including NA
-    n_coniferous = sum(DLT_2015_020m_CR == 2, na.rm = TRUE),
-    n_deciduous  = sum(DLT_2015_020m_CR == 1, na.rm = TRUE),
-    forest_cells = n_coniferous + n_deciduous,
-    share_coniferous = ifelse(forest_cells > 0, n_coniferous / forest_cells, NA_real_),
-    .groups = "drop"
-  ) %>% 
-  left_join(leaf_diversity)
-
-
-
-# Get summarize statistics for continuous distribution: density for each point ID
-summary_stats <- function(df, value_col) {
-  df %>%
-    group_by(cluster) %>%
-    summarise(
-      mean   = mean(.data[[value_col]], na.rm = TRUE),
-      median = median(.data[[value_col]], na.rm = TRUE),
-      cv     = sd(.data[[value_col]], na.rm = TRUE) / mean(.data[[value_col]], na.rm = TRUE),
-      .groups = "drop"
-    )
-}
-
-cover_stats <- summary_stats(vals_cover, "TCD_2015_020m_CR")
-
-# Rename columns before joining
-cover_stats_renamed <- cover_stats %>%
-  rename_with(~ paste0(.x, "_cover"), .cols = c("mean", "median", "cv"))
-
-
-# Full join on cluster and year
-combined_stats <- full_join(cover_stats_renamed, leaf_stats, by = c("cluster"))
-
-combined_stats %>% 
-  ggplot(aes(x = shannon,
-             y = share_coniferous)) + 
-  geom_point() +
-  geom_smooth()
-
-
-# Reshape to long format
-cv_long <- combined_stats %>%
-  select(cluster, year, cv_cover, cv_leaf) %>%
-  pivot_longer(cols = c(cv_cover, cv_leaf),
-               names_to = "variable", values_to = "cv") %>%
-  mutate(variable = recode(variable,
-                           cv_cover = "Tree Cover Density",
-                           cv_leaf  = "Dominant Leaf Type"))
-
-# Plot
-ggplot(cv_long, aes(x = variable, y = cv)) +
-  geom_boxplot(fill = "lightblue", color = "darkblue", outlier.shape = 21) +
-  labs(x = "", y = "Coefficient of Variation (CV)",
-       title = "Variation in 2015 Pre-Disturbance Forest Structure") +
-  theme_minimal(base_size = 14)
-
-hist(combined_stats$median_cover)
-hist(combined_stats$median_leaf)
-
-
-# get stem density and shannon for field data -----------------------------------
-
+# get stem density and shannon for field data 
+df_stem_density <- dat23_subplot %>% 
+  group_by(cluster) %>% 
+  summarise(stem_density = sum(stem_density, na.rm = T))
 
 # make working example: 
 
