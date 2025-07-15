@@ -47,10 +47,8 @@ dat25_cluster <- fread('outData/df_cluster_2025.csv')
 # Save spatial subplot data with cluster IDs
 dat25_sf <- st_read("outData/subplot_with_clusters_2025.gpkg")
 
-# Read drone CHM rasters from 2023
-chm_folder <- "raw/UAV_Images/2023"
-chm_files <- list.files(chm_folder, pattern = "^CHM_.*\\.tif$", full.names = TRUE)
-
+# Read drone CHM summary
+drone_cv <- fread("outTable/chm_buff_summary.csv")
 
 # get forest pre-disturbance characteristics: tree density, dominant leaf type
 tree_cover_dens15    <- rast("raw/forest_heights_composition/TCD_2015_020m_CR.tif") # tree cover density
