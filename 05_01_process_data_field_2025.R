@@ -277,7 +277,7 @@ for (gpkg_path in gpkg_files) {
 
 combined_vegetation_data <- bind_rows(all_combined)
 str(combined_vegetation_data)
-View(combined_vegetation_data)
+#View(combined_vegetation_data)
 
 # add cluster indication from spatial data
 subplot_all_df <- subplot_all %>% 
@@ -396,8 +396,8 @@ combined_vegetation_data_recode <-
 
 dat_subplot <- combined_vegetation_data_recode %>% 
   group_by(cluster) %>% 
-  mutate(n_plots = dplyr::n_distinct(plot_key)) %>% 
-  dplyr::filter(n_plots >4 ) #%>% 
+  mutate(n_plots = dplyr::n_distinct(plot_key)) #%>% 
+  #dplyr::filter(n_plots >4 ) #%>% 
   
 
 table(dat_subplot$cluster)
@@ -457,9 +457,17 @@ dat_long <- sample_photo_map %>%
 # filter only proper samples, not descripitons (Okus, mraz)
 dat_long_T <- dat_long %>%
   dplyr::filter(str_starts(sample, "T")) %>% 
-  mutate(photo = str_remove(photo, "^DCIM/")) # remove DCIM/ from photo name
+  mutate(photo = str_remove(photo, "^DCIM/")) %>% 
+  arrange(sample) %>% # remove DCIM/ from photo name
+  group_by(photo, sample) %>%
+  slice_max(order_by = plot_key, n = 1, with_ties = FALSE) %>% # keep only later data if recorded deveral times
+  ungroup()
+#df_unique <- df %>%
+ 
 
-
+View(dat_long_T)
+# export final table as csv
+#fwrite(dat_long_T, 'outTable/samples_list.csv')
 # export final table as csv
 fwrite(dat_long_T, 'outShare/samples_list.csv')
 
@@ -471,55 +479,6 @@ fwrite(dat_long_T, 'outShare/samples_list.csv')
 # vertical categories
 # keep only correct number of plots
 # analyze on level of subplot, not yet on level of clusters
-
-
-## how many clusters? ----------------
-n_clusters <- length(unique(dat_subplot$cluster))  # 35-38
-n_samples_terminal <- dat_subplot %>%
-  dplyr::filter(!is.na(dmg_term_sample)) %>%
-  dplyr::filter(str_starts(dmg_term_sample, "T")) %>%
-  dplyr::pull(dmg_term_sample) %>%
-  unique() 
-
-##  how many samples? -------
-n_samples_foliage <- dat_subplot %>%
-  dplyr::filter(!is.na(dmg_foliage_sample )) %>%
-  dplyr::filter(str_starts(dmg_foliage_sample, "T")) %>%
-  dplyr::pull(dmg_foliage_sample)%>%
-  unique() 
-
-
-n_samples_root_stem <- dat_subplot %>%
-  dplyr::filter(!is.na(dmg_root_stem_sample  )) %>%
-  dplyr::filter(str_starts(dmg_root_stem_sample, "T")) %>%
-  dplyr::pull(dmg_root_stem_sample ) %>%
-  unique() 
-
-n_samples_stem <- dat_subplot %>%
-  dplyr::filter(!is.na(dmg_stem_sample   )) %>%
-  dplyr::filter(str_starts(dmg_stem_sample, "T")) %>%
-  dplyr::pull(dmg_stem_sample  )%>%
-  unique() 
-
-
-n_samples_terminal
-n_samples_foliage
-n_samples_root_stem
-n_samples_stem
-
-
-
-# Analysis: -----------------------------------------------------------------------
-
-# are there any empty plots?
-# what type of damage?
-## on plot level: ------------------------------------------------------
-
-# 
-table(combined_vegetation_data2$cause_label)
-# 
-# ine bioticke  mechanizace     mysovite         zver 
-# 102           61            4           22 
 
 ## on cluster level ----------------------------------------------------
 
