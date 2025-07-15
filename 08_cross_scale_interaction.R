@@ -20,21 +20,25 @@ gc()
 
 library(terra)
 library(sf)
-library(DBI)
+#library(DBI)
 library(ggplot2)
-library(dbscan)
+#library(dbscan)
 library(data.table)
 library(dplyr)
 library(stringr)
 library(purrr)
 library(tidyr)
+library(ggpubr)
 
+
+library(corrplot)
+library(GGally)
 
 # Read files --------------------------------------
 
 # 2023 
 dat23_subplot <- fread('outData/subplot_full_2023.csv')
-dat23_cluster <- fread('outData/df_cluster_2023.csv')
+#dat23_cluster <- fread('outData/df_cluster_2023.csv')
 
 # Save spatial subplot data with cluster IDs
 dat23_sf <- st_read("outData/sf_context_2023.gpkg")
@@ -63,7 +67,7 @@ pre_dist_history_2023 <- pre_dist_history %>%   # filed only pre dicturbancs his
 # Sumarize field observation per cluster  --------------------------------------
 
 # guestimate dbh and ba per individual based on height distribution -------------------------
-dat23_subplot2 <- dat23_subplot %>% 
+dat23_subplot_recode <- dat23_subplot %>% 
   mutate(
     dbh_est = case_when(
       vegtype == "mature"           ~ case_when(
@@ -83,15 +87,53 @@ dat23_subplot2 <- dat23_subplot %>%
       TRUE                          ~ NA_real_
     ),
     basal_area_cm2 = pi * (dbh_est / 2)^2
+  ) %>% 
+  # calculate basal area from counts per cm2, per m2, and scale up to ha
+  mutate(
+    ba_total_cm2   = basal_area_cm2 * n,
+    ba_total_m2    = ba_total_cm2 / 10000,  # convert to m²
+    ba_ha_m2       = ba_total_m2 * scaling_factor  # scale to per hectare
   )
 
 
 
 
 # get stem density and shannon for field data 
-df_stem_density <- dat23_subplot %>% 
+df_cluster <- dat23_subplot_recode %>% 
   group_by(cluster) %>% 
-  summarise(stem_density = sum(stem_density, na.rm = T))
+  summarise(stem_density = sum(stem_density, na.rm = T),
+            basal_area_ha_m2 = sum(ba_ha_m2, na.rm = TRUE))
+
+
+
+# shannon estimation:
+shannon_species <- dat23_subplot_recode %>%
+  dplyr::filter(!is.na(species), ba_ha_m2 > 0) %>%
+  group_by(cluster, species) %>%
+  summarise(ba = sum(ba_ha_m2), .groups = "drop") %>%
+  group_by(cluster) %>%
+  mutate(p = ba / sum(ba)) %>%
+  summarise(shannon_species = -sum(p * log(p)), .groups = "drop")
+
+shannon_height <- dat23_subplot_recode %>%
+  dplyr::filter(hgt != "", ba_ha_m2 > 0) %>%
+  group_by(cluster, hgt) %>%
+  summarise(ba = sum(ba_ha_m2), .groups = "drop") %>%
+  group_by(cluster) %>%
+  mutate(p = ba / sum(ba)) %>%
+  summarise(shannon_height = -sum(p * log(p)), .groups = "drop")
+
+
+df_field_diversity <- df_cluster %>%
+  left_join(shannon_species, by = "cluster") %>%
+  left_join(shannon_height, by = "cluster") %>% 
+  replace_na(list(
+    shannon_species = 0,
+    shannon_height  = 0
+  ))
+
+
+
 
 # make working example: 
 
@@ -113,63 +155,131 @@ dd <- data.frame(
                  0.5)
 )
 
-# Define Shannon + Effective Species Number
-shannon_stats <- function(ba) {
-  total <- sum(ba)
-  if (total == 0) return(c(H = 0, ESN = 0))
-  p <- ba / total
-  H <- -sum(p * log(p), na.rm = TRUE) # shannon index
-  ESN <- exp(H)  # effective number of species
-  c(H = H, ESN = ESN)
+# merge field data with drone estimation ------------------------------
+
+# Sensitivity analysis ----------
+
+# Function to generate boxplot for a given variable
+plot_buffer_variation <- function(data, var_name, y_label) {
+  ggplot(data, aes(x = factor(buffer_size), y = .data[[var_name]])) +
+    geom_boxplot(fill = "skyblue") +
+    labs(
+      title = paste("", y_label, ""),
+      x = "Buffer size (m)",
+      y = y_label
+    ) +
+    theme_minimal()
 }
 
-# All clusters
-all_clusters <- dd %>% distinct(cluster)
+# Generate plots
+p_mean   <- plot_buffer_variation(drone_cv, "mean_height", "Mean Height")
+p_median <- plot_buffer_variation(drone_cv, "median_height", "Mean Median")
+p_sd     <- plot_buffer_variation(drone_cv, "sd_height", "SD of Height")
+p_cv     <- plot_buffer_variation(drone_cv, "cv_height", "CV of Height")
+p_max    <- plot_buffer_variation(drone_cv, "max_height", "Max Height")
+p_min    <- plot_buffer_variation(drone_cv, "min_height", "Min Height")
 
-# Compute diversity only for rows with species info
-shannon_summary <- dd %>%
-  filter(!is.na(species)) %>%
-  group_by(cluster) %>%
-  reframe(
-    shannon = shannon_stats(basal_area)[["H"]],
-    effective_species = shannon_stats(basal_area)[["ESN"]]
+# Combine using ggarrange
+ggarrange(p_mean, p_median, p_sd, p_cv, p_max, p_min, 
+          ncol = 2, nrow = 3, 
+          labels = "AUTO")
+
+# convert to wide format as i have 4 different buffer sizes
+drone_cv_wide <- drone_cv %>%
+  dplyr::filter(buffer_size == 20) %>%  # filter to single buffer, representing our sample (increase to 22-25 m!!)
+  pivot_wider(
+    id_cols = c(cluster, drone),
+    names_from = buffer_size,
+    values_from = c(mean_height, sd_height, cv_height, max_height, min_height),
+    names_glue = "{.value}_{buffer_size}"
   )
 
-# Merge back to include missing clusters
-shannon_per_cluster <- all_clusters %>%
-  left_join(shannon_summary, by = "cluster") %>%
-  mutate(
-    shannon = replace_na(shannon, 0),
-    effective_species = replace_na(effective_species, 0)
-  )
 
-print(shannon_per_cluster)
+# merge with structural data ---------------------------------------
+# Add prefix to drone data
+drone_cv_wide_renamed <- drone_cv_wide %>%
+  rename_with(~ paste0("drone_", .), -c(cluster, drone))
 
-# summarize across species: get shannon per subplot, per plot
-dat23_subplot_sum_cl <- dat23_subplot %>% 
-  group_by( cluster, species ) %>% 
-  summarise(stem_density = sum(stem_density, na.rm = T))
+# Add prefix to pre-disturbance data
+pre_dist_renamed <- pre_dist_history_2023 %>%
+  rename_with(~ paste0("pre_", .), -cluster)
+
+# Now join
+df_fin <- df_field_diversity %>%
+  right_join(pre_dist_renamed, by = "cluster") %>% 
+  right_join(drone_cv_wide_renamed, by = "cluster")# %>%
   
 
-# calculate shannon index: --------------------------
-# 1. Total stem density per cluster
-total_stems <- dat23_subplot_sum_cl %>%
-  group_by(cluster) %>%
-  summarise(total_density = sum(stem_density), .groups = "drop")
+# any correlation between variables?
+# split between field based vs drone based. pre-dciturbance are drivers. 
+# Step 1: Select numeric columns only
+# Step 1: Select numeric variables
+df_numeric <- df_fin %>%
+  select(where(is.numeric)) %>%
+  drop_na()  # drop rows with NAs for clean correlation and VIF
 
-# 2. Shannon index only for clusters with regeneration
-shannon_nonzero <- dat23_subplot_sum_cl %>%
-  left_join(total_stems, by = "cluster") %>%
-  dplyr::filter(total_density > 0) %>%
-  mutate(p = stem_density / total_density) %>%
-  group_by(cluster) %>%
-  summarise(shannon_index = -sum(p * log(p)), .groups = "drop")
+# Step 2: Correlation matrix
+cor_mat <- cor(df_numeric)
 
-# 3. Join with all clusters, assigning 0 to those with no regeneration
-shannon_all <- total_stems %>%
-  left_join(shannon_nonzero, by = "cluster") %>%
-  mutate(shannon_index = if_else(is.na(shannon_index), 0, shannon_index))
+# Step 3: Visualize with corrplot
+corrplot(cor_mat,
+         method = "circle",
+         type = "lower",
+         tl.col = "black",
+         tl.cex = 0.8,
+         number.cex = 0.7,
+         title = "Correlation Matrix (Field & Drone Metrics)",
+         mar = c(0,0,1,0),
+         addCoef.col = "black")
 
-# View result
-head(shannon_all)
-hist(shannon_all$shannon_index)
+
+# is tehre a correlation betwen field and drone derived vertical strcuture?
+df_model %>% 
+  ggplot(aes(x = shannon_height,
+             y = drone_cv_height_20)) + 
+  geom_point() + 
+  geom_smooth(method = "loess")
+
+# Fit the linear model --------------------------------
+df_model <- df_fin %>%
+  dplyr::filter(drone_cv_height_20 < 10)  # example threshold
+
+
+model <- lm(shannon_height ~ drone_cv_height_20, data = df_model)
+
+# Summary output
+summary(model)
+
+
+# compare field vs drone metrics: ------------------------------------------------
+
+# Define columns
+field_metrics <- df_fin %>%
+  select(stem_density, basal_area_ha_m2, shannon_species, shannon_height)
+
+drone_metrics <- df_fin %>%
+  select(drone_mean_height_20, drone_sd_height_20, drone_cv_height_20,
+         drone_max_height_20, drone_min_height_20)
+
+# Combine and track origin
+combined_df <- bind_cols(field_metrics, drone_metrics)
+
+# Label columns for plot clarity
+colnames(combined_df) <- c(
+  "StemDensity", "BA_ha", "Shannon_Species", "Shannon_Height",
+  "Drone_Mean", "Drone_SD", "Drone_CV", "Drone_Max", "Drone_Min"
+)
+
+# Custom ggpairs plot: compare only Field vs Drone (upper part blank)
+GGally::ggpairs(
+  combined_df,
+  columns = 1:9,
+  lower = list(
+    continuous = wrap("smooth", alpha = 0.6, size = 0.5)
+  ),
+  upper = list(continuous = "blank"),
+  diag = list(continuous = "blankDiag"),
+  mapping = aes(color = NULL)
+) +
+  ggtitle("Field vs Drone Metrics: Pairwise Comparison")
+
