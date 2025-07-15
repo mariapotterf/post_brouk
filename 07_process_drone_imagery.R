@@ -11,12 +11,19 @@ library(purrr)
 library(sf)
 
 # Read subplot data for 2023
-dat23_sf <- st_read("raw/collected_2023/dat_czechia_2023.gpkg")
+dat23_sf   <- st_read("outData/sf_context_2023.gpkg") # data per subplot
+drone23_24_sf <- st_read("raw/position_drone.gpkg") # data per subplot
 
-# Read drone CHM rasters from 2023
-chm_folder <- "raw/UAV_Images/2023"
-chm_files <- list.files(chm_folder, pattern = "^CHM_.*\\.tif$", full.names = TRUE)
+# Read drone CHM rasters from 2023&2024
+chm_folder <- "raw/UAV_Images" # /2023
+chm_files <- list.files(chm_folder, pattern = "^CHM_.*\\.tif$", full.names = TRUE, recursive = TRUE)
 
+
+# process data -----------------------
+drone23_24_sf <- drone23_24_sf %>% 
+  rename(drone_year = year)
+
+# read rasters
 chm_rasters <- set_names(chm_files, tools::file_path_sans_ext(basename(chm_files))) %>%
   map(terra::rast)
 
@@ -25,110 +32,116 @@ chm_rasters <- map(chm_rasters, function(x) {
   crs(x) <- "EPSG:5514"
   x
 })
-# ───────────────────────────────────────────────────────────────
 
-# Step 1: Assign proper CRS to rasters (S-JTSK / EPSG:5514)
+# Assign proper CRS to rasters (S-JTSK / EPSG:5514)
 krovak_crs <- "EPSG:5514"
 
-# Step 2: Reproject vector data to match raster CRS (faster!)
+# Reproject vector data to match raster CRS (faster!)
 target_crs <- crs(chm_rasters[[1]])
 dat23_5514   <- st_transform(dat23_sf, target_crs)
+drone_5514   <- st_transform(drone23_24_sf, target_crs)
 
-# Step 3: Buffer around each cluster centroid
-dat23_5514 <- dat23_5514 %>%
-  mutate(year = 2023,
+# get overlapping clusters with drones
+dat23_subset <- st_intersection(dat23_5514, drone_5514)
+
+#Get buffer for cluster (centroid of teh cluster)
+dat23_subset <- dat23_subset %>%
+  mutate(field_year = 2023,
          x = st_coordinates(.)[, 1],
          y = st_coordinates(.)[, 2])
 
-#st_geometry(dat23_5514) <- "geom"
-
 # Start fresh from dat23_5514 — raw points with correct geometry
-dat23_clusters <- dat23_5514 %>%
+dat23_clusters <- dat23_subset %>%
   as.data.frame() %>% 
   group_by(cluster) %>%
   summarise(
     x = mean(x),
     y = mean(y),
-    year = first(year),
+    drone_year  = first(drone_year),
+    field_year  = first(field_year),
+    uav_ID = first(uav_ID),
     .groups = "drop"
   ) %>%
-  st_as_sf(coords = c("x", "y"), crs = st_crs(dat23_5514))  # Use correct CRS
+  mutate(uav_ID = paste0("CHM_", uav_ID)) %>% 
+  st_as_sf(coords = c("x", "y"), crs = target_crs)  # Use correct CRS
 
-# Then convert to terra vector
+# Convert to terra vector
 cluster_vect <- vect(dat23_clusters)
 
+data.frame(cluster_vect)
 
-# Create buffer (150m) and add ID
-buffer_60 <- buffer(cluster_vect, width = 60)
-buffer_60$ID <- seq_len(nrow(buffer_60))  # consistent ID
+# Create buffer  and add ID
+buff_width = 60
+buffs <- buffer(cluster_vect, width = buff_width)
+buffs$ID <- seq_len(nrow(buffs))  # consistent ID
 
 #--------------------------------------------------------
-# 
-r <- chm_rasters[[1]]
-plot(r)
-points(dat23_clusters, col = "red", pch = 3)
 
-# Convert cluster points to terra and buffer
-v <- vect(dat23_clusters)
-buf <- terra::buffer(v[1, ], width = 150)
+# test run: buffer 26_111 overlaps with drone uav6
+r <- chm_rasters$CHM_uav6
+buf <- buffs[buffs$cluster == "26_111", ]
 
-# Check overlap
 plot(r)
 plot(buf, add = TRUE, border = "red")
 
 
+# Ensure cluster_vect is a data.frame (not SpatVector or sf)
+cluster_lookup <- as.data.frame(cluster_vect)[, c("cluster", "uav_ID")]
 
-# test run: buffer 26_111 overlaps with drone uav6
-r <- chm_rasters$CHM_uav6
-buf <- buffer_60[buffer_60$cluster == "26_111", ]
+# Define buffer widths to test
+buffer_sizes <- c(5, 10, 30, 60)
 
-# Extract values
-vals <- terra::extract(r, buf, ID = TRUE)
+# Prepare output list
+all_cluster_heights <- list()
 
-
-plot(r)
-points(buf, col = "red")
-points(dat23_5514, col = 'red')
-points(dat23_clusters, col = 'green')
-
-
-
-
-
-plot(chm_rasters$CHM_uav6)
-plot(buffer_60, add = T)
-plot(dat23_clusters)
-
-
-# Function to extract CHM data for buffers
-extract_chm_for_image <- function(image, image_name, buffer_vect) {
-  # Get intersecting buffer indices
-  intersecting <- relate(buffer_vect, image, relation = "intersects")[, 1]
-  if (length(intersecting) == 0) return(NULL)
+# Loop over buffer sizes
+for (buff_width in buffer_sizes) {
+  cat("Processing buffer:", buff_width, "\n")
   
-  buffer_subset <- buffer_vect[intersecting, ]
+  # Create buffer for this size
+  buffs <- terra::buffer(cluster_vect, width = buff_width)
+  buffs$ID <- seq_len(nrow(buffs))
   
-  # Extract values
-  vals <- terra::extract(image, buffer_subset, ID = FALSE)
+  # Loop through drone rasters
+  cluster_heights <- lapply(names(chm_rasters), function(drone_id) {
+    r <- chm_rasters[[drone_id]]
+    r_name <- names(r)[1]
+    
+    # Get clusters linked to this drone
+    matching_clusters <- cluster_lookup %>%
+      filter(uav_ID == drone_id) %>%
+      pull(cluster)
+    
+    buffers_this_drone <- buffs[buffs$cluster %in% matching_clusters, ]
+    
+    if (nrow(buffers_this_drone) == 0) return(NULL)
+    
+    # Extract
+    vals <- terra::extract(r, buffers_this_drone, ID = TRUE)
+    vals$cluster <- buffers_this_drone$cluster[vals$ID]
+    
+    # Summarize
+    vals %>%
+      as_tibble() %>%
+      group_by(cluster) %>%
+      summarize(
+        drone       = drone_id,
+        buffer_size = buff_width,
+        mean_height = mean(.data[[r_name]], na.rm = TRUE),
+        sd_height   = sd(.data[[r_name]], na.rm = TRUE),
+        cv_height   = sd_height / mean_height,
+        max_height  = max(.data[[r_name]], na.rm = TRUE),
+        min_height  = min(.data[[r_name]], na.rm = TRUE),
+        .groups     = "drop"
+      )
+  })
   
-  if (nrow(vals) == 0 || all(is.na(vals[[1]]))) {
-    message("No valid data in ", image_name, " for overlapping buffers.")
-    return(NULL)
-  }
-  
-  vals$ID <- buffer_subset$ID
-  
-  # Join metadata
-  lookup <- as.data.frame(buffer_subset) %>%
-    dplyr::select(ID, cluster, year)
-  
-  vals <- left_join(vals, lookup, by = "ID")
-  vals$image <- image_name
-  
-  return(vals)
+  all_cluster_heights[[as.character(buff_width)]] <- bind_rows(cluster_heights)
 }
 
+# Combine all buffer sizes into one table
+chm_summary_multi <- bind_rows(all_cluster_heights)
 
 
-# Run extraction across all CHM images
-chm_extracted <- imap_dfr(chm_rasters, extract_chm_for_image, buffer_vect = buffer_150m)
+# save output -----------------------------------------
+fwrite(chm_summary_multi, "outTable/chm_buff_summary.csv")
