@@ -47,7 +47,7 @@ matched_photos <- df_sample_photos %>%
   )
 
 # Copy and rename photos
-file_copy(matched_photos$original_path, matched_photos$new_path, overwrite = FALSE)
+file_copy(matched_photos$original_path, matched_photos$new_path, overwrite = TRUE)
 
 # Output result
 cat("Copied", nrow(matched_photos), "renamed sample photos to", target_dir, "\n")
