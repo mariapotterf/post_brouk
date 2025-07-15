@@ -4,6 +4,7 @@
 # get better inidcation of heights variabuility
 # terminal damages
 # get spatial attributes
+# process raw df tables, and also as sf data
 
 gc()
 
@@ -12,6 +13,14 @@ library(RSQLite)
 library(tidyverse)
 library(data.table)
 
+
+library(sf)
+
+# Read spatial layers
+cz1_sf <- read_sf("raw/collected_2023/cz_final_2023.gpkg", "cz_final")
+cz2_sf <- read_sf("raw/collected_2023/cz4_final_2023.gpkg", "cz4_final")
+
+# prepare functions to create df -------------------
 
 # Helper: reshaping vegetation structure
 reshape_layer <- function(df, prefix, traits = c("n", "hgt", "dmg", "dbh")) {
@@ -109,11 +118,24 @@ cz_wide_recode <- cz_wide %>%
 # check how counts are looking?
 table(cz_wide_recode$n)
 
-# Corrent counts need to change categorie!::
+
+# Corrent counts and categories: --------------------------
 
 # because: 1 = >16, 2 = 1, 3 = 2,...17 = 16
 
+# stupm species list: 
+# Define lookup vector
+stump_species_lookup <- c(
+  "deciduous", "conifer", "abal", "acca", "acpl", "acps", "aehi", "aial", "algl", "alin",
+  "alvi", "besp", "cabe", "casa", "fasy", "frex", "juni", "jure", "lade", "piab",
+  "pisy", "potr", "posp", "prav", "psme", "quro", "qusp", "rops", "saca", "sasp",
+  "soar", "soau", "soto", "taba", "tisp", "ulsp", "otsp_1"
+)
+
+
+
 cz_wide_corrected <- cz_wide_recode %>%
+  # rorrect counts
   mutate(
     n = case_when(
       vegtype %in% c("small", "advanced") & n == 1 ~ 17,
@@ -121,6 +143,41 @@ cz_wide_corrected <- cz_wide_recode %>%
      # vegtype == "mature" & n == 5                ~ ">4",
      # vegtype == "mature"                         ~ as.character(n),
       TRUE                                        ~ NA_integer_
+    )
+  ) %>% 
+  # height class
+  mutate(
+    hgt = case_when(
+      vegtype == "small" & hgt == 1 ~ "0.2–0.4",
+      vegtype == "small" & hgt == 2 ~ "0.4–0.6",
+      vegtype == "small" & hgt == 3 ~ "0.6–0.8",
+      vegtype == "small" & hgt == 4 ~ "0.8–1.0",
+      vegtype == "small" & hgt == 5 ~ "1.0–1.3",
+      vegtype == "small" & hgt == 6 ~ "1.3–2.0",
+      vegtype == "advanced" & hgt == 1 ~ "2–4",
+      vegtype == "advanced" & hgt == 2 ~ ">4",
+      TRUE ~ NA_character_  # handles unmatched cases
+    )
+  )%>%
+  # dbh - recorded only for mature
+  mutate(
+    dbh = factor(
+      recode(
+        dbh,
+        "1" = "10–20cm",
+        "2" = "20–40cm",
+        "3" = "40–60cm",
+        "4" = ">60cm"
+      ),
+      levels = c("10–20cm", "20–40cm", "40–60cm", ">60cm"),
+      ordered = TRUE
+    )) %>% 
+  # Stump species recoding
+  mutate(
+    stump_spc = case_when(
+      is.na(stump_spc) ~ NA_character_,
+      stump_spc %in% 1:38 ~ stump_species_lookup[stump_spc],
+      TRUE ~ as.character(stump_spc)  # fallback in case of unexpected values
     )
   ) %>% 
   group_by(cluster) %>%
@@ -132,11 +189,11 @@ cz_wide_corrected <- cz_wide_recode %>%
   dplyr::select(-fid, -group, -point, -region)
 
 
-cz_wide_corrected %>% 
-  filter(cluster == "15_102") %>% 
-  #dplyr::filter(ID == "13_15_102_6") %>% 
-#  dplyr::select(ID,   vegtype,  species,n, n_corr  ) %>% 
-  View()
+# extract just context situation ----------------------------------------------
+df_context <- cz_wide_corrected %>% 
+  dplyr::select(ID, cluster, clear, grndwrk, logging_trail, windthrow,planting, deadwood, anti_browsing) %>% 
+  distinct()
+
 
 # summarize on cluster level
 cz_wide_corrected_cluster <- cz_wide_corrected %>% 
@@ -144,8 +201,35 @@ cz_wide_corrected_cluster <- cz_wide_corrected %>%
   summarize(sum_stem_density = sum(stem_density, na.rm = T))
 
 
+# clean up spatial data ---------------------------------------------------------
+# keep only coordinates
+cz1_coords <- cz1_sf %>%
+  mutate(ID = paste(country, region, group + 100, point, sep = "_")) %>%
+  mutate(cluster = paste(region, group + 100, sep = "_")) %>%
+  dplyr::select(ID, cluster)
+  
+cz2_coords <- cz2_sf %>%
+  mutate(ID = paste(country, region, group + 100, point, sep = "_")) %>%
+  mutate(cluster = paste(region, group + 100, sep = "_")) %>%
+  dplyr::select(ID, cluster)
+
+# Combine and convert to sf
+cz_coords_all <- bind_rows(cz1_coords, cz2_coords) 
+
+# add to context information
+sf_context <- cz_coords_all %>%
+  full_join(df_context)
 
 
 # save files: -------------------
 fwrite(cz_wide_corrected, 'outData/subplot_full_2023.csv')
 fwrite(cz_wide_corrected_cluster, 'outData/df_cluster_2023.csv')
+
+# Write to new GPKG
+st_write(sf_context,
+         "outData/sf_context_2023.gpkg",
+         layer = "context",
+         delete_layer = TRUE)
+
+
+
