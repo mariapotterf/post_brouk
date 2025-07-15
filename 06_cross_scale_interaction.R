@@ -1,16 +1,15 @@
 
-# ------------------------------------------
-# Compare 2025 with 2023 datasets
-# -----------------------------------------
+# ----------------------------------------------------------------------------
+# Cross-scale interaction: field vs drone variation in vertical structures
+# -----------------------------------------------------------------------------
 
-# read data: spatial and vegetation from 2025
-# read data: spatial and vegetation from 2023
+# read data: 
+# - field data from 2023 (2025)
+# - drone 2023 (2024?)
 
-# identify the overlapping clusters -> make common_clust_ID
-# - changes in stem density: oevrall, between species
 # - get sites history - from tree density cover, dominant leaf type
 # compare stem density, dominant tree species, species diversity
-# vertical and horizontal structure among 2023-2025
+# vertical and horizontal structure across sscales: fiedl vs drone
 
 # identify damaged terminal: from raw data czechia 20203 - export gpkg
 # identify types of damages: 2025 - export gpkg
@@ -38,7 +37,7 @@ dat23_subplot <- fread('outData/subplot_full_2023.csv')
 dat23_cluster <- fread('outData/df_cluster_2023.csv')
 
 # Save spatial subplot data with cluster IDs
-dat23_sf <- st_read("raw/collected_2023/dat_czechia_2023.gpkg")
+dat23_sf <- st_read("outData/sf_context_2023.gpkg")
 
 
 # 2025
@@ -47,6 +46,10 @@ dat25_cluster <- fread('outData/df_cluster_2025.csv')
 
 # Save spatial subplot data with cluster IDs
 dat25_sf <- st_read("outData/subplot_with_clusters_2025.gpkg")
+
+# Read drone CHM rasters from 2023
+chm_folder <- "raw/UAV_Images/2023"
+chm_files <- list.files(chm_folder, pattern = "^CHM_.*\\.tif$", full.names = TRUE)
 
 
 # get forest pre-disturbance characteristics: tree density, dominant leaf type

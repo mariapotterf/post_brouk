@@ -220,6 +220,9 @@ cz_coords_all <- bind_rows(cz1_coords, cz2_coords)
 sf_context <- cz_coords_all %>%
   full_join(df_context)
 
+# add data about missing terminal???
+# alsmlno, need to visually correct fencing information! eg if NA, and obvuiously within a fence 
+
 
 # save files: -------------------
 fwrite(cz_wide_corrected, 'outData/subplot_full_2023.csv')
