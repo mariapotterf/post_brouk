@@ -55,13 +55,13 @@ dat23_sf <- st_read("outData/sf_context_2023.gpkg")
 drone_cv <- fread("outTable/chm_buff_summary.csv")
 
 # read pre-disturbance site history
-pre_dist_history <- fread("outTable/pre_disturb_history_raster.csv")
+#pre_dist_history <- fread("outTable/pre_disturb_history_raster.csv")
 
-pre_dist_history <- pre_dist_history %>%
-  mutate(field_year = if_else(str_detect(cluster, "_"), 2023, 2025))
+#pre_dist_history <- pre_dist_history %>%
+#  mutate(field_year = if_else(str_detect(cluster, "_"), 2023, 2025))
 
-pre_dist_history_2023 <- pre_dist_history %>%   # filed only pre dicturbancs history for sites collected in 2023
-  dplyr::filter(field_year == "2023")
+#pre_dist_history_2023 <- pre_dist_history %>%   # filed only pre dicturbancs history for sites collected in 2023
+#  dplyr::filter(field_year == "2023")
 
 
 # Sumarize field observation per cluster  --------------------------------------
@@ -69,31 +69,50 @@ pre_dist_history_2023 <- pre_dist_history %>%   # filed only pre dicturbancs his
 # guestimate dbh and ba per individual based on height distribution -------------------------
 dat23_subplot_recode <- dat23_subplot %>% 
   mutate(
-    dbh_est = case_when(
-      vegtype == "mature"           ~ case_when(
-        dbh == "10–20cm" ~ 15.0,
-        dbh == "20–40cm" ~ 30.0,
-        dbh == "40–60cm" ~ 50.0,
-        TRUE             ~ NA_real_
-      ),
-      hgt == "0.2–0.4"              ~ 0.2,
-      hgt == "0.4–0.6"              ~ 0.4,
-      hgt == "0.6–0.8"              ~ 0.7,
-      hgt == "0.8–1.0"              ~ 1.0,
-      hgt == "1.0–1.3"              ~ 1.5,
-      hgt == "1.3–2.0"              ~ 2.5,
-      hgt == "2–4"                  ~ 4.5,
-      hgt == ">4"                   ~ 7.0,
-      TRUE                          ~ NA_real_
+    # Create a numeric height estimate (keep original height class string)
+    hgt_est = case_when(
+      vegtype == "mature" & dbh == "10–20cm" ~ 10.0,
+      vegtype == "mature" & dbh == "20–40cm" ~ 20.0,
+      vegtype == "mature" & dbh == "40–60cm" ~ 30.0,
+      hgt == "0.2–0.4"                       ~ 0.3,
+      hgt == "0.4–0.6"                       ~ 0.5,
+      hgt == "0.6–0.8"                       ~ 0.7,
+      hgt == "0.8–1.0"                       ~ 0.9,
+      hgt == "1.0–1.3"                       ~ 1.2,
+      hgt == "1.3–2.0"                       ~ 1.7,
+      hgt == "2–4"                           ~ 3.0,
+      hgt == ">4"                            ~ 5.0,
+      TRUE                                   ~ NA_real_
     ),
-    basal_area_cm2 = pi * (dbh_est / 2)^2
+    
+    # Estimate DBH (already numeric)
+    dbh_est = case_when(
+      vegtype == "mature" & dbh == "10–20cm" ~ 15.0,
+      vegtype == "mature" & dbh == "20–40cm" ~ 30.0,
+      vegtype == "mature" & dbh == "40–60cm" ~ 50.0,
+      hgt == "0.2–0.4"                       ~ 0.3,
+      hgt == "0.4–0.6"                       ~ 0.5,
+      hgt == "0.6–0.8"                       ~ 0.7,
+      hgt == "0.8–1.0"                       ~ 0.9,
+      hgt == "1.0–1.3"                       ~ 1.2,
+      hgt == "1.3–2.0"                       ~ 1.7,
+      hgt == "2–4"                           ~ 3.0,
+      hgt == ">4"                            ~ 5.0,
+      TRUE                                   ~ NA_real_
+    )
   ) %>% 
-  # calculate basal area from counts per cm2, per m2, and scale up to ha
+  # Calculate basal area
   mutate(
+    basal_area_cm2 = pi * (dbh_est / 2)^2,
     ba_total_cm2   = basal_area_cm2 * n,
-    ba_total_m2    = ba_total_cm2 / 10000,  # convert to m²
-    ba_ha_m2       = ba_total_m2 * scaling_factor  # scale to per hectare
+    ba_total_m2    = ba_total_cm2 / 10000,
+    ba_ha_m2       = ba_total_m2 * scaling_factor
   )
+
+
+
+
+
 
 
 
