@@ -1,7 +1,5 @@
 
-# ----------------------------------------------------------------------------
-# Cross-scale interaction: field vs drone variation in vertical structures
-# -----------------------------------------------------------------------------
+# Cross-scale interaction: field & drone variation in vertical structures -------------------
 
 # read data: 
 # - field data from 2023 (2025)
@@ -55,18 +53,18 @@ dat23_sf <- st_read("outData/sf_context_2023.gpkg")
 drone_cv <- fread("outTable/chm_buff_summary.csv")
 
 # read pre-disturbance site history
-#pre_dist_history <- fread("outTable/pre_disturb_history_raster.csv")
+pre_dist_history <- fread("outTable/pre_disturb_history_raster.csv")
 
-#pre_dist_history <- pre_dist_history %>%
-#  mutate(field_year = if_else(str_detect(cluster, "_"), 2023, 2025))
+pre_dist_history <- pre_dist_history %>%
+  mutate(field_year = if_else(str_detect(cluster, "_"), 2023, 2025))
 
-#pre_dist_history_2023 <- pre_dist_history %>%   # filed only pre dicturbancs history for sites collected in 2023
-#  dplyr::filter(field_year == "2023")
+pre_dist_history_2023 <- pre_dist_history %>%   # filed only pre dicturbancs history for sites collected in 2023
+  dplyr::filter(field_year == "2023")
 
 
-# Sumarize field observation per cluster  --------------------------------------
+## Sumarize field observation per cluster  --------------------------------------
 
-# guestimate dbh and ba per individual based on height distribution -------------------------
+# guestimate dbh and ba per individual based on height distribution 
 dat23_subplot_recode <- dat23_subplot %>% 
   mutate(
     # Create a numeric height estimate (keep original height class string)
@@ -110,10 +108,155 @@ dat23_subplot_recode <- dat23_subplot %>%
   )
 
 
+### get stem density and shannon for field data --------------
+df_cluster <- dat23_subplot_recode %>% 
+  group_by(cluster) %>% 
+  summarise(stem_density = sum(stem_density, na.rm = T),
+            basal_area_ha_m2 = sum(ba_ha_m2, na.rm = TRUE))
 
-# test example: variation of height classes across landscape -----------------------
 
-# TEST START
+
+# shannon estimation:
+shannon_species <- dat23_subplot_recode %>%
+  dplyr::filter(!is.na(species), ba_ha_m2 > 0) %>%
+  group_by(cluster, species) %>%
+  summarise(ba = sum(ba_ha_m2), .groups = "drop") %>%
+  group_by(cluster) %>%
+  mutate(p = ba / sum(ba)) %>%
+  summarise(shannon_species = -sum(p * log(p)), .groups = "drop")
+
+shannon_height <- dat23_subplot_recode %>%
+  dplyr::filter(hgt != "", ba_ha_m2 > 0) %>%
+  group_by(cluster, hgt) %>%
+  summarise(ba = sum(ba_ha_m2), .groups = "drop") %>%
+  group_by(cluster) %>%
+  mutate(p = ba / sum(ba)) %>%
+  summarise(shannon_height = -sum(p * log(p)), .groups = "drop")
+
+
+df_field_diversity <- df_cluster %>%
+  left_join(shannon_species, by = "cluster") %>%
+  left_join(shannon_height, by = "cluster") %>% 
+  replace_na(list(
+    shannon_species = 0,
+    shannon_height  = 0
+  ))
+
+
+
+
+
+# Analysis ----------------------------------------------
+
+## Calculate alpha, beta and gamm diversity, Jackard index --------------------------------------
+
+library(vegan)
+
+# Clean data: height class must be non-missing
+dat_clean2 <- dat23_subplot_recode %>%
+  filter(hgt_est != "" & !is.na(hgt_est)) %>% 
+  mutate(hgt_est = as.factor(hgt_est))
+
+# Create a presence-absence matrix: rows = plots, cols = height classes
+height_pa_matrix <- dat_clean %>%
+  mutate(present = 1) %>%
+  distinct(ID, cluster, hgt_est, .keep_all = TRUE) %>%
+  pivot_wider(
+    id_cols = c(ID, cluster),
+    names_from = hgt_est,
+    values_from = present,
+    values_fill = 0
+  )
+
+# Split into metadata and numeric presence-absence 
+metadata <- height_pa_matrix %>%
+  select(ID, cluster)
+
+height_data <- height_pa_matrix %>%
+  tibble::column_to_rownames("ID") %>%
+  select(-cluster)
+
+# Check that height_data is now numeric
+stopifnot(all(sapply(height_data, is.numeric)))
+
+### ---- Alpha diversity 
+alpha_per_plot <- rowSums(height_data)
+alpha_mean <- mean(alpha_per_plot)
+
+# ---- Gamma diversity (total per cluster) 
+gamma_per_cluster <- height_pa_matrix %>%
+  pivot_longer(cols = -c(ID, cluster), names_to = "hgt_est", values_to = "present") %>%
+  group_by(cluster, hgt_est) %>%
+  summarise(present = max(present), .groups = "drop") %>%
+  group_by(cluster) %>%
+  summarise(gamma_diversity = sum(present), .groups = "drop")
+
+### ---- Beta diversity 
+beta_per_cluster <- metadata %>%
+  mutate(alpha = alpha_per_plot) %>%
+  left_join(gamma_per_cluster, by = "cluster") %>%
+  group_by(cluster) %>%
+  summarise(
+    alpha_mean = mean(alpha),
+    gamma = first(gamma_diversity),
+    beta = gamma / alpha_mean
+  )
+
+###  Optional: Jaccard dissimilarity among plots
+jaccard_dist <- vegdist(height_data, method = "jaccard", binary = TRUE)
+
+# Convert to dataframe for summary if needed
+jaccard_df <- as.data.frame(as.matrix(jaccard_dist))
+jaccard_df$ID <- rownames(jaccard_df)
+
+
+# Step 1: Convert distance matrix to long format
+jaccard_df <- as.data.frame(as.matrix(jaccard_dist)) %>%
+  tibble::rownames_to_column("plot1") %>%
+  tidyr::pivot_longer(-plot1, names_to = "plot2", values_to = "dissimilarity")
+
+# Remove self-comparisons
+jaccard_df <- jaccard_df %>%
+  filter(plot1 != plot2)
+
+# Step 2: Add cluster info to both plots
+cluster_lookup <- metadata %>% distinct(ID, cluster)
+
+jaccard_df <- jaccard_df %>%
+  left_join(cluster_lookup, by = c("plot1" = "ID")) %>%
+  rename(cluster1 = cluster) %>%
+  left_join(cluster_lookup, by = c("plot2" = "ID")) %>%
+  rename(cluster2 = cluster)
+
+# Step 3: Keep only within-cluster comparisons
+jaccard_within_cluster <- jaccard_df %>%
+  filter(cluster1 == cluster2) %>%
+  group_by(cluster = cluster1) %>%
+  summarise(
+    mean_jaccard = mean(dissimilarity, na.rm = TRUE),
+    n_comparisons = n()
+  )
+
+# View result
+jaccard_within_cluster
+
+
+#### merge dissimilarity between clusters --------------------------------------------------
+df_similarity <- jaccard_within_cluster %>% 
+  left_join(beta_per_cluster)
+
+
+df_similarity %>% 
+  ggplot(aes(x = beta,
+             y = mean_jaccard)) +
+  geom_point() + 
+  geom_smooth()
+
+
+# Cross scale variation ----------------------------------------------
+##  variation of height classes across scales: plot, cluster, landscape -----------------------
+
+# 
 
 # Ensure height is treated as a factor, ignore missing/empty strings
 dat_clean <- dat23_subplot_recode %>%
@@ -136,12 +279,7 @@ n_height_classes_landscape <- dat_clean %>%
   summarise(n_height_classes = n_distinct(hgt_est)) %>%
   pull(n_height_classes)
 
-# Show results
-list(
-  per_plot_summary = height_div_plot,
-  per_cluster_summary = height_div_cluster,
-  landscape_total = n_height_classes_landscape
-)
+
 
 # Compute medians and IQRs
 summary_stats <- tibble(
@@ -176,8 +314,8 @@ ggplot(summary_stats, aes(y = spat_scale, x = median)) +
   ) +
   theme_classic2()
 
-
-# HOw value in one plot affect clusre level mean? sd?
+## Plots vs cluster --------------------------------------------------------------
+## HOw value in one plot affect clusre level mean? sd?
 # split table in towo group: 
 # select one random subplot
 # subset remaining subplots - calculate means and sd
@@ -202,7 +340,7 @@ height_div_remaining_summary <- height_div_remaining %>%
   left_join(height_div_subset) #%>% # replace NA by 0s
   
 # how does the plot value predict the cluster value? 
-
+# predcit average value per plot
 height_div_remaining_summary %>% 
   ggplot(aes(x = plt_n_hgt,
              y = cl_mean_hgt_n )) + 
@@ -210,8 +348,17 @@ height_div_remaining_summary %>%
   geom_smooth(method = 'loess') +
   theme_classic()
 
+### predict coeffcient of variation -
+height_div_remaining_summary %>% 
+  ggplot(aes(x = plt_n_hgt,
+             y = cl_cv_hgt_n )) + 
+  geom_point() +
+  geom_smooth(method = 'loess') +
+  theme_classic()
 
-# bootstrap analysis of how the random selection of one point represent the values per
+
+
+### bootstrap analysis of how the random selection of one point represent the values per ----
 # cluster
 
 # Set number of bootstrap iterations
@@ -250,7 +397,7 @@ bootstrap_results <- map_dfr(1:n_boot, function(i) {
 })
 
 
-## calculate average LOESS fit -----------------
+### calculate average LOESS fit -----------------
 # Define prediction grid (plot-level richness: 1, 2, 3)
 pred_grid <- tibble(plt_n_hgt = seq(1, 3, by = 0.1))
 
@@ -291,7 +438,7 @@ ggplot(loess_summary, aes(x = plt_n_hgt, y = mean_fit)) +
 
 
 
-### calcutehe pseudo R2 ----------------------- 
+### calculate pseudo R2 ----------------------- 
 # Function to compute pseudo-R² for each LOESS fit
 compute_loess_r2 <- function(df) {
   loess_model <- tryCatch(loess(cl_mean_hgt_n ~ plt_n_hgt, data = df, span = 0.75), error = function(e) NULL)
@@ -334,40 +481,6 @@ ggplot(r2_results, aes(x = r2)) +
   theme_minimal()
 
 
-# get stem density and shannon for field data 
-df_cluster <- dat23_subplot_recode %>% 
-  group_by(cluster) %>% 
-  summarise(stem_density = sum(stem_density, na.rm = T),
-            basal_area_ha_m2 = sum(ba_ha_m2, na.rm = TRUE))
-
-
-
-# shannon estimation:
-shannon_species <- dat23_subplot_recode %>%
-  dplyr::filter(!is.na(species), ba_ha_m2 > 0) %>%
-  group_by(cluster, species) %>%
-  summarise(ba = sum(ba_ha_m2), .groups = "drop") %>%
-  group_by(cluster) %>%
-  mutate(p = ba / sum(ba)) %>%
-  summarise(shannon_species = -sum(p * log(p)), .groups = "drop")
-
-shannon_height <- dat23_subplot_recode %>%
-  dplyr::filter(hgt != "", ba_ha_m2 > 0) %>%
-  group_by(cluster, hgt) %>%
-  summarise(ba = sum(ba_ha_m2), .groups = "drop") %>%
-  group_by(cluster) %>%
-  mutate(p = ba / sum(ba)) %>%
-  summarise(shannon_height = -sum(p * log(p)), .groups = "drop")
-
-
-df_field_diversity <- df_cluster %>%
-  left_join(shannon_species, by = "cluster") %>%
-  left_join(shannon_height, by = "cluster") %>% 
-  replace_na(list(
-    shannon_species = 0,
-    shannon_height  = 0
-  ))
-
 
 
 
@@ -391,9 +504,9 @@ dd <- data.frame(
                  0.5)
 )
 
-# merge field data with drone estimation ------------------------------
+## merge field data with drone estimation ------------------------------
 
-# Sensitivity analysis ----------
+### Sensitivity analysis ----------
 
 # Function to generate boxplot for a given variable
 plot_buffer_variation <- function(data, var_name, y_label) {
@@ -420,7 +533,7 @@ ggarrange(p_mean, p_median, p_sd, p_cv, p_max, p_min,
           ncol = 2, nrow = 3, 
           labels = "AUTO")
 
-# convert to wide format as i have 4 different buffer sizes
+# convert to wide format as i have 4 different buffer sizes - need to do this for cluster level as well!
 drone_cv_wide <- drone_cv %>%
   dplyr::filter(buffer_size == 20) %>%  # filter to single buffer, representing our sample (increase to 22-25 m!!)
   pivot_wider(
@@ -443,7 +556,8 @@ pre_dist_renamed <- pre_dist_history_2023 %>%
 # Now join
 df_fin <- df_field_diversity %>%
   right_join(pre_dist_renamed, by = "cluster") %>% 
-  right_join(drone_cv_wide_renamed, by = "cluster")# %>%
+ # right_join(drone_cv_wide_renamed, by = "cluster") %>%
+  right_join(df_similarity, by = "cluster")
   
 
 # any correlation between variables?
@@ -475,6 +589,18 @@ df_model %>%
              y = drone_cv_height_20)) + 
   geom_point() + 
   geom_smooth(method = "loess")
+
+
+#s does vertical diversity between plots predict stem density? -------------
+
+df_fin %>% 
+  ggplot(aes(x = beta   ,
+             y = stem_density )) + 
+  geom_point() + 
+  geom_smooth(method = "loess")
+
+
+
 
 # Fit the linear model --------------------------------
 df_model <- df_fin %>%
@@ -518,4 +644,8 @@ GGally::ggpairs(
   mapping = aes(color = NULL)
 ) +
   ggtitle("Field vs Drone Metrics: Pairwise Comparison")
+
+
+
+# how does cluster variability affects foresrt resilience? ---------------
 
