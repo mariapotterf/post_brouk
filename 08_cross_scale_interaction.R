@@ -111,10 +111,227 @@ dat23_subplot_recode <- dat23_subplot %>%
 
 
 
+# test example: variation of height classes across landscape -----------------------
+
+# TEST START
+
+# Ensure height is treated as a factor, ignore missing/empty strings
+dat_clean <- dat23_subplot_recode %>%
+  filter(hgt_est != "" & !is.na(hgt_est))
+
+# 1. Number of unique height classes per plot
+height_div_plot <- dat_clean %>%
+  group_by(ID, cluster) %>%
+  summarise(n_height_classes = n_distinct(hgt_est)) %>%
+  ungroup()
+
+# 2. Number of unique height classes per cluster
+height_div_cluster <- dat_clean %>%
+  group_by(cluster) %>%
+  summarise(n_height_classes = n_distinct(hgt_est)) %>%
+  ungroup()
+
+# 3. Number of unique height classes across landscape
+n_height_classes_landscape <- dat_clean %>%
+  summarise(n_height_classes = n_distinct(hgt_est)) %>%
+  pull(n_height_classes)
+
+# Show results
+list(
+  per_plot_summary = height_div_plot,
+  per_cluster_summary = height_div_cluster,
+  landscape_total = n_height_classes_landscape
+)
+
+# Compute medians and IQRs
+summary_stats <- tibble(
+  spat_scale = factor(c("Plot", "Cluster", "Landscape"),
+                    level = c("Plot", "Cluster", "Landscape")),
+  median = c(
+    median(height_div_plot$n_height_classes),
+    median(height_div_cluster$n_height_classes),
+    n_height_classes_landscape
+  ),
+  IQR_low = c(
+    quantile(height_div_plot$n_height_classes, 0.25),
+    quantile(height_div_cluster$n_height_classes, 0.25),
+    n_height_classes_landscape
+  ),
+  IQR_high = c(
+    quantile(height_div_plot$n_height_classes, 0.75),
+    quantile(height_div_cluster$n_height_classes, 0.75),
+    n_height_classes_landscape
+  )
+)
+
+
+ggplot(summary_stats, aes(y = spat_scale, x = median)) +
+  geom_point(size = 3) +
+  geom_errorbarh(aes(xmin = IQR_low, xmax = IQR_high), 
+                 height = 0) +
+  labs(
+    x = "Number of Height Classes",
+    y = "Spatial Scale",
+    title = "Height Class Diversity Across Spatial Scales"
+  ) +
+  theme_classic2()
+
+
+# HOw value in one plot affect clusre level mean? sd?
+# split table in towo group: 
+# select one random subplot
+# subset remaining subplots - calculate means and sd
+
+# One random row per cluster
+height_div_subset <- height_div_plot %>%
+  group_by(cluster) %>%
+  slice_sample(n = 1) %>%
+  ungroup() %>% 
+  rename(plt_n_hgt = n_height_classes)
+
+# Remaining rows
+height_div_remaining <- anti_join(height_div_plot, height_div_subset, by = c("ID", "cluster"))
+
+height_div_remaining_summary <- height_div_remaining %>% 
+  group_by(cluster) %>% 
+  summarize(cl_mean_hgt_n = mean(n_height_classes, na.rm = T),
+            cl_median_hgt_n = median(n_height_classes, na.rm = T),
+            cl_sd_hgt_n = sd(n_height_classes, na.rm = T),
+            cl_cv_hgt_n = cl_sd_hgt_n/cl_mean_hgt_n) %>% 
+  mutate(across(everything(), ~replace_na(.x, 0))) %>% 
+  left_join(height_div_subset) #%>% # replace NA by 0s
+  
+# how does the plot value predict the cluster value? 
+
+height_div_remaining_summary %>% 
+  ggplot(aes(x = plt_n_hgt,
+             y = cl_mean_hgt_n )) + 
+  geom_point() +
+  geom_smooth(method = 'loess') +
+  theme_classic()
+
+
+# bootstrap analysis of how the random selection of one point represent the values per
+# cluster
+
+# Set number of bootstrap iterations
+n_boot <- 1000
+
+# Store results
+bootstrap_results <- map_dfr(1:n_boot, function(i) {
+  
+  # 1. Random plot per cluster
+  height_div_subset <- height_div_plot %>%
+    group_by(cluster) %>%
+    slice_sample(n = 1) %>%
+    ungroup() %>%
+    rename(plot_ID = ID,
+           plt_n_hgt = n_height_classes)
+  
+  # 2. Remaining plots
+  height_div_remaining <- anti_join(
+    height_div_plot,
+    height_div_subset,
+    by = c("ID" = "plot_ID", "cluster", "n_height_classes" = "plt_n_hgt")
+  )
+  
+  # 3. Mean height richness of remaining plots
+  cluster_remaining_summary <- height_div_remaining %>%
+    group_by(cluster) %>%
+    summarize(cl_mean_hgt_n = mean(n_height_classes, na.rm = TRUE)) %>%
+    ungroup()
+  
+  # 4. Merge back to random plots
+  paired <- height_div_subset %>%
+    left_join(cluster_remaining_summary, by = "cluster") %>%
+    mutate(iteration = i)
+  
+  return(paired)
+})
+
+
+## calculate average LOESS fit -----------------
+# Define prediction grid (plot-level richness: 1, 2, 3)
+pred_grid <- tibble(plt_n_hgt = seq(1, 3, by = 0.1))
+
+# Apply LOESS fit to each iteration and predict over the grid
+loess_fits <- bootstrap_results %>%
+  filter(!is.na(cl_mean_hgt_n)) %>%
+  group_by(iteration) %>%
+  group_split() %>%
+  map_dfr(function(df) {
+    loess_model <- tryCatch(loess(cl_mean_hgt_n ~ plt_n_hgt, data = df, span = 0.75), error = function(e) NULL)
+    if (!is.null(loess_model)) {
+      pred <- predict(loess_model, newdata = pred_grid)
+      tibble(plt_n_hgt = pred_grid$plt_n_hgt, cl_mean_pred = pred, iteration = unique(df$iteration))
+    } else {
+      NULL
+    }
+  })
+
+# Aggregate: mean and 95% CI of LOESS fits
+loess_summary <- loess_fits %>%
+  group_by(plt_n_hgt) %>%
+  summarize(
+    mean_fit = mean(cl_mean_pred, na.rm = TRUE),
+    lower_CI = quantile(cl_mean_pred, 0.025, na.rm = TRUE),
+    upper_CI = quantile(cl_mean_pred, 0.975, na.rm = TRUE)
+  )
+
+
+ggplot(loess_summary, aes(x = plt_n_hgt, y = mean_fit)) +
+  geom_line(color = "blue", size = 1) +
+  geom_ribbon(aes(ymin = lower_CI, ymax = upper_CI), alpha = 0.3, fill = "gray") +
+  labs(
+    x = "Height Class Richness in Random Plot",
+    y = "Mean Height Class Richness in Remaining Plots",
+    title = "Average LOESS Fit Across Bootstraps"
+  ) +
+  theme_classic2()
 
 
 
+### calcutehe pseudo R2 ----------------------- 
+# Function to compute pseudo-R² for each LOESS fit
+compute_loess_r2 <- function(df) {
+  loess_model <- tryCatch(loess(cl_mean_hgt_n ~ plt_n_hgt, data = df, span = 0.75), error = function(e) NULL)
+  if (!is.null(loess_model)) {
+    preds <- predict(loess_model, newdata = df)
+    y <- df$cl_mean_hgt_n
+    rss <- sum((y - preds)^2, na.rm = TRUE)
+    tss <- sum((y - mean(y, na.rm = TRUE))^2, na.rm = TRUE)
+    r2 <- 1 - (rss / tss)
+    return(tibble(iteration = unique(df$iteration), r2 = r2))
+  } else {
+    return(tibble(iteration = unique(df$iteration), r2 = NA_real_))
+  }
+}
 
+# Apply to each bootstrap iteration
+r2_results <- bootstrap_results %>%
+  filter(!is.na(cl_mean_hgt_n)) %>%
+  group_by(iteration) %>%
+  group_split() %>%
+  map_dfr(compute_loess_r2)
+
+# Summarize R² distribution
+r2_summary <- r2_results %>%
+  summarize(
+    mean_r2 = mean(r2, na.rm = TRUE),
+    median_r2 = median(r2, na.rm = TRUE),
+    r2_2.5 = quantile(r2, 0.025, na.rm = TRUE),
+    r2_97.5 = quantile(r2, 0.975, na.rm = TRUE)
+  )
+
+
+ggplot(r2_results, aes(x = r2)) +
+  geom_histogram(bins = 30, fill = "skyblue", color = "white") +
+  labs(
+    x = expression(R^2 ~ " of LOESS fits across bootstraps"),
+    y = "Frequency",
+    title = "Distribution of Pseudo-" ~ R^2 ~ " Values"
+  ) +
+  theme_minimal()
 
 
 # get stem density and shannon for field data 
