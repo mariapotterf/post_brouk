@@ -110,9 +110,10 @@ dat23_subplot_recode <- dat23_subplot %>%
 
 ### get stem density and shannon for field data --------------
 df_cluster <- dat23_subplot_recode %>% 
-  group_by(cluster) %>% 
+  group_by(cluster, manag_intensity, salvage_intensity, protection_intensity) %>% 
   summarise(stem_density = sum(stem_density, na.rm = T),
-            basal_area_ha_m2 = sum(ba_ha_m2, na.rm = TRUE))
+            basal_area_ha_m2 = sum(ba_ha_m2, na.rm = TRUE))#,
+           # mean_hgt  = mean)
 
 
 
@@ -557,7 +558,8 @@ pre_dist_renamed <- pre_dist_history_2023 %>%
 df_fin <- df_field_diversity %>%
   right_join(pre_dist_renamed, by = "cluster") %>% 
  # right_join(drone_cv_wide_renamed, by = "cluster") %>%
-  right_join(df_similarity, by = "cluster")
+  right_join(df_similarity, by = "cluster") %>% 
+  right_join(height_div_remaining_summary)
   
 
 # any correlation between variables?
@@ -594,10 +596,10 @@ df_model %>%
 #s does vertical diversity between plots predict stem density? -------------
 
 df_fin %>% 
-  ggplot(aes(x = beta   ,
+  ggplot(aes(x = shannon_height     ,
              y = stem_density )) + 
   geom_point() + 
-  geom_smooth(method = "loess")
+  geom_smooth(method = "lm")
 
 
 
@@ -648,4 +650,57 @@ GGally::ggpairs(
 
 
 # how does cluster variability affects foresrt resilience? ---------------
+head(df_fin)
 
+
+cor(df_fin$cl_cv_hgt_n , df_fin$stem_density)
+
+hist(df_fin$stem_density)
+
+library(mgcv)
+# library(tweedie)
+# library(statmod)
+
+# Start with null model
+m_null <- gam(stem_density ~ 1, data = df_fin, family = tw(link = "log"))
+
+# Try candidate models with individual smooth terms
+m1 <- gam(stem_density ~ s(pre_mean_cover_dens, k = 3), data = df_fin, family = tw(link = "log"))
+m2 <- gam(stem_density ~ s(pre_share_coniferous, k = 3), data = df_fin, family = tw(link = "log"))
+m3 <- gam(stem_density ~ s(pre_shannon, k = 3), data = df_fin, family = tw(link = "log"))
+m4 <- gam(stem_density ~ s(mean_jaccard, k = 3), data = df_fin, family = tw(link = "log"))
+m5 <- gam(stem_density ~ s(alpha_mean, k = 3), data = df_fin, family = tw(link = "log"))
+m6 <- gam(stem_density ~ s(beta, k = 3), data = df_fin, family = tw(link = "log"))
+m7 <- gam(stem_density ~ s(manag_intensity, k = 3), data = df_fin, family = tw(link = "log"))
+m8 <- gam(stem_density ~ s(salvage_intensity, k = 3), data = df_fin, family = tw(link = "log"))
+m9 <- gam(stem_density ~ s(protection_intensity, k = 3), data = df_fin, family = tw(link = "log"))
+
+# Compare AICs
+AIC(m_null, m1, m2, m3, m4, m5, m6, m7, m8, m9)
+
+df_fin %>%
+  ungroup(.) %>% 
+  dplyr::select(beta, mean_jaccard, salvage_intensity, protection_intensity) %>%
+  cor(use = "complete.obs")
+
+
+
+best_model <- gam(
+  stem_density ~ 
+  #  s(alpha_mean, k = 3) +
+    s(cl_cv_hgt_n , k = 3) +
+    #s(mean_jaccard, k = 3) +
+    #s(manag_intensity, k = 3) ,#+
+    s(salvage_intensity, k = 3) +
+    s(protection_intensity, k = 3) +
+    s(pre_share_coniferous, k = 3) +
+    s(pre_mean_cover_dens, k = 3),
+    
+  data = df_fin,
+  family = tw(link = "log")
+)
+summary(best_model)
+plot(best_model,page = 1)
+
+library(gratia)
+appraise(best_model)
