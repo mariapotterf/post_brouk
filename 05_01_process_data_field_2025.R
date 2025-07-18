@@ -67,9 +67,37 @@ cols_needed <- c(# "plot_id",
 )
 
 
+# get car parking -------------------------------
+
+# List all car_parking.gpkg files
+car_parking_files <- list.files(
+  "raw/collected_2025",
+  pattern = "^car_parking\\.gpkg$",
+  full.names = TRUE,
+  recursive = TRUE
+)
+
+print(car_parking_files)
+
+# Read all car_parking layers into a list
+car_parking_list <- lapply(car_parking_files, function(path) {
+  tryCatch({
+    sf_obj <- st_read(path, quiet = TRUE)
+    sf_obj$source_file <- basename(path)
+    sf_obj$source_folder <- basename(dirname(path))
+    sf_obj
+  }, error = function(e) NULL)
+})
+
+# Merge into a single sf object
+car_parking_all <- do.call(rbind, car_parking_list)
+
+# Export merged result as KML
+st_write(car_parking_all, "outData/google_my_map/merged_car_parking.kml", driver = "KML", delete_dsn = TRUE)
 
 
-# LOOP ----TESt START ----------------------------------------------------
+
+# Process in field data ----------------------------------------------------
 # some plot_id can be the same across tables and recordiong dates:
 # instead, prepare unique plot_key - a combination betwen plot_id and a recording date
 # to link between spatial data and no geometry tables
@@ -440,7 +468,7 @@ dat_long_T <- dat_long %>%
 #df_unique <- df %>%
 length(unique(dat_long_T$sample))
 
-View(dat_long_T)
+#View(dat_long_T)
 # export final table as csv
 #fwrite(dat_long_T, 'outTable/samples_list.csv')
 # export final table as csv
@@ -453,7 +481,11 @@ fwrite(dat_long_T, 'outShare/samples_list.csv')
 # dominant species
 # vertical categories
 # keep only correct number of plots
-# analyze on level of subplot, not yet on level of clusters
+# analyze on level of subplot
+head(dat_subplot)
+View(dat_subplot)
+
+
 
 
 
