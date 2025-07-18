@@ -463,7 +463,7 @@ dat_long_T <- dat_long %>%
   slice_max(order_by = plot_key, n = 1, with_ties = FALSE) %>% # keep only later data if recorded deveral times
   ungroup()
 #df_unique <- df %>%
- 
+length(unique(dat_long_T$sample))
 
 View(dat_long_T)
 # export final table as csv
@@ -480,20 +480,7 @@ fwrite(dat_long_T, 'outShare/samples_list.csv')
 # keep only correct number of plots
 # analyze on level of subplot, not yet on level of clusters
 
-## on cluster level ----------------------------------------------------
 
-df_cluster <- dat_subplot %>% 
-  group_by(cluster, acc) %>% 
-  mutate(area = n_plots *4,
-         scaling_factor = 10000/area,
-         stem_density = count*scaling_factor) %>%   # study site area
-  summarize(stem_density = sum(stem_density, na.rm = T))
-
-
-df_cluster %>% 
-  ggplot(aes(x = acc, y = stem_density, fill = acc)) + 
-  geom_boxplot() + geom_jitter()
-  
 
 # save files: -------------------
 fwrite(dat_subplot, 'outData/subplot_full_2025.csv')
