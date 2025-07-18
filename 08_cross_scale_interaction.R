@@ -115,6 +115,8 @@ df_cluster <- dat23_subplot_recode %>%
             basal_area_ha_m2 = sum(ba_ha_m2, na.rm = TRUE))#,
            # mean_hgt  = mean)
 
+# weighted average height --------------
+#summarise(weighted_hgt = sum(hgt_est * basal_area_cm2) / sum(basal_area_cm2))
 
 
 # shannon estimation:
@@ -159,7 +161,7 @@ dat_clean2 <- dat23_subplot_recode %>%
   mutate(hgt_est = as.factor(hgt_est))
 
 # Create a presence-absence matrix: rows = plots, cols = height classes
-height_pa_matrix <- dat_clean %>%
+height_pa_matrix <- dat_clean2 %>%
   mutate(present = 1) %>%
   distinct(ID, cluster, hgt_est, .keep_all = TRUE) %>%
   pivot_wider(
