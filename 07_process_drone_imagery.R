@@ -1,6 +1,6 @@
 # process drone imagery
 
-# extract height information
+# extract height information per square (2x2 m subplot)
 # maybe some additional classification?
 
 gc()
@@ -75,15 +75,6 @@ data.frame(cluster_vect)
 
 
 #--------------------------------------------------------
-
-# test run: buffer 26_111 overlaps with drone uav6
-r <- chm_rasters$CHM_uav6
-buf <- buffs[buffs$cluster == "26_111", ]
-
-plot(r)
-plot(buf, add = TRUE, border = "red")
-
-
 # Ensure cluster_vect is a data.frame (not SpatVector or sf)
 cluster_lookup <- as.data.frame(cluster_vect)[, c("plot_ID", "uav_ID")]
 
@@ -92,6 +83,55 @@ buffer_sizes <- c(1, 2.5, 5, 7.5, 10)
 
 # Prepare output list
 all_cluster_heights <- list()
+
+buffs <- terra::buffer(cluster_vect, width = 2.5)
+buffs$ID <- seq_len(nrow(buffs))
+
+# test run: buffer 26_111 overlaps with drone uav6
+r <- chm_rasters$CHM_uav6
+buf <- buffs[buffs$cluster == "26_111", ]
+
+plot(r)
+plot(buf, add = TRUE, border = "red")
+plot(buf)
+
+
+#  Make a square buffer TEST STARTS ----------------------
+library(terra)
+
+# Define square side length
+buffer_width <- 2.5
+half_width <- buffer_width / 2
+
+# Check input
+stopifnot(inherits(cluster_vect, "SpatVector"))
+stopifnot(geomtype(cluster_vect) == "points")
+
+# Create square buffers as bounding boxes around each point
+squares <- vect(lapply(1:nrow(cluster_vect), function(i) {
+  pt <- cluster_vect[i, ]
+  ext <- ext(
+    crds(pt)[1, 1] - half_width,
+    crds(pt)[1, 1] + half_width,
+    crds(pt)[1, 2] - half_width,
+    crds(pt)[1, 2] + half_width
+  )
+  as.polygons(ext, crs = crs(cluster_vect))
+}))
+
+# Add attributes
+squares$ID <- seq_len(nrow(squares))
+squares$cluster <- cluster_vect$cluster
+
+# Test run: extract square for cluster "26_111"
+r <- chm_rasters$CHM_uav6
+buf <- squares[squares$cluster == "26_111", ]
+
+plot(buf)
+plot(r)
+plot(buf, add = T, col = "red")
+
+# END TEST --------------------
 
 # Loop over buffer sizes
 for (buff_width in buffer_sizes) {
