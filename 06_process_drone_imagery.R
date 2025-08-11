@@ -208,7 +208,10 @@ for (side in square_sides) {
         max_height    = dplyr::if_else(n_cells_nonNA > 0, max_height,    NA_real_),
         min_height    = dplyr::if_else(n_cells_nonNA > 0, min_height,    NA_real_),
         cv_height     = dplyr::if_else(n_cells_nonNA > 0 & mean_height != 0,
-                                       sd_height / mean_height, NA_real_)
+                                       sd_height / mean_height, NA_real_),
+        range_height  = dplyr::if_else(n_cells_nonNA > 0 &
+                                         is.finite(max_height) & is.finite(min_height),
+                                       max_height - min_height, NA_real_)
       )
     
     return(out)
@@ -224,3 +227,5 @@ chm_summary_multi <- dplyr::bind_rows(all_cluster_heights)
 
 # save output -----------------------------------------
 fwrite(chm_summary_multi, "outTable/chm_buff_summary.csv")
+
+hist(chm_summary_multi$cv_height)
