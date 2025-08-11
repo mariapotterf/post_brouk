@@ -1,7 +1,8 @@
+
 # process drone imagery
 
-# extract height information per square (2x2 m subplot)
-# maybe some additional classification?
+# extract height information per square (2x2 m subplot)/circle on teh subplot level
+# get CV, height, min-max
 
 gc()
 
@@ -69,7 +70,7 @@ dat23_subset <- dat23_subset %>%
 #   st_as_sf(coords = c("x", "y"), crs = target_crs)  # Use correct CRS
 
 # Convert to terra vector
-cluster_vect <- vect(dat23_subset)
+cluster_vect <- vect(ungroup(dat23_subset))
 
 data.frame(cluster_vect)
 
@@ -79,7 +80,7 @@ data.frame(cluster_vect)
 cluster_lookup <- as.data.frame(cluster_vect)[, c("plot_ID", "uav_ID")]
 
 # Define buffer widths to test
-buffer_sizes <- c(1, 2.5, 5, 7.5, 10)
+buffer_sizes <- c(2.5)
 
 # Prepare output list
 all_cluster_heights <- list()
@@ -89,7 +90,7 @@ buffs$ID <- seq_len(nrow(buffs))
 
 # test run: buffer 26_111 overlaps with drone uav6
 r <- chm_rasters$CHM_uav6
-buf <- buffs[buffs$cluster == "26_111", ]
+buf <- buffs[buffs$plot_ID  == "13_15_101_1", ]
 
 plot(r)
 plot(buf, add = TRUE, border = "red")
@@ -97,10 +98,10 @@ plot(buf)
 
 
 #  Make a square buffer TEST STARTS ----------------------
-library(terra)
+#library(terra)
 
 # Define square side length
-buffer_width <- 2.5
+buffer_width <- 2
 half_width <- buffer_width / 2
 
 # Check input
@@ -121,15 +122,18 @@ squares <- vect(lapply(1:nrow(cluster_vect), function(i) {
 
 # Add attributes
 squares$ID <- seq_len(nrow(squares))
-squares$cluster <- cluster_vect$cluster
+squares$plot_ID <- cluster_vect$plot_ID
 
 # Test run: extract square for cluster "26_111"
 r <- chm_rasters$CHM_uav6
-buf <- squares[squares$cluster == "26_111", ]
+buf <- squares[squares$plot_ID == "13_15_104_1", ]
 
 plot(buf)
-plot(r)
+plot(r, add = T)
 plot(buf, add = T, col = "red")
+
+
+
 
 # END TEST --------------------
 
