@@ -19,6 +19,7 @@ drone23_24_sf <- st_read("raw/position_drone.gpkg") # data per subplot
 chm_folder <- "raw/UAV_Images" # /2023
 chm_files <- list.files(chm_folder, pattern = "^CHM_.*\\.tif$", full.names = TRUE, recursive = TRUE)
 
+# drone heights are in meters!
 
 # process data -----------------------
 drone23_24_sf <- drone23_24_sf %>% 
@@ -208,7 +209,10 @@ for (side in square_sides) {
         max_height    = dplyr::if_else(n_cells_nonNA > 0, max_height,    NA_real_),
         min_height    = dplyr::if_else(n_cells_nonNA > 0, min_height,    NA_real_),
         cv_height     = dplyr::if_else(n_cells_nonNA > 0 & mean_height != 0,
-                                       sd_height / mean_height, NA_real_)
+                                       sd_height / mean_height, NA_real_),
+        range_height  = dplyr::if_else(n_cells_nonNA > 0 &
+                                         is.finite(max_height) & is.finite(min_height),
+                                       max_height - min_height, NA_real_)
       )
     
     return(out)
@@ -224,3 +228,5 @@ chm_summary_multi <- dplyr::bind_rows(all_cluster_heights)
 
 # save output -----------------------------------------
 fwrite(chm_summary_multi, "outTable/chm_buff_summary.csv")
+
+hist(chm_summary_multi$cv_height)
