@@ -91,4 +91,6 @@ overlaps
 
 # Save spatial subplot data with cluster IDs
 st_write(overlaps, "outData/overlaps.gpkg", delete_layer = TRUE)
+st_write(overlaps, "outData/google_my_map/overlaps.kml", driver = "KML", delete_dsn = TRUE)
+
 
