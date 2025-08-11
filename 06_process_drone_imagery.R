@@ -74,29 +74,6 @@ cluster_vect <- vect(ungroup(dat23_subset))
 
 data.frame(cluster_vect)
 
-
-#--------------------------------------------------------
-# Ensure cluster_vect is a data.frame (not SpatVector or sf)
-cluster_lookup <- as.data.frame(cluster_vect)[, c("plot_ID", "uav_ID")]
-
-# Define buffer widths to test
-buffer_sizes <- c(2.5)
-
-# Prepare output list
-all_cluster_heights <- list()
-
-buffs <- terra::buffer(cluster_vect, width = 2.5)
-buffs$ID <- seq_len(nrow(buffs))
-
-# test run: buffer 26_111 overlaps with drone uav6
-r <- chm_rasters$CHM_uav6
-buf <- buffs[buffs$plot_ID  == "13_15_101_1", ]
-
-plot(r)
-plot(buf, add = TRUE, border = "red")
-plot(buf)
-
-
 #  Make a square buffer TEST STARTS ----------------------
 #library(terra)
 
@@ -131,61 +108,118 @@ buf <- squares[squares$plot_ID == "13_15_104_1", ]
 plot(buf)
 plot(r, add = T)
 plot(buf, add = T, col = "red")
+plot(r)
 
 
+# make square buffer ------------------------------------------------------------
 
+# Lookup from the input points (keeps your original mapping)
+cluster_lookup <- as.data.frame(cluster_vect)[, c("plot_ID", "uav_ID")]
 
-# END TEST --------------------
-
-# Loop over buffer sizes
-for (buff_width in buffer_sizes) {
-  cat("Processing buffer:", buff_width, "\n")
-  
-  # Create buffer for this size
-  buffs <- terra::buffer(cluster_vect, width = buff_width)
-  buffs$ID <- seq_len(nrow(buffs))
-  
-  # Loop through drone rasters
-  cluster_heights <- lapply(names(chm_rasters), function(drone_id) {
-    #drone_id = "CHM_uav6"
-    r <- chm_rasters[[drone_id]]
-    r_name <- names(r)[1]
-    
-    # Get clusters linked to this drone
-    matching_clusters <- cluster_lookup %>%
-      dplyr::filter(uav_ID == drone_id) %>%
-      pull(plot_ID)
-    
-    buffers_this_drone <- buffs[buffs$plot_ID %in% matching_clusters, ]
-    
-    if (nrow(buffers_this_drone) == 0) return(NULL)
-    
-    # Extract
-    vals <- terra::extract(r, buffers_this_drone, ID = TRUE)
-    vals$ID <- buffers_this_drone$plot_ID[vals$ID]
-    
-    # Summarize
-    vals %>%
-      as_tibble() %>%
-      group_by(ID) %>%
-      summarize(
-        drone       = drone_id,
-        buffer_size = buff_width,
-        mean_height = mean(.data[[r_name]], na.rm = TRUE),
-        median_height = median(.data[[r_name]], na.rm = TRUE),
-        sd_height   = sd(.data[[r_name]], na.rm = TRUE),
-        cv_height   = sd_height / mean_height,
-        max_height  = max(.data[[r_name]], na.rm = TRUE),
-        min_height  = min(.data[[r_name]], na.rm = TRUE),
-        .groups     = "drop"
-      )
-  })
-  
-  all_cluster_heights[[as.character(buff_width)]] <- bind_rows(cluster_heights)
+# ---- Helper to build square polygons (axis-aligned) around points
+make_square_buffers <- function(points, side_m) {
+  half <- side_m / 2
+  xy <- terra::crds(points)
+  # build extents, then polygons
+  polys <- vect(lapply(seq_len(nrow(xy)), function(i) {
+    e <- terra::ext(xy[i, 1] - half, xy[i, 1] + half,
+                    xy[i, 2] - half, xy[i, 2] + half)
+    terra::as.polygons(e, crs = terra::crs(points))
+  }))
+  # carry attributes
+  polys$plot_ID <- points$plot_ID
+  polys$uav_ID  <- points$uav_ID
+  polys$buf_side <- side_m
+  polys$poly_row <- seq_len(nrow(polys))  # stable row index for mapping
+  polys
 }
 
-# Combine all buffer sizes into one table
-chm_summary_multi <- bind_rows(all_cluster_heights)
+# if you already have `squares`, skip this:
+squares <- make_square_buffers(cluster_vect, side_m = 2)
+
+# convert to sf for robust GPKG writing (multi-layer friendly)
+sq_sf <- sf::st_as_sf(squares)
+
+# ------------------------------------------------------------------
+# OPTION A (recommended): one GPKG, one layer, all squares together
+# ------------------------------------------------------------------
+gpkg_all <- "outData/square_buffers_2m.gpkg"
+
+# overwrite the dataset if it exists
+sf::st_write(
+  obj   = dplyr::select(sq_sf, plot_ID, uav_ID, buf_side),
+  dsn   = gpkg_all,
+  layer = "square_buffers_2m",
+  delete_dsn = TRUE
+)
+
+
+# --- Build 2 m squares once (you said one size, but vector-ready if you add more)
+square_sides <- c(2)  # meters
+all_cluster_heights <- list()
+
+for (side in square_sides) {
+  message("Building squares with side = ", side, " m")
+  squares <- make_square_buffers(cluster_vect, side_m = side)
+  
+  cluster_heights <- lapply(names(chm_rasters), function(drone_id) {
+    r <- chm_rasters[[drone_id]]
+    value_col <- names(r)[1]  # CHM layer name
+    
+    # Clusters linked to this drone
+    matching_plots <- cluster_lookup %>%
+      dplyr::filter(.data$uav_ID == drone_id) %>%
+      dplyr::pull(.data$plot_ID)
+    
+    squares_this_drone <- squares[squares$plot_ID %in% matching_plots, ]
+    if (nrow(squares_this_drone) == 0) return(NULL)
+    
+    # Extract values + raster cell ids
+    vals <- terra::extract(r, squares_this_drone, ID = TRUE, cells = TRUE)
+    if (is.null(vals) || nrow(vals) == 0) return(NULL)
+    
+    # Map polygon ID -> plot_ID and add constant columns
+    vals$plot_ID     <- squares_this_drone$plot_ID[vals$ID]
+    vals$drone       <- drone_id
+    vals$buffer_size <- side
+    
+    # Summarise: total cells hit, split NA vs non-NA, then stats
+    out <- vals %>%
+      tibble::as_tibble() %>%
+      dplyr::group_by(.data$drone, .data$buffer_size, .data$plot_ID) %>%
+      dplyr::summarize(
+        n_cells_total = dplyr::n_distinct(.data$cell[!is.na(.data$cell)]),
+        n_cells_nonNA = dplyr::n_distinct(.data$cell[!is.na(.data[[value_col]]) & !is.na(.data$cell)]),
+        n_cells_NA    = n_cells_total - n_cells_nonNA,
+        mean_height   = mean(.data[[value_col]], na.rm = TRUE),
+        median_height = median(.data[[value_col]], na.rm = TRUE),
+        sd_height     = sd(.data[[value_col]], na.rm = TRUE),
+        max_height    = suppressWarnings(max(.data[[value_col]], na.rm = TRUE)),
+        min_height    = suppressWarnings(min(.data[[value_col]], na.rm = TRUE)),
+        .groups = "drop"
+      ) %>%
+      # keep only polygons that intersected at least one cell
+      dplyr::filter(.data$n_cells_total > 0) %>%
+      # blank out stats when there were no valid values
+      dplyr::mutate(
+        mean_height   = dplyr::if_else(n_cells_nonNA > 0, mean_height,   NA_real_),
+        median_height = dplyr::if_else(n_cells_nonNA > 0, median_height, NA_real_),
+        sd_height     = dplyr::if_else(n_cells_nonNA > 0, sd_height,     NA_real_),
+        max_height    = dplyr::if_else(n_cells_nonNA > 0, max_height,    NA_real_),
+        min_height    = dplyr::if_else(n_cells_nonNA > 0, min_height,    NA_real_),
+        cv_height     = dplyr::if_else(n_cells_nonNA > 0 & mean_height != 0,
+                                       sd_height / mean_height, NA_real_)
+      )
+    
+    return(out)
+  })
+  
+  # bind, dropping NULLs from lapply
+  all_cluster_heights[[as.character(side)]] <- dplyr::bind_rows(purrr::compact(cluster_heights))
+}
+
+# --- Final table across (potentially) multiple square sizes
+chm_summary_multi <- dplyr::bind_rows(all_cluster_heights)
 
 
 # save output -----------------------------------------
