@@ -9,14 +9,21 @@
 library(fs)
 library(stringr)
 library(data.table)
+library(dplyr)
+library(writexl)  # for Excel writing
 
 # Set base directory and target folder
 base_dir <- "raw/collected_2025"
 target_dir <- "outShare/sample_photo"  # You can customize this
 
 # export final table as csv
-df_sample_photos <- fread('outTable/samples_list.csv') %>% 
+df_sample_photos <- fread('outShare/samples_list.csv') %>% 
   dplyr::filter(photo != "")  
+
+# writexl::write_xlsx(
+#   df_sample_photos,
+#   path = "outShare/samples_list.xlsx"
+# )
 
 # Create target directory if it doesn't exist
 dir_create(target_dir)
