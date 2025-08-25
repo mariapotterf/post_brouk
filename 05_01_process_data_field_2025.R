@@ -402,6 +402,7 @@ dat_subplot <- combined_vegetation_data_recode %>%
   mutate(n_plots = dplyr::n_distinct(plot_key)) #%>% 
   #dplyr::filter(n_plots >4 ) #%>% 
   
+length(unique(dat_subplot$cluster))
 
 table(dat_subplot$cluster)
 
@@ -483,7 +484,7 @@ fwrite(dat_long_T, 'outShare/samples_list.csv')
 # keep only correct number of plots
 # analyze on level of subplot
 head(dat_subplot)
-View(dat_subplot)
+#View(dat_subplot)
 
 
 
