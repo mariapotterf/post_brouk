@@ -58,3 +58,5 @@ summary_df <- summary_df %>%
 
 # Display result
 print(summary_df)
+
+write.csv(summary_df, "outTable/annual_climate_summary_stats.csv", row.names = FALSE)
