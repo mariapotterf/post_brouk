@@ -30,6 +30,8 @@ baseline_files <- setNames(
 
 # Years to process
 target_years <- 2018:2024
+# Days in Apr–Sep (04–09). Needed because pr baseline is a *daily mean*.
+season_days <- 183L
 
 # Relative anomalies:
 # - Typically **only meaningful for precipitation**. Default: on for pr, off for tas.
@@ -112,6 +114,12 @@ for (bp in names(baseline_files)) {
   # Baseline stats (once per baseline)
   stats_list[[length(stats_list)+1]] <- .compute_stats(baseline, year = NA_integer_,
                                                        what = "baseline", baseline_period = bp)
+  
+  # --- NEW: for precipitation, baseline is per-day mean; scale to Apr–Sep totals (183 days)
+  if (var_prefix == "pr") {
+    message("Scaling precipitation baseline from daily mean to Apr–Sep seasonal totals (x ", season_days, ").")
+    baseline <- baseline * season_days
+  }
   
   abs_out_files <- vector("character", nrow(annual_tbl))
   rel_out_files <- vector("character", nrow(annual_tbl))
