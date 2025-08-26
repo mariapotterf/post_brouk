@@ -1,200 +1,191 @@
 # ===============================
-# Temperature anomaly script
-# Baseline: 1991–2010 mean raster
-# Annual means: 2000–2024 (one raster per year)
-# Output: anomalies for 2018–2024 (annual - baseline): 
-# In climate science, anomalies are almost always defined as: anomaly =  observed (year) − reference_mean (result)
+# Multi-baseline anomalies for tas or pr (terra)
+# - Absolute anomaly: year - baseline  (°C or mm)
+# - Relative anomaly (optional): (year - baseline) / baseline * 100  (%)
 # ===============================
 
 # ---- Packages ----
-library(terra)          # spatial rasters
-library(dplyr)          # data wrangling (use dplyr:: where ambiguous)
-library(stringr)        # filename parsing
-library(purrr)          # iteration
+library(terra)
+library(dplyr)     # use dplyr::<fn> if ambiguity
+library(stringr)
+library(purrr)
+library(readr)
+library(tibble)
 
-# ---- User paths (edit these to your setup) ----
-baseline_path <- "raw/clim_data_CZ_reference_period/tas_1991-2020__04-09_mean.tif"
-annual_dir    <- "raw/clim_data_CZ_annual/output_annual_means"   # folder with annual rasters, e.g., temp_mean_2000.tif
-out_dir       <- "outData/anomalies_2018_2024"
-
-dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
-
-# (Optional) Terra settings for progress/temp files
 terraOptions(progress = 1)
 
-# ---- Load baseline ----
-baseline <- rast(baseline_path)
+# ---- User paths / params ----
+var_prefix <- "pr"   # set to "tas" or "pr"
+annual_dir <- "raw/clim_data_CZ_annual"
+baseline_dir <- "raw/clim_data_CZ_reference_period"
+out_dir <- "outData/anomalies_2018_2024"
+dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
 
-if (!file.exists(baseline_path)) {
-  stop("Baseline raster not found at: ", baseline_path)
-}
+# Baseline files (pattern like "tas_1981-2010__04-09_mean.tif" / "pr_1981-2010__04-09_mean.tif")
+baseline_periods <- c("1961-1990","1981-2010","1991-2020")
+baseline_files <- setNames(
+  file.path(baseline_dir, paste0(var_prefix, "_", baseline_periods, "__04-09_mean.tif")),
+  baseline_periods
+)
 
-# Ensure baseline has a defined CRS
-if (is.na(crs(baseline))) {
-  stop("Baseline raster has no CRS. Please define its CRS before proceeding.")
-}
+# Years to process
+target_years <- 2018:2024
 
-# ---- Discover annual rasters and extract years ----
-annual_files <- list.files(annual_dir, pattern = "^tas.*\\.tif(f)?$", full.names = TRUE)  # only tas rasters, 
+# Relative anomalies:
+# - Typically **only meaningful for precipitation**. Default: on for pr, off for tas.
+compute_relative <- (var_prefix == "pr")
+# To avoid insane % where the baseline is ~0, mask pixels with very small baseline.
+# Choose a sensible threshold for your units (e.g. 1 mm). Not used for tas.
+rel_min_baseline <- if (var_prefix == "pr") 1 else 0
 
-if (length(annual_files) == 0) {
-  stop("No annual GeoTIFFs found in: ", annual_dir)
-}
+# ---- Discover annual rasters for the selected variable ----
+annual_files <- list.files(
+  annual_dir,
+  pattern = paste0("^", var_prefix, ".*\\.tif(f)?$"),
+  full.names = TRUE
+)
+if (length(annual_files) == 0) stop("No annual GeoTIFFs found for '", var_prefix, "' in: ", annual_dir)
 
-# Extract a 4-digit year from filenames
-annual_tbl <- tibble::tibble(
+# Extract the first 4-digit year found in the filename
+annual_tbl <- tibble(
   file = annual_files,
   year = str_extract(basename(annual_files), "(?<!\\d)(19|20)\\d{2}(?!\\d)") |> as.integer()
 ) |>
-  dplyr::filter(!is.na(year)) |>
+  dplyr::filter(!is.na(year), year %in% target_years) |>
   dplyr::arrange(year)
 
-# Keep only 2018–2024
-target_years <- 2018:2024
-annual_tbl <- dplyr::filter(annual_tbl, year %in% target_years)
-
 if (nrow(annual_tbl) == 0) {
-  stop("No annual rasters for years 2018–2024 were found in: ", annual_dir)
+  stop("No ", var_prefix, " annual rasters for years ", paste(range(target_years), collapse = "-"),
+       " found in: ", annual_dir)
 }
-
-# Warn about any missing years in the range
 missing_years <- setdiff(target_years, annual_tbl$year)
-if (length(missing_years) > 0) {
-  warning("Missing rasters for years: ", paste(missing_years, collapse = ", "))
-}
+if (length(missing_years) > 0) warning("Missing rasters for years: ", paste(missing_years, collapse = ", "))
 
-# ---- Helper: align a raster to the baseline grid ----
-# This handles CRS differences and grid alignment.
+# ---- Helpers ----
 align_to_baseline <- function(x, template) {
-  # If CRS differs, project first (bilinear for continuous temperature)
   if (!terra::same.crs(x, template)) {
     x <- terra::project(x, template, method = "bilinear")
   }
-  # If geometry differs (extent/resolution/grid), resample to template
-  if (!terra::compareGeom(x, template, stopOnError = FALSE, rowcol = TRUE, crs = TRUE, ext = TRUE, res = TRUE, orig = TRUE, rotation = TRUE)) {
-    x <- terra::resample(x, template, method = "bilinear")
-  }
-  # If extents don't perfectly overlap, crop to common area to avoid NA expansion
-  # (Optional) You can mask to the template’s footprint if desired:
-  # x <- terra::mask(x, template)
-  x
-}
-
-# ---- Helper: align a raster to the baseline grid (terra-safe) ----
-align_to_baseline <- function(x, template) {
-  # 1) CRS
-  if (!terra::same.crs(x, template)) {
-    x <- terra::project(x, template, method = "bilinear")
-  }
-  # 2) Grid (nrow/ncol/res/origin/rotation). compareGeom with stopOnError only.
-  #    If FALSE, resample to the template grid.
   if (!isTRUE(terra::compareGeom(x, template, stopOnError = FALSE))) {
     x <- terra::resample(x, template, method = "bilinear")
   }
-  # 3) Optional: clip/mask to template footprint to avoid edge NAs growing
-  # x <- terra::mask(x, template)
   x
 }
 
-# ---- Compute anomalies and write outputs ----
-# ---- Compute anomalies, write outputs, and collect min/max stats ----
-
-# helper to compute global min/max (NA-safe) and return a tibble row
-# safer helper: compute min / max / median via separate global() calls
-# Robust helper: min, max, median, mean
-.compute_stats <- function(r, year, what) {
+# robust global stats (min, max, median, mean)
+.compute_stats <- function(r, year, what, baseline_period) {
   get1 <- function(fn, ...) {
     out <- try(terra::global(r, fun = fn, na.rm = TRUE, ...), silent = TRUE)
     if (inherits(out, "try-error") || is.null(out) || nrow(out) == 0) return(NA_real_)
     as.numeric(out[[1]][1])
   }
-  
-  # basic stats
   v_min  <- get1(min)
   v_max  <- get1(max)
   v_mean <- get1(mean)
+  v_med  <- get1(median)
+  if (is.na(v_med)) v_med <- get1(quantile, probs = 0.5)
   
-  # median with fallback to quantile(0.5)
-  v_med <- get1(median)
-  if (is.na(v_med)) {
-    v_med <- get1(quantile, probs = 0.5)
-  }
-  
-  tibble::tibble(
-    year   = year,
-    what   = what,      # "baseline", "annual", "anomaly"
-    min    = v_min,
-    max    = v_max,
-    median = v_med,
-    mean   = v_mean
+  tibble(
+    baseline_period = baseline_period,
+    year            = year,
+    what            = what,      # "baseline","annual","anomaly_abs","anomaly_rel_pct"
+    min             = v_min,
+    max             = v_max,
+    median          = v_med,
+    mean            = v_mean
   )
 }
 
+# ===============================
+# Main: loop over baselines
+# ===============================
+stats_list  <- list()
 
-
-# stats container
-stats_list <- list()
-
-# baseline stats (once)
-stats_list[[length(stats_list)+1]] <- .compute_stats(baseline, year = NA_integer_, what = "baseline")
-
-out_files <- vector("character", nrow(annual_tbl))
-
-for (i in seq_len(nrow(annual_tbl))) {
-  yr   <- annual_tbl$year[i]
-  f_in <- annual_tbl$file[i]
+for (bp in names(baseline_files)) {
+  bpath <- baseline_files[[bp]]
+  if (!file.exists(bpath)) stop("Baseline raster not found: ", bpath)
   
-  message("Processing year: ", yr, " | file: ", basename(f_in))
-  ann <- rast(f_in)
+  message("=== Baseline: ", bp, " ===")
+  baseline <- rast(bpath)
+  if (is.na(crs(baseline))) stop("Baseline '", bp, "' has no CRS. Please define it.")
   
-  # Align annual raster to baseline grid/CRS
-  ann_aligned <- align_to_baseline(ann, baseline)
+  # Baseline stats (once per baseline)
+  stats_list[[length(stats_list)+1]] <- .compute_stats(baseline, year = NA_integer_,
+                                                       what = "baseline", baseline_period = bp)
   
-  # Annual stats (aligned)
-  stats_list[[length(stats_list)+1]] <- .compute_minmax(ann_aligned, year = yr, what = "annual")
+  abs_out_files <- vector("character", nrow(annual_tbl))
+  rel_out_files <- vector("character", nrow(annual_tbl))
   
-  # Simple anomaly (annual - 1991–2010 mean); NA propagates automatically
-  anom <- ann_aligned - baseline
-  names(anom) <- paste0("anom_", yr)
+  for (i in seq_len(nrow(annual_tbl))) {
+    yr   <- annual_tbl$year[i]
+    f_in <- annual_tbl$file[i]
+    message("Processing year ", yr, " for baseline ", bp, " | ", basename(f_in))
+    
+    ann <- rast(f_in)
+    ann_aligned <- align_to_baseline(ann, baseline)
+    
+    # Annual stats (aligned)
+    stats_list[[length(stats_list)+1]] <- .compute_stats(ann_aligned, year = yr,
+                                                         what = "annual", baseline_period = bp)
+    
+    # ---- Absolute anomaly (same units) ----
+    anom_abs <- ann_aligned - baseline
+    names(anom_abs) <- paste0(var_prefix, "_anom_abs_", yr, "_ref", bp)
+    f_abs <- file.path(out_dir, paste0(var_prefix, "_anom_abs__ref", bp, "__", yr, ".tif"))
+    writeRaster(anom_abs, filename = f_abs, overwrite = TRUE)
+    abs_out_files[i] <- f_abs
+    
+    stats_list[[length(stats_list)+1]] <- .compute_stats(anom_abs, year = yr,
+                                                         what = "anomaly_abs", baseline_period = bp)
+    
+    # ---- Relative anomaly (%), optional (recommended for precipitation) ----
+    if (isTRUE(compute_relative)) {
+      # mask where baseline <= threshold to avoid division by (near) zero
+      # NOTE: units of rel_min_baseline should match the baseline units (e.g., mm)
+      valid <- baseline > rel_min_baseline
+      anom_rel <- ifel(valid, 100 * (ann_aligned - baseline) / baseline, NA)
+      names(anom_rel) <- paste0(var_prefix, "_anom_relpct_", yr, "_ref", bp)
+      
+      f_rel <- file.path(out_dir, paste0(var_prefix, "_anom_relpct__ref", bp, "__", yr, ".tif"))
+      writeRaster(anom_rel, filename = f_rel, overwrite = TRUE)
+      rel_out_files[i] <- f_rel
+      
+      stats_list[[length(stats_list)+1]] <- .compute_stats(anom_rel, year = yr,
+                                                           what = "anomaly_rel_pct", baseline_period = bp)
+    }
+  }
   
-  # Anomaly stats:
-  stats_list[[length(stats_list)+1]] <- .compute_stats(ann_aligned, year = yr, what = "annual")
-  stats_list[[length(stats_list)+1]] <- .compute_stats(anom,        year = yr, what = "anomaly")
+  # Optional: multiband stacks (per baseline)
+  abs_exist <- abs_out_files[file.exists(abs_out_files)]
+  if (length(abs_exist) > 0) {
+    writeRaster(rast(abs_exist),
+                filename = file.path(out_dir, paste0(var_prefix, "_anomalies_abs_",
+                                                     min(target_years), "_", max(target_years),
+                                                     "__ref", bp, "_stack.tif")),
+                overwrite = TRUE)
+  }
   
-  # Write anomaly GeoTIFF
-  f_out <- file.path(out_dir, paste0("temp_anomaly_", yr, ".tif"))
-  writeRaster(anom, filename = f_out, overwrite = TRUE)
-  out_files[i] <- f_out
+  if (isTRUE(compute_relative)) {
+    rel_exist <- rel_out_files[file.exists(rel_out_files)]
+    if (length(rel_exist) > 0) {
+      writeRaster(rast(rel_exist),
+                  filename = file.path(out_dir, paste0(var_prefix, "_anomalies_relpct_",
+                                                       min(target_years), "_", max(target_years),
+                                                       "__ref", bp, "_stack.tif")),
+                  overwrite = TRUE)
+    }
+  }
 }
 
-# bind all stats rows
+# ---- One combined CSV with all baselines & all stats ----
 stats_tbl <- dplyr::bind_rows(stats_list) |>
-  dplyr::arrange(what, year) %>% 
-  na.omit()
+  dplyr::mutate(variable = var_prefix) |>
+  dplyr::relocate(variable, .before = baseline_period) |>
+  dplyr::arrange(baseline_period, dplyr::across(c(what, year)))
 
-# write the table next to rasters
-stats_csv <- file.path(out_dir, "temp_anomaly_minmax_2018_2024.csv")
-readr::write_csv(stats_tbl, stats_csv)
+csv_out <- file.path(out_dir, paste0(var_prefix, "_anomaly_stats_", min(target_years), "_", max(target_years), ".csv"))
+readr::write_csv(stats_tbl, csv_out)
 
-# quick peek
 print(stats_tbl)
-message("Saved stats table: ", stats_csv)
-
-# ---- (Optional) Build a multiband stack of all anomalies ----
-# Only for the files that were successfully created
-anoms_exist <- out_files[file.exists(out_files)]
-if (length(anoms_exist) > 0) {
-  anom_stack <- rast(anoms_exist)
-  # Save as a single multi-layer file
-  stack_out <- file.path(out_dir, "temp_anomalies_2018_2024_stack.tif")
-  writeRaster(anom_stack, filename = stack_out, overwrite = TRUE)
-}
-
-# ---- (Optional) Quick check plot ----
-# Plot a single year to visually confirm (change year as needed)
-check_year <- 2019
-check_file <- file.path(out_dir, paste0("temp_anomaly_", check_year, ".tif"))
-if (file.exists(check_file)) {
-  plot(rast(check_file), main = paste0("Temperature anomaly (", check_year, ") | annual - 1991–2010 mean"))
-}
-
+message("Saved combined stats: ", csv_out)
+message("Anomaly rasters in: ", out_dir)
