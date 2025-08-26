@@ -111,16 +111,16 @@ for (bp in names(baseline_files)) {
   baseline <- rast(bpath)
   if (is.na(crs(baseline))) stop("Baseline '", bp, "' has no CRS. Please define it.")
   
-  # Baseline stats (once per baseline)
-  stats_list[[length(stats_list)+1]] <- .compute_stats(baseline, year = NA_integer_,
-                                                       what = "baseline", baseline_period = bp)
-  
-  # --- NEW: for precipitation, baseline is per-day mean; scale to Apr–Sep totals (183 days)
+  # for precipitation, baseline is per-day mean; scale to Apr–Sep totals (183 days)
   if (var_prefix == "pr") {
     message("Scaling precipitation baseline from daily mean to Apr–Sep seasonal totals (x ", season_days, ").")
     baseline <- baseline * season_days
   }
   
+  # Baseline stats (once per baseline)
+  stats_list[[length(stats_list)+1]] <- .compute_stats(baseline, year = NA_integer_,
+                                                       what = "baseline", baseline_period = bp)
+ 
   abs_out_files <- vector("character", nrow(annual_tbl))
   rel_out_files <- vector("character", nrow(annual_tbl))
   
