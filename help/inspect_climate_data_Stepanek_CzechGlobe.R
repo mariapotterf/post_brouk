@@ -13,7 +13,7 @@ library(tidyr)
 library(stringr)
 
 # Set path to the folder
-data_path <- "C:/Users/potterf/Downloads/clim_data_CZ_annual"
+data_path <- "raw/clim_data_CZ_annual"
 
 # Get all .tif files recursively
 raster_files <- list.files(data_path, pattern = "\\.tif$", full.names = TRUE, recursive = TRUE)
