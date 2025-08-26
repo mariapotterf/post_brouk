@@ -15,7 +15,7 @@ library(tibble)
 terraOptions(progress = 1)
 
 # ---- User paths / params ----
-var_prefix <- "pr"   # set to "tas" or "pr"
+var_prefix <- "tas"   # set to "tas" or "pr"
 annual_dir <- "raw/clim_data_CZ_annual"
 baseline_dir <- "raw/clim_data_CZ_reference_period"
 out_dir <- "outData/anomalies_2018_2024"
@@ -189,6 +189,7 @@ for (bp in names(baseline_files)) {
 stats_tbl <- dplyr::bind_rows(stats_list) |>
   dplyr::mutate(variable = var_prefix) |>
   dplyr::relocate(variable, .before = baseline_period) |>
+  dplyr::mutate(dplyr::across(c(min, max, median, mean), ~ round(.x, 3))) |>
   dplyr::arrange(baseline_period, dplyr::across(c(what, year)))
 
 csv_out <- file.path(out_dir, paste0(var_prefix, "_anomaly_stats_", min(target_years), "_", max(target_years), ".csv"))
