@@ -45,7 +45,8 @@ align_to_baseline <- function(x, template) {
     min             = get1(min),
     max             = get1(max),
     median          = get1(median),
-    mean            = get1(mean)
+    mean            = get1(mean),
+    sd              = get1(sd)
   )
 }
 
@@ -145,10 +146,47 @@ process_variable <- function(var_prefix) {
   csv_out <- file.path(out_dir, paste0(var_prefix, "_anomaly_stats_", min(target_years), "_", max(target_years), ".csv"))
   readr::write_csv(stats_tbl, csv_out)
   message("Saved stats: ", csv_out)
+  
+  return(stats_tbl)
+  message("Stats in memory: ", stats_tbl)
 }
 
 # ===============================
 # Run for each variable
 # ===============================
-purrr::walk(c("tas", "pr", "vpd"), process_variable)
+all_stats <- list()
+purrr::walk(c("tas", "pr", "vpd"), function(var) {
+  tbl <- process_variable(var)
+  all_stats[[var]] <<- tbl  # store it in the list
+})
 
+
+
+# ================================
+# Make plots 
+# ================================
+library(ggplot2)
+
+combined_stats <- dplyr::bind_rows(all_stats) |>
+  dplyr::filter(what == "anomaly_abs") |>
+  dplyr::select(variable, baseline_period, year, mean, sd)
+
+combined_stats <- combined_stats |>
+  dplyr::mutate(
+    highlight = year %in% 2018:2020
+  )
+
+
+# Plot with highlighted years
+ggplot(combined_stats, aes(x = year, y = mean)) +
+  geom_point(aes(color = highlight), size = 2) +
+  geom_errorbar(aes(ymin = mean - sd, ymax = mean + sd, color = highlight), width = 0.3) +
+  geom_smooth(method = "lm", se = FALSE, color = "grey", linewidth = 0.7) +
+  scale_color_manual(values = c(`TRUE` = "red", `FALSE` = "black"), guide = "none") +
+  facet_wrap(variable ~ baseline_period, scales = "free_y") +
+  labs(
+    title = "Absolute Anomalies with Standard Deviation (2000–2024)",
+    x = "Year",
+    y = "Absolute Anomaly"
+  ) +
+  theme_bw()
