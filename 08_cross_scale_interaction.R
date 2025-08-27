@@ -32,6 +32,8 @@ library(ggpubr)
 library(corrplot)
 library(GGally)
 
+library(vegan)
+
 # Read files --------------------------------------
 
 # 2023 
@@ -51,6 +53,10 @@ dat23_sf <- st_read("outData/sf_context_2023.gpkg")
 
 # Read drone CHM summary
 drone_cv <- fread("outTable/chm_buff_summary.csv")
+
+# rename to 'subplots'
+drone_cv <- drone_cv %>% 
+  rename(subplot = plot_ID)
 
 # read pre-disturbance site history
 pre_dist_history <- fread("outTable/pre_disturb_history_raster.csv")
@@ -105,7 +111,150 @@ dat23_subplot_recode <- dat23_subplot %>%
     ba_total_cm2   = basal_area_cm2 * n,
     ba_total_m2    = ba_total_cm2 / 10000,
     ba_ha_m2       = ba_total_m2 * scaling_factor
+  ) %>% 
+  rename(plot = cluster, 
+         subplot = ID)
+
+
+
+
+# Cross scale variation ----------------------------------------------
+##  variation of height classes across scales: subplot vs plot -----------------------
+
+# first, replace the NA in n (counts) and stem_desnity by 0
+dat23_subplot_recode <- dat23_subplot_recode %>%
+  mutate(n = ifelse(is.na(n), 0L, n),
+         stem_density = ifelse(is.na(stem_density), 0L, stem_density))
+
+# vertical structure per subplot& plot:
+# plot values are generated as 
+# 1. average across plots 
+# (compare how different the subplot is compared to plit mean )
+# 2. as pooled all values (no subplots boundaries)
+
+
+# --- Subplot-level metrics ---
+subplot_metrics <- dat23_subplot_recode %>%
+  group_by(country, plot, subplot) %>%
+  summarise(
+    stems_total = sum(n, na.rm = TRUE),
+    sp_richness = if (stems_total > 0) n_distinct(species[n > 0]) else 0,
+    shannon_sp  = if (stems_total > 0) vegan::diversity(n, index = "shannon") else 0,
+    evenness_sp = if (sp_richness > 1) shannon_sp / log(sp_richness) else 0,
+    mean_hgt    = if (stems_total > 0) weighted.mean(hgt_est, n, na.rm = TRUE) else NA_real_,
+    # fix CV - if all subplots have not stems, CV is 0
+    cv_hgt = if (stems_total > 0 && mean(hgt_est, na.rm = TRUE) > 0) {
+      sd(hgt_est, na.rm = TRUE) / mean(hgt_est, na.rm = TRUE)
+    } else 0,
+    range_hgt   = if (stems_total > 0 && !all(is.na(hgt_est)))
+      max(hgt_est, na.rm = TRUE) - min(hgt_est, na.rm = TRUE) else NA_real_,
+    .groups = "drop"
   )
+
+# --- Plot-level metrics (aggregate over subplots) ---
+plot_metrics_mean <- subplot_metrics %>%
+  group_by(country, plot) %>%
+  summarise(
+    mean_sp_richness = mean(sp_richness, na.rm = TRUE),
+    var_sp_richness  = var(sp_richness,  na.rm = TRUE),
+    mean_shannon_sp  = mean(shannon_sp,  na.rm = TRUE),
+    mean_evenness_sp = mean(evenness_sp, na.rm = TRUE),
+    mean_mean_hgt    = mean(mean_hgt,    na.rm = TRUE),
+    mean_cv_hgt      = mean(cv_hgt,      na.rm = TRUE),
+    var_cv_hgt       = var(cv_hgt,       na.rm = TRUE),
+    mean_range_hgt   = mean(range_hgt,   na.rm = TRUE),
+    .groups = "drop"
+  )
+
+
+# --- pooled CV directly from dat23_subplot_recode ---
+plot_metrics_pooled  <- subplot_metrics <- dat23_subplot_recode %>%
+  group_by(country, plot) %>%
+  summarise(
+    stems_total = sum(n, na.rm = TRUE),
+    sp_richness = if (stems_total > 0) n_distinct(species[n > 0]) else 0,
+    shannon_sp  = if (stems_total > 0) vegan::diversity(n, index = "shannon") else 0,
+    evenness_sp = if (sp_richness > 1) shannon_sp / log(sp_richness) else 0,
+    mean_hgt    = if (stems_total > 0) weighted.mean(hgt_est, n, na.rm = TRUE) else NA_real_,
+    cv_hgt      = if (stems_total > 0 && mean(hgt_est, na.rm = TRUE) > 0)
+      sd(hgt_est, na.rm = TRUE) / mean(hgt_est, na.rm = TRUE) else NA_real_,
+    range_hgt   = if (stems_total > 0 && !all(is.na(hgt_est)))
+      max(hgt_est, na.rm = TRUE) - min(hgt_est, na.rm = TRUE) else NA_real_,
+    .groups = "drop"
+  )
+
+
+
+# merge plot versions: mean vs pool -----------------
+
+plot_compare <- plot_metrics_mean %>%
+  left_join(plot_metrics_pooled %>% 
+              select(country, plot,
+                     pooled_sp_richness = sp_richness,
+                     pooled_shannon_sp  = shannon_sp,
+                     pooled_evenness_sp = evenness_sp,
+                     pooled_mean_hgt    = mean_hgt,
+                     pooled_cv_hgt      = cv_hgt,
+                     pooled_range_hgt   = range_hgt),
+            by = c("country","plot"))
+
+
+# calculate differene between two metrics
+plot_compare <- plot_compare %>%
+  mutate(
+    delta_cv_hgt   = pooled_cv_hgt - mean_cv_hgt,
+    delta_richness = pooled_sp_richness - mean_sp_richness
+  ) %>% 
+  mutate(
+    cross_scale_type = case_when(
+      delta_cv_hgt < -0.1 ~ "Cancellation",
+      delta_cv_hgt >  0.1 ~ "Reinforcement",
+      TRUE                ~ "Persistence"
+    ),
+    richness_type = case_when(
+      delta_richness < 0  ~ "Cancellation",
+      delta_richness == 0 ~ "Persistence",
+      delta_richness > 0  ~ "Reinforcement"
+    )
+  )
+
+
+hist(plot_compare$delta_richness)
+hist(plot_compare$delta_cv_hgt)
+
+
+#Step 3. Summarise proportions
+rich_counts <- plot_compare %>%
+  count(richness_type) %>%
+  mutate(percent = round(100 * n / sum(n), 1))
+
+print(rich_counts)
+
+
+# Example output (numbers hypothetical, yours will depend on data):
+#   
+#   richness_type	n	percent
+# Persistence	12	10.0 %
+# Reinforcement	108	90.0 %
+# Cancellation	0	0.0 %
+#Step 4. Plot histogram with categories
+ggplot(plot_compare, aes(x = delta_cv_hgt, fill = richness_type)) +
+  geom_histogram(binwidth = 1, color = "black", boundary = 0) +
+  scale_fill_manual(values = c("Persistence"="#cccccc",
+                               "Reinforcement"="#1b9e77",
+                               "Cancellation"="#d95f02")) +
+  labs(x = expression(Delta~richness~"(pooled - mean subplot)"),
+       y = "Number of plots",
+       fill = "Cross-scale type",
+       title = "Cross-scale interaction of species richness") +
+  theme_minimal()
+
+
+
+
+### END !!!
+
+
 
 
 ### get stem density and shannon for field data --------------
@@ -116,9 +265,6 @@ df_cluster <- dat23_subplot_recode %>%
            # mean_hgt  = mean)
 
 
-
-# Cross scale variation ----------------------------------------------
-##  variation of height classes across scales: plot, cluster, landscape -----------------------
 
 # 
 
