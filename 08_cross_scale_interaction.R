@@ -65,7 +65,8 @@ pre_dist_history <- pre_dist_history %>%
   mutate(field_year = if_else(str_detect(cluster, "_"), 2023, 2025))
 
 pre_dist_history_2023 <- pre_dist_history %>%   # filed only pre dicturbancs history for sites collected in 2023
-  dplyr::filter(field_year == "2023")
+  dplyr::filter(field_year == "2023") %>% 
+  rename(plot = cluster)
 
 
 ## Sumarize field observation per cluster  --------------------------------------
@@ -149,19 +150,20 @@ subplot_metrics <- dat23_subplot_recode %>%
     range_hgt   = if (stems_total > 0 && !all(is.na(hgt_est)))
       max(hgt_est, na.rm = TRUE) - min(hgt_est, na.rm = TRUE) else NA_real_,
     .groups = "drop"
-  )
+  ) %>% 
+  mutate(cv_hgt = ifelse(is.na(cv_hgt), 0L, cv_hgt)) # replace NA by 0 if stems are missing
 
 # --- Plot-level metrics (aggregate over subplots) ---
 plot_metrics_mean <- subplot_metrics %>%
   group_by(country, plot) %>%
   summarise(
     mean_sp_richness = mean(sp_richness, na.rm = TRUE),
-    var_sp_richness  = var(sp_richness,  na.rm = TRUE),
+    #var_sp_richness  = var(sp_richness,  na.rm = TRUE),
     mean_shannon_sp  = mean(shannon_sp,  na.rm = TRUE),
     mean_evenness_sp = mean(evenness_sp, na.rm = TRUE),
     mean_mean_hgt    = mean(mean_hgt,    na.rm = TRUE),
     mean_cv_hgt      = mean(cv_hgt,      na.rm = TRUE),
-    var_cv_hgt       = var(cv_hgt,       na.rm = TRUE),
+    #var_cv_hgt       = var(cv_hgt,       na.rm = TRUE),
     mean_range_hgt   = mean(range_hgt,   na.rm = TRUE),
     .groups = "drop"
   )
@@ -181,7 +183,9 @@ plot_metrics_pooled  <- subplot_metrics <- dat23_subplot_recode %>%
     range_hgt   = if (stems_total > 0 && !all(is.na(hgt_est)))
       max(hgt_est, na.rm = TRUE) - min(hgt_est, na.rm = TRUE) else NA_real_,
     .groups = "drop"
-  )
+  ) %>% 
+  mutate(cv_hgt = ifelse(is.na(cv_hgt), 0L, cv_hgt)) # replace NA by 0 if stems are missing
+
 
 
 
@@ -189,7 +193,7 @@ plot_metrics_pooled  <- subplot_metrics <- dat23_subplot_recode %>%
 
 plot_compare <- plot_metrics_mean %>%
   left_join(plot_metrics_pooled %>% 
-              select(country, plot,
+              dplyr::select(country, plot,
                      pooled_sp_richness = sp_richness,
                      pooled_shannon_sp  = shannon_sp,
                      pooled_evenness_sp = evenness_sp,
@@ -206,7 +210,7 @@ plot_compare <- plot_compare %>%
     delta_richness = pooled_sp_richness - mean_sp_richness
   ) %>% 
   mutate(
-    cross_scale_type = case_when(
+    height_type = case_when(
       delta_cv_hgt < -0.1 ~ "Cancellation",
       delta_cv_hgt >  0.1 ~ "Reinforcement",
       TRUE                ~ "Persistence"
@@ -223,38 +227,159 @@ hist(plot_compare$delta_richness)
 hist(plot_compare$delta_cv_hgt)
 
 
-#Step 3. Summarise proportions
-rich_counts <- plot_compare %>%
-  count(richness_type) %>%
-  mutate(percent = round(100 * n / sum(n), 1))
 
-print(rich_counts)
+# -----------------------------------------
+# Linear model
+# -----------------------------------------7
+# x - mean of subplot values 
+# y - pooled plot value
+# what the subplot tells me on average? e
+# what the whole plot looks like if i pool everything?
+
+# prepare table:
+df_fin <- plot_compare %>% 
+  left_join(pre_dist_history_2023) %>% 
+  mutate(
+    log_mean = log1p(mean_cv_hgt),
+    log_resp = log1p(pooled_cv_hgt)
+  )
 
 
-# Example output (numbers hypothetical, yours will depend on data):
-#   
-#   richness_type	n	percent
-# Persistence	12	10.0 %
-# Reinforcement	108	90.0 %
-# Cancellation	0	0.0 %
-#Step 4. Plot histogram with categories
-ggplot(plot_compare, aes(x = delta_cv_hgt, fill = richness_type)) +
-  geom_histogram(binwidth = 1, color = "black", boundary = 0) +
-  scale_fill_manual(values = c("Persistence"="#cccccc",
-                               "Reinforcement"="#1b9e77",
-                               "Cancellation"="#d95f02")) +
-  labs(x = expression(Delta~richness~"(pooled - mean subplot)"),
-       y = "Number of plots",
-       fill = "Cross-scale type",
-       title = "Cross-scale interaction of species richness") +
+model <- lm(pooled_cv_hgt ~ mean_cv_hgt, data = df_fin)
+summary(model)
+
+model_poly <- lm(pooled_cv_hgt ~ poly(mean_cv_hgt, 2), data = df_fin)
+summary(model_poly)
+
+model_log <- lm(log1p(pooled_cv_hgt) ~ log1p(mean_cv_hgt), data = df_fin)
+summary(model_log)
+
+
+library(MASS)
+model_robust <- rlm(pooled_cv_hgt ~ mean_cv_hgt, data = df_fin)
+summary(model_robust)
+
+library(mgcv)
+library(gratia)
+model_gam <- gam(pooled_cv_hgt ~ s(mean_cv_hgt, k = 4), data = df_fin)
+summary(model_gam)
+gam.check(model_gam)
+appraise(model_gam)
+plot(model_gam)
+draw(model_gam, residuals = TRUE, rug = TRUE)
+
+
+eps <- max(1e-6, min(plot_compare$pooled_cv_hgt[plot_compare$pooled_cv_hgt > 0], na.rm=TRUE) / 10)
+m_gam_gamma <- mgcv::gam(I(pooled_cv_hgt + eps) ~ s(mean_cv_hgt),
+                         family = Gamma(link="log"),
+                         data = df_fin, method="REML")
+
+m_gam_tw <- mgcv::gam(pooled_cv_hgt ~ s(mean_cv_hgt),
+                      family = mgcv::tw(link="log"),  # p will be estimated
+                      data = df_fin, method="REML")
+
+m_gam_t <- mgcv::gam(pooled_cv_hgt ~ s(mean_cv_hgt),
+                     family = mgcv::scat(), data = df_fin, method="REML")
+
+# log transformed is teh best!!
+m_gam_log <- gam(log_resp ~ s(log_mean), data = df_fin, method = "REML")
+
+AIC(m_gam_gamma,model_gam, m_gam_tw , m_gam_t, m_gam_log)
+
+fin.m.hgt_cv <- m_gam_log
+
+
+# add pre-disturbance condistion
+m_gam_log1 <- gam(log_resp ~ s(log_mean) + s(share_coniferous),
+                  data = df_fin, method = "REML")
+m_gam_log2 <- gam(log_resp ~ s(log_mean) + s(shannon),
+                  data = df_fin, method = "REML")
+m_gam_log3 <- gam(log_resp ~ s(log_mean) + s(cv_cover_dens),
+                  data = df_fin, method = "REML")
+
+AIC(m_gam_log2, m_gam_log1, m_gam_log3, m_gam_log)
+
+
+
+
+
+# backtransform teh values and plot
+library(ggeffects)
+gp <- ggpredict(m_gam_log, terms = "log_mean [all]")  # on log-scale
+df <- as.data.frame(gp) %>%
+  transmute(
+    mean_cv_hgt = expm1(x),                 # back-transform x
+    fit        = expm1(predicted),          # back-transform y
+    lo         = expm1(conf.low),
+    hi         = expm1(conf.high)
+  )
+
+
+ggplot() +
+  geom_point(aes(mean_cv_hgt, pooled_cv_hgt),
+             data = df_fin, color = "grey60", size = 1.8) +
+  geom_ribbon(aes(mean_cv_hgt, ymin = lo, ymax = hi), data = df, alpha = 0.2) +
+  geom_line(aes(mean_cv_hgt, fit), data = df, size = 1) +
+  geom_abline(slope = 1, intercept = 0, linetype = 3) +  # 1:1 reference
+  labs(x = "Mean subplot CV (heights)",
+       y = "Pooled plot CV (heights)",
+       title = "GAM (log–log) predictions back-transformed") +
+  theme_minimal()
+
+
+
+AIC(model, model_poly, model_log, model_robust, model_gam)
+
+
+# run derivatives - gradia: to understand at what 
+# numbers the where the curve is increasing (reinforcement)
+# flast (persistence) or decreasing (cancellation)
+
+# Derivatives of smooth (with 95% CI)
+d1 <- derivatives(model_gam, select = "s(mean_cv_hgt)")
+
+# Quick look at where slope is significantly >0 or <0
+d1 <- d1 %>%
+  mutate(cs_type = case_when(
+    .derivative > 0 ~ "Reinforcement",   # strictly positive slope
+    .derivative < 0 ~ "Cancellation",    # strictly negative slope
+    TRUE          ~ "Persistence"      # includes 0
+  ))
+
+
+# Plot derivative curve
+ggplot(d1, aes(x = mean_cv_hgt, y = .derivative)) +
+  geom_ribbon(aes(ymin = .lower_ci, ymax = .upper_ci), alpha = 0.2) +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = 2, color = "red") +
+  labs(x = "Mean subplot CV (heights)",
+       y = "d(Pooled CV)/d(Mean subplot CV)",
+       title = "GAM first derivative with 95% CI") +
   theme_minimal()
 
 
 
 
-### END !!!
 
 
+# Basic scatterplot
+plot(plot_compare$mean_cv_hgt, plot_compare$pooled_cv_hgt,
+     xlab = "Mean subplot CV (heights)",
+     ylab = "Pooled plot CV (heights)",
+     main = "Cross-scale regression: subplot → plot CV",
+     pch = 19, col = "grey50")
+
+# Add fitted regression line
+fit <- lm(pooled_cv_hgt ~ mean_cv_hgt, data = plot_compare)
+abline(fit, col = "red", lwd = 2)
+
+# Add 1:1 persistence line
+abline(0, 1, lty = 2, col = "blue")
+
+# Add legend
+legend("topleft", legend = c("Plots", "Fitted regression", "1:1 line"),
+       col = c("grey50", "red", "blue"), pch = c(19, NA, NA),
+       lty = c(NA, 1, 2), lwd = c(NA, 2, 1))
 
 
 ### get stem density and shannon for field data --------------
