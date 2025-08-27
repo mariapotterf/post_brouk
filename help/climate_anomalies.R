@@ -12,7 +12,12 @@ library(tibble)
 
 terraOptions(progress = 1)
 
+<<<<<<< HEAD
 # ---- Constants ----
+=======
+# ---- User paths / params ----
+var_prefix <- "tas"   # set to "tas" or "pr"
+>>>>>>> 553bb8a8dcc00ed758727caca4adeab52383f1dd
 annual_dir <- "raw/clim_data_CZ_annual"
 baseline_dir <- "raw/clim_data_CZ_reference_period"
 out_dir <- "outData/anomalies_2000_2024"
@@ -159,6 +164,12 @@ purrr::walk(c("tas", "pr", "vpd"), function(var) {
   tbl <- process_variable(var)
   all_stats[[var]] <<- tbl  # store it in the list
 })
+# ---- One combined CSV with all baselines & all stats ----
+stats_tbl <- dplyr::bind_rows(stats_list) |>
+  dplyr::mutate(variable = var_prefix) |>
+  dplyr::relocate(variable, .before = baseline_period) |>
+  dplyr::mutate(dplyr::across(c(min, max, median, mean), ~ round(.x, 3))) |>
+  dplyr::arrange(baseline_period, dplyr::across(c(what, year)))
 
 
 
