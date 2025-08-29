@@ -12,12 +12,12 @@ library(tibble)
 
 terraOptions(progress = 1)
 
-<<<<<<< HEAD
+
 # ---- Constants ----
-=======
+
 # ---- User paths / params ----
 var_prefix <- "tas"   # set to "tas" or "pr"
->>>>>>> 553bb8a8dcc00ed758727caca4adeab52383f1dd
+
 annual_dir <- "raw/clim_data_CZ_annual"
 baseline_dir <- "raw/clim_data_CZ_reference_period"
 out_dir <- "outData/anomalies_2000_2024"
@@ -165,7 +165,7 @@ purrr::walk(c("tas", "pr", "vpd"), function(var) {
   all_stats[[var]] <<- tbl  # store it in the list
 })
 # ---- One combined CSV with all baselines & all stats ----
-stats_tbl <- dplyr::bind_rows(stats_list) |>
+stats_tbl <- dplyr::bind_rows(all_stats) |>
   dplyr::mutate(variable = var_prefix) |>
   dplyr::relocate(variable, .before = baseline_period) |>
   dplyr::mutate(dplyr::across(c(min, max, median, mean), ~ round(.x, 3))) |>
@@ -179,13 +179,31 @@ stats_tbl <- dplyr::bind_rows(stats_list) |>
 library(ggplot2)
 
 combined_stats <- dplyr::bind_rows(all_stats) |>
-  dplyr::filter(what == "anomaly_abs") |>
+  dplyr::filter(what == "annual") |>
+ # dplyr::filter(variable == "tas") |>
+  dplyr::filter(baseline_period == "1961-1990") |>
   dplyr::select(variable, baseline_period, year, mean, sd)
 
 combined_stats <- combined_stats |>
   dplyr::mutate(
     highlight = year %in% 2018:2020
   )
+
+
+# Plot with highlighted years
+ggplot(combined_stats, aes(x = year, y = mean)) +
+  geom_point(aes(color = highlight), size = 2) +
+  geom_line( ) +
+  geom_errorbar(aes(ymin = mean - sd, ymax = mean + sd, color = highlight), width = 0.3) +
+  geom_smooth(method = "lm", se = FALSE, color = "grey", linewidth = 0.7) +
+  scale_color_manual(values = c(`TRUE` = "red", `FALSE` = "black"), guide = "none") +
+  facet_wrap(variable ~ baseline_period, scales = "free_y") +
+  labs(
+    title = "Absolute Values with Standard Deviation (2000–2024)",
+    x = "Year",
+    y = "Values"
+  ) +
+  theme_bw()
 
 
 # Plot with highlighted years
@@ -201,3 +219,4 @@ ggplot(combined_stats, aes(x = year, y = mean)) +
     y = "Absolute Anomaly"
   ) +
   theme_bw()
+
