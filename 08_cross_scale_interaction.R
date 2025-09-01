@@ -44,6 +44,10 @@ dat23_subplot <- fread('outData/subplot_full_2023.csv')
 dat23_sf <- st_read("outData/sf_context_2023.gpkg")
 
 
+# read pre-disturbnace history: individual trees
+
+
+
 # 2025
 #dat25_subplot <- fread('outData/subplot_full_2025.csv')
 #dat25_cluster <- fread('outData/df_cluster_2025.csv')
@@ -67,6 +71,100 @@ pre_dist_history <- pre_dist_history %>%
 pre_dist_history_2023 <- pre_dist_history %>%   # filed only pre dicturbancs history for sites collected in 2023
   dplyr::filter(field_year == "2023") %>% 
   rename(plot = cluster)
+
+
+# read vectors; individual trees
+library(terra)
+library(dplyr)
+
+# 1. Read both layers
+convex_hull <- vect("raw/pre-disturb_history_trees/convex_hull_full_5514_buffer.gpkg")  # replace with correct path
+pre_trees  <- vect("raw/pre-disturb_history_trees/pre-disturbance_trees.gpkg")     # replace with correct path
+
+# 2. Reproject both to EPSG:3035 (ETRS89-LAEA)
+convex_hull_3035 <- project(convex_hull, "EPSG:3035")
+pre_trees_3035   <- project(pre_trees, "EPSG:3035")
+
+# 3. Get polygon area (in m²)
+# need to check the AREA!!!
+convex_hull_3035$cvx_area_m2 <- expanse(convex_hull_3035, unit = "m")
+# Calculate perimeter in meters
+convex_hull_3035$cvx_perimeter_m <- perim(convex_hull_3035)
+
+# 4. Join polygon ID to points (spatial join)
+#    This adds polygon info to each point that falls inside one
+pre_trees_3035_joined <- terra::intersect(pre_trees_3035, convex_hull_3035)
+
+# Check result
+head(as.data.frame(pre_trees_3035_joined))
+
+
+# 6. Clean up tree and convext hull input data
+
+clean_trees <- pre_trees_3035_joined %>%
+  as.data.frame() %>%
+  mutate(
+    original_species = species,
+    species = case_when(
+      is.na(species) ~ "piab",
+      species == "l" ~ "deciduous",
+      species == "s" ~ "piab",
+      TRUE ~ species
+    ),
+    status = case_when(
+      original_species == "s" ~ "dry",
+      TRUE ~ "living"
+    ),
+    # Split year and note from `rok_disturbancia`
+    disturbance_year = case_when(
+      rok_disturbancia == "nie" ~ 2024L,
+      TRUE ~ as.integer(str_extract(rok_disturbancia, "^\\d{4}"))
+    ),
+    disturbance_note = case_when(
+      rok_disturbancia == "nie" ~ "nie",
+      TRUE ~ str_trim(str_remove(rok_disturbancia, "^\\d{4}[- ]*"))
+    ),
+    # Parse rok_les safely and calculate disturbance length
+    disturbance_length = disturbance_year - as.integer(rok_les)
+  ) %>%
+  dplyr::select(-original_species) %>%
+  rename(
+    plot = cluster,
+    buff_area = area,
+    buff_perimeter = perimeter
+  )
+
+
+#tree_counts <- 
+  group_by(cluster, species, status) %>%
+  summarise(n_trees_sp_vitality = n(), .groups = "drop") %>%
+  group_by(cluster) %>%
+  mutate(
+    n_trees_total = sum(n_trees_sp_vitality),
+    n_trees_species = ave(n_trees_sp_vitality, species, FUN = sum)
+  ) %>%
+  ungroup()
+
+
+# First: total trees per cluster for joining
+total_counts <- tree_counts %>%
+  group_by(cluster) %>%
+  summarise(n_trees = sum(n_trees_total), .groups = "drop")
+
+# Then: compute per-species density and share of spruce
+cvx_stats <- as.data.frame(convex_hull_3035) %>%
+  left_join(total_counts, by = "cluster") %>%
+  left_join(tree_counts, by = "cluster") %>%
+  mutate(
+    cvx_area_ha = cvx_area_m2 / 10000,
+    density_ha = round(n_trees_total / cvx_area_ha, 1),
+    density_species_ha = round(n_trees / cvx_area_ha, 1),
+    share_spruce = ifelse(species == "piab", round(n_trees / n_trees_total, 2), NA_real_)
+  )
+# Output result
+head(cvx_stats)
+
+
 
 
 ## Sumarize field observation per cluster  --------------------------------------
