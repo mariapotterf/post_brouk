@@ -68,7 +68,7 @@ pre_dist_history <- fread("outTable/pre_disturb_history_raster.csv")
 pre_dist_history <- pre_dist_history %>%
   mutate(field_year = if_else(str_detect(cluster, "_"), 2023, 2025))
 
-pre_dist_history_2023 <- pre_dist_history %>%   # filed only pre dicturbancs history for sites collected in 2023
+pre_dist_history_2023_rst <- pre_dist_history %>%   # filed only pre dicturbancs history for sites collected in 2023
   dplyr::filter(field_year == "2023") %>% 
   rename(plot = cluster)
 
@@ -99,8 +99,7 @@ pre_trees_3035_joined <- terra::intersect(pre_trees_3035, convex_hull_3035)
 head(as.data.frame(pre_trees_3035_joined))
 
 
-# 6. Clean up tree and convext hull input data
-
+# 6. Clean up tree and convex hull input data
 clean_trees <- pre_trees_3035_joined %>%
   as.data.frame() %>%
   mutate(
@@ -129,40 +128,43 @@ clean_trees <- pre_trees_3035_joined %>%
   ) %>%
   dplyr::select(-original_species) %>%
   rename(
+    forest_year = rok_les,           
     plot = cluster,
     buff_area = area,
     buff_perimeter = perimeter
   )
 
 
-#tree_counts <- 
-  group_by(cluster, species, status) %>%
+pre_disturb_stem_density_full <- clean_trees %>% 
+  group_by(plot, species, status, 
+           cvx_area_m2, 
+           disturbance_year,
+           forest_year,
+           disturbance_length) %>%
   summarise(n_trees_sp_vitality = n(), .groups = "drop") %>%
-  group_by(cluster) %>%
+  group_by(plot) %>%
   mutate(
     n_trees_total = sum(n_trees_sp_vitality),
     n_trees_species = ave(n_trees_sp_vitality, species, FUN = sum)
   ) %>%
-  ungroup()
-
-
-# First: total trees per cluster for joining
-total_counts <- tree_counts %>%
-  group_by(cluster) %>%
-  summarise(n_trees = sum(n_trees_total), .groups = "drop")
-
-# Then: compute per-species density and share of spruce
-cvx_stats <- as.data.frame(convex_hull_3035) %>%
-  left_join(total_counts, by = "cluster") %>%
-  left_join(tree_counts, by = "cluster") %>%
+  ungroup() %>% 
+  # calculate stem density
   mutate(
     cvx_area_ha = cvx_area_m2 / 10000,
     density_ha = round(n_trees_total / cvx_area_ha, 1),
-    density_species_ha = round(n_trees / cvx_area_ha, 1),
-    share_spruce = ifelse(species == "piab", round(n_trees / n_trees_total, 2), NA_real_)
+    density_species_ha = round(n_trees_species / cvx_area_ha, 1),
+    share_spruce = ifelse(species == "piab", round(n_trees_species / n_trees_total, 2), NA_real_)
   )
-# Output result
-head(cvx_stats)
+
+# filter only relevant information: per plot level
+pre_disturb_stem_density_filt <- pre_disturb_stem_density_full %>% 
+  dplyr::filter(species == 'piab') %>% 
+  dplyr::select(plot,cvx_area_m2, 
+                disturbance_year, 
+                forest_year,
+                disturbance_length,
+                n_trees_total, density_ha,share_spruce) %>% 
+  distinct()
 
 
 
@@ -336,13 +338,15 @@ hist(plot_compare$delta_cv_hgt)
 
 # prepare table:
 df_fin <- plot_compare %>% 
-  left_join(pre_dist_history_2023) %>% 
+  left_join(pre_dist_history_2023_rst) %>%  # add rasters for rought estimation: density_cover and % coniferous (leaf type)
+  left_join(pre_disturb_stem_density_filt) %>%  # addstem density based on tree calculation
   mutate(
     log_mean = log1p(mean_cv_hgt),
     log_resp = log1p(pooled_cv_hgt)
   )
 
 
+# model testing -> best model is with logged values
 model <- lm(pooled_cv_hgt ~ mean_cv_hgt, data = df_fin)
 summary(model)
 
@@ -394,15 +398,65 @@ m_gam_log2 <- gam(log_resp ~ s(log_mean) + s(shannon),
                   data = df_fin, method = "REML")
 m_gam_log3 <- gam(log_resp ~ s(log_mean) + s(cv_cover_dens),
                   data = df_fin, method = "REML")
+# indluclude tree based metrics
+m_gam_log4 <- gam(log_resp ~ s(log_mean) + s(cv_cover_dens) +
+                    s(share_spruce) +s(density_ha) + s(disturbance_length, k = 3 ) ,
+                  data = df_fin, method = "REML")
 
-AIC(m_gam_log2, m_gam_log1, m_gam_log3, m_gam_log)
+m_gam_log4 <- gam(log_resp ~ s(log_mean) + s(cv_cover_dens) +
+                    s(share_spruce) +s(density_ha) + s(disturbance_length, k = 3 ) ,
+                  data = df_fin, method = "REML")
 
+# CV of heighst ~ stem density 
+df_fin %>% 
+  ggplot(aes(y = pooled_mean_hgt, x = mean_mean_hgt )) +
+  geom_point() +
+  geom_smooth()
 
+cor(df_fin$pooled_mean_hgt, df_fin$mean_mean_hgt, use = "complete.obs")
 
+hist(df_fin$mean_cv_hgt)
+
+AIC(m_gam_log2, m_gam_log1, m_gam_log3, m_gam_log, m_gam_log4)
+
+m<-m_gam_log4
+
+summary(m)
+appraise(m)
+plot.gam(m, page = 1, shade = T)
 
 
 # backtransform teh values and plot
 library(ggeffects)
+
+p_log_mean  <- ggpredict(m, terms = "log_mean [all]")
+p_spruce    <- ggpredict(m, terms = "share_spruce [all]")
+
+# --- Back-transform to original scale (pooled_cv_hgt) ---
+bt <- function(df) {
+  df %>%
+    mutate(predicted = expm1(predicted),
+           conf.low  = expm1(conf.low),
+           conf.high = expm1(conf.high))
+}
+
+p_log_mean_bt <- bt(p_log_mean)
+p_spruce_bt   <- bt(p_spruce)
+
+# --- 2) Simple plots on the log1p scale (quick + minimal) ---
+pl1 <- plot(p_log_mean_bt) +
+  labs(x = "log(mean CV of height)", y = "log1p(pooled CV of height)") +
+  theme_bw()
+
+pl2 <- plot(p_spruce_bt) +
+  labs(x = "Spruce share (proportion)", y = "log1p(pooled CV of height)") +
+  theme_bw()
+
+pl1 + pl2
+
+
+
+
 gp <- ggpredict(m_gam_log, terms = "log_mean [all]")  # on log-scale
 df <- as.data.frame(gp) %>%
   transmute(
