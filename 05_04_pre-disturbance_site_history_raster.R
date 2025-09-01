@@ -42,8 +42,8 @@ dat25_sf <- st_read("outData/subplot_with_clusters_2025.gpkg")
 
 # Pre-disturbance history: automatic
 #  - get forest pre-disturbance characteristics: tree density, dominant leaf type
-tree_cover_dens15    <- rast("raw/forest_heights_composition/TCD_2015_020m_CR.tif") # tree cover density
-dominant_leaf_type15 <- rast("raw/forest_heights_composition/DLT_2015_020m_CR.tif") # dominant leaf type
+tree_cover_dens15    <- rast("raw/forest_composition/TCD_2015_020m_CR.tif") # tree cover density
+dominant_leaf_type15 <- rast("raw/forest_composition/DLT_2015_020m_CR.tif") # dominant leaf type
 
 
 # recode 23 values if neede:
@@ -112,7 +112,7 @@ combined_clusters <- bind_rows(dat23_clusters, dat25_clusters)
 cluster_vect <- vect(combined_clusters)
 
 # Step 3: Buffer XXm around points
-my_buffer <- buffer(cluster_vect, width = 60)
+my_buffer <- buffer(cluster_vect, width = 20)
 
 # Step 1: Make lookup table
 buffer_lookup <- as.data.frame(my_buffer) %>%
