@@ -1,26 +1,32 @@
 
-# Cross-scale interaction: field & drone variation in vertical structures -------------------
+
+# --------------------------------------------------------
+# Cross-scale interaction: 
+#    field & drone variation in vertical structures 
+# --------------------------------------------------------
+
 
 # read data: 
-# - field data from 2023 (2025)
-# - drone 2023 (2024?)
+# - field data from 2023 (2025?)
+# - drone 2023&2024
 
 # - get sites history - from tree density cover, dominant leaf type
-# compare stem density, dominant tree species, species diversity
-# vertical and horizontal structure across sscales: fiedl vs drone
+#                     - from tree density (manually mapped)
 
-# identify damaged terminal: from raw data czechia 20203 - export gpkg
-# identify types of damages: 2025 - export gpkg
-# Drones: 
-# - get vertical strucure
+# correlate: vertical and horizontal structure across scales: field vs drone
+# cross scale interaction: 
+#  - vertical structure
+# effect of pre-disturbance condistions
+
+# extras: 
+# - identify damaged terminal: from raw data czechia 20203 - export gpkg
+# - identify types of damages: 2025 - export gpkg
 
 gc()
 
 library(terra)
 library(sf)
-#library(DBI)
 library(ggplot2)
-#library(dbscan)
 library(data.table)
 library(dplyr)
 library(stringr)
@@ -32,21 +38,17 @@ library(ggpubr)
 library(corrplot)
 library(GGally)
 
-library(vegan)
+library(vegan) # for diversity indices
+
 
 # Read files --------------------------------------
 
+## Field data 
 # 2023 
 dat23_subplot <- fread('outData/subplot_full_2023.csv')
 #dat23_cluster <- fread('outData/df_cluster_2023.csv')
-
 # Save spatial subplot data with cluster IDs
 dat23_sf <- st_read("outData/sf_context_2023.gpkg")
-
-
-# read pre-disturbnace history: individual trees
-
-
 
 # 2025
 #dat25_subplot <- fread('outData/subplot_full_2025.csv')
@@ -55,51 +57,42 @@ dat23_sf <- st_read("outData/sf_context_2023.gpkg")
 # Save spatial subplot data with cluster IDs
 #dat25_sf <- st_read("outData/subplot_with_clusters_2025.gpkg")
 
-# Read drone CHM summary
-drone_cv <- fread("outTable/chm_buff_summary.csv")
+# Read drone CHM per pixel
+drone_cv <- fread("outTable/chm_buff_raw.csv")  # get values per pixel
 
-# rename to 'subplots'
-drone_cv <- drone_cv %>% 
-  rename(subplot = plot_ID)
-
-# read pre-disturbance site history
-pre_dist_history <- fread("outTable/pre_disturb_history_raster.csv")
-
-pre_dist_history <- pre_dist_history %>%
-  mutate(field_year = if_else(str_detect(cluster, "_"), 2023, 2025))
-
-pre_dist_history_2023_rst <- pre_dist_history %>%   # filed only pre dicturbancs history for sites collected in 2023
-  dplyr::filter(field_year == "2023") %>% 
-  rename(plot = cluster)
+## read pre-disturbance site history: rasters
+pre_dist_history <- fread("outTable/pre_disturb_history_raster_ALL_buffers.csv")
 
 
-# read vectors; individual trees
-library(terra)
-library(dplyr)
-
-# 1. Read both layers
+# pre-disturbance history: individual trees 
 convex_hull <- vect("raw/pre-disturb_history_trees/convex_hull_full_5514_buffer.gpkg")  # replace with correct path
 pre_trees  <- vect("raw/pre-disturb_history_trees/pre-disturbance_trees.gpkg")     # replace with correct path
 
-# 2. Reproject both to EPSG:3035 (ETRS89-LAEA)
+
+## data clean up -------------------------------------------------
+
+
+# rename to 'subplots'
+drone_cv <- drone_cv %>% 
+  rename(subplot = plot_ID) %>% 
+  mutate(plot = str_replace(subplot, "^[^_]+_([^_]+_[^_]+)_.*$", "\\1"),
+         pixel_value = pmax(pixel_value, 0)   # clamp negatives to 0)
+  )
+
+
+### pre-disturbance cluster: tree density, % share of spruce  
+# Reproject to EPSG:3035 (ETRS89-LAEA)
 convex_hull_3035 <- project(convex_hull, "EPSG:3035")
 pre_trees_3035   <- project(pre_trees, "EPSG:3035")
 
-# 3. Get polygon area (in m²)
-# need to check the AREA!!!
+# Get polygon area (in m²) & perimeter - this is convex hull + buffer around it to avoid edge effects
 convex_hull_3035$cvx_area_m2 <- expanse(convex_hull_3035, unit = "m")
-# Calculate perimeter in meters
 convex_hull_3035$cvx_perimeter_m <- perim(convex_hull_3035)
 
-# 4. Join polygon ID to points (spatial join)
-#    This adds polygon info to each point that falls inside one
+# Add plot info to each tree:  (spatial join)
 pre_trees_3035_joined <- terra::intersect(pre_trees_3035, convex_hull_3035)
 
-# Check result
-head(as.data.frame(pre_trees_3035_joined))
-
-
-# 6. Clean up tree and convex hull input data
+#  Clean up tree- and convex hull input data
 clean_trees <- pre_trees_3035_joined %>%
   as.data.frame() %>%
   mutate(
@@ -134,7 +127,7 @@ clean_trees <- pre_trees_3035_joined %>%
     buff_perimeter = perimeter
   )
 
-
+# calculate stem density from tree counst (based on mapped area - convex hull)
 pre_disturb_stem_density_full <- clean_trees %>% 
   group_by(plot, species, status, 
            cvx_area_m2, 
@@ -167,12 +160,39 @@ pre_disturb_stem_density_filt <- pre_disturb_stem_density_full %>%
   distinct()
 
 
+### pre-disturbance raster -----------------
+
+pre_dist_history <- pre_dist_history %>%
+  mutate(field_year = if_else(str_detect(cluster, "_"), 2023, 2025))
+
+pre_dist_history_2023_rst <- pre_dist_history %>%   # filed only pre dicturbancs history for sites collected in 2023
+  dplyr::filter(field_year == "2023",
+                buffer_m %in% c(25, 100)) %>% # filter only two buffer widths 
+  rename(plot = cluster)
+
+# convert to wide format 
+pre_dist_wide <- pre_dist_history_2023_rst %>%
+  dplyr::select(-ID, -field_year) %>%                 # drop unneeded cols
+  mutate(buff = paste0("b", buffer_m)) %>%     # label buffers b25/b100
+  pivot_wider(
+    id_cols   = c(plot, year),
+    names_from = buff,
+    values_from = c(
+      mean_cover_dens, median_cover_dens, cv_cover_dens,
+      total_cells, n_coniferous, n_deciduous, forest_cells,
+      share_coniferous, share_deciduous, shannon
+    ),
+    names_glue = "{.value}_{buff}",            # e.g., mean_cover_dens_b25
+    values_fn = dplyr::first                   # in case of duplicates
+  ) %>%
+  arrange(plot)
 
 
-## Sumarize field observation per cluster  --------------------------------------
+### Field data: subplot level --------------------------------------
 
 # guestimate dbh and ba per individual based on height distribution 
 dat23_subplot_recode <- dat23_subplot %>% 
+  dplyr::select(-country) %>% 
   mutate(
     # Create a numeric height estimate (keep original height class string)
     hgt_est = case_when(
@@ -214,35 +234,62 @@ dat23_subplot_recode <- dat23_subplot %>%
     ba_ha_m2       = ba_total_m2 * scaling_factor
   ) %>% 
   rename(plot = cluster, 
-         subplot = ID)
-
-
-
-
-# Cross scale variation ----------------------------------------------
-##  variation of height classes across scales: subplot vs plot -----------------------
-
-# first, replace the NA in n (counts) and stem_desnity by 0
-dat23_subplot_recode <- dat23_subplot_recode %>%
+         subplot = ID) %>% 
   mutate(n = ifelse(is.na(n), 0L, n),
          stem_density = ifelse(is.na(stem_density), 0L, stem_density))
 
-# vertical structure per subplot& plot:
-# plot values are generated as 
-# 1. average across plots 
-# (compare how different the subplot is compared to plit mean )
-# 2. as pooled all values (no subplots boundaries)
+
+## summary metrics on subplot level ----------------------------
+# drone
+# field data
+
+# test
+drone_cv_sub <- drone_cv %>% 
+  dplyr::filter(subplot == '13_26_105_5')
+
+my_mean = mean(drone_cv_sub$pixel_value)
+my_sd = sd(drone_cv_sub$pixel_value)
+
+# Drone: subplot vs plot level 
+
+# Per-subplot
+drone_sub_summ <- drone_cv %>%
+  mutate(pixel_value = pixel_value +0.001) %>% # add a small values to allow CV calculation
+  group_by(plot, subplot, drone) %>%
+  summarise(
+    n_pix      = sum(!is.na(pixel_value)),
+    mean_hgt   = mean(pixel_value, na.rm = TRUE),
+    median_hgt = median(pixel_value, na.rm = TRUE),
+    sd_hgt     = sd(pixel_value, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(cv_hgt = sd_hgt / mean_hgt)
+
+# Plot-level
+drone_plot_summ <- drone_cv %>%
+  group_by(plot) %>%
+  summarise(
+    n_pix      = sum(!is.na(pixel_value)),
+    mean_hgt   = mean(pixel_value, na.rm = TRUE),
+    median_hgt = median(pixel_value, na.rm = TRUE),
+    sd_hgt     = sd(pixel_value, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(cv_hgt =  sd_hgt / mean_hgt)
 
 
-# --- Subplot-level metrics ---
-subplot_metrics <- dat23_subplot_recode %>%
-  group_by(country, plot, subplot) %>%
+
+# --- Field data: Subplot-level metrics ---
+field_sub_summ <- dat23_subplot_recode %>%
+  group_by(plot, subplot) %>%
   summarise(
     stems_total = sum(n, na.rm = TRUE),
     sp_richness = if (stems_total > 0) n_distinct(species[n > 0]) else 0,
     shannon_sp  = if (stems_total > 0) vegan::diversity(n, index = "shannon") else 0,
     evenness_sp = if (sp_richness > 1) shannon_sp / log(sp_richness) else 0,
     mean_hgt    = if (stems_total > 0) weighted.mean(hgt_est, n, na.rm = TRUE) else NA_real_,
+    median_hgt    = if (stems_total > 0) median(hgt_est, na.rm = TRUE) else NA_real_,
+    
     # fix CV - if all subplots have not stems, CV is 0
     cv_hgt = if (stems_total > 0 && mean(hgt_est, na.rm = TRUE) > 0) {
       sd(hgt_est, na.rm = TRUE) / mean(hgt_est, na.rm = TRUE)
@@ -251,11 +298,58 @@ subplot_metrics <- dat23_subplot_recode %>%
       max(hgt_est, na.rm = TRUE) - min(hgt_est, na.rm = TRUE) else NA_real_,
     .groups = "drop"
   ) %>% 
-  mutate(cv_hgt = ifelse(is.na(cv_hgt), 0L, cv_hgt)) # replace NA by 0 if stems are missing
+  mutate(cv_hgt = ifelse(is.na(cv_hgt), 0L, cv_hgt),
+         mean_hgt = ifelse(is.na(mean_hgt), 0L, mean_hgt)) # replace NA by 0 if stems are missing
+
+
+
+## Correlation of height structure between field& drone data ----------
+# rename cols for correlation
+
+field_sub_summ_sub <- 
+  field_sub_summ %>% 
+  dplyr::select(subplot, median_hgt, mean_hgt, cv_hgt) %>% 
+  rename(
+    field_median_hgt = median_hgt,
+    field_mean_hgt   = mean_hgt,
+    field_cv_hgt     = cv_hgt)
+
+drone_sub_summ_sub <- drone_sub_summ %>% 
+  dplyr::select(subplot, median_hgt, mean_hgt, cv_hgt) %>% 
+  rename(
+    drone_median_hgt = median_hgt,
+    drone_mean_hgt = mean_hgt,
+    drone_cv_hgt = cv_hgt)
+  
+
+# join both tables to run corelations
+df_cor_comb <- field_sub_summ_sub %>% 
+  inner_join(drone_sub_summ_sub) %>% 
+  na.omit() %>% 
+  # remove extreme values
+  dplyr::filter(field_median_hgt<5 & field_median_hgt>-0.5) %>%
+  dplyr::filter(drone_median_hgt<5 & drone_median_hgt>-0.5) #%>%
+  
+
+plot(df_cor_comb$field_median_hgt, df_cor_comb$drone_median_hgt)
+plot(df_cor_comb$field_cv_hgt, df_cor_comb$drone_cv_hgt)
+
+cor(df_cor_comb$field_cv_hgt, df_cor_comb$drone_cv_hgt)
+
+plot(df_cor_comb$field_cv_hgt, df_cor_comb$drone_cv_hgt)
+# Cross scale variation ----------------------------------------------
+##  variation of height classes across scales: subplot vs plot -----------------------
+
+# vertical structure per subplot& plot:
+# plot values are generated as 
+# 1. average across plots 
+# (compare how different the subplot is compared to plit mean )
+# 2. as pooled all values (no subplots boundaries)
+
 
 # --- Plot-level metrics (aggregate over subplots) ---
-plot_metrics_mean <- subplot_metrics %>%
-  group_by(country, plot) %>%
+plot_metrics_mean <- field_sub_summ %>%
+  group_by(plot) %>%
   summarise(
     mean_sp_richness = mean(sp_richness, na.rm = TRUE),
     #var_sp_richness  = var(sp_richness,  na.rm = TRUE),
@@ -271,7 +365,7 @@ plot_metrics_mean <- subplot_metrics %>%
 
 # --- pooled CV directly from dat23_subplot_recode ---
 plot_metrics_pooled  <- subplot_metrics <- dat23_subplot_recode %>%
-  group_by(country, plot) %>%
+  group_by(plot) %>%
   summarise(
     stems_total = sum(n, na.rm = TRUE),
     sp_richness = if (stems_total > 0) n_distinct(species[n > 0]) else 0,
@@ -293,7 +387,7 @@ plot_metrics_pooled  <- subplot_metrics <- dat23_subplot_recode %>%
 
 plot_compare <- plot_metrics_mean %>%
   left_join(plot_metrics_pooled %>% 
-              dplyr::select(country, plot,
+              dplyr::select(plot,
                      pooled_sp_richness = sp_richness,
                      pooled_shannon_sp  = shannon_sp,
                      pooled_evenness_sp = evenness_sp,
