@@ -153,7 +153,7 @@ run_for_width <- function(width_m) {
 }
 
 # -------------------- Run for multiple radii --------------------
-buffer_set <- c(25, 50, 100, 175, 300, 500)
+buffer_set <- c(25, 50, 100, 175, 300, 500, 1000)
 
 all_buffers_tbl <- map_dfr(buffer_set, run_for_width)
 
@@ -223,7 +223,7 @@ sens_sum %>%
   ggplot( aes(x=buffer_m, y=med, group=variable)) +
   geom_errorbar(aes(ymin=p25, ymax=p75), width=.2,
                 position=position_dodge(0.05)) +
-  geom_line(linewidth = 0.5) + 
+  geom_line(linewidth = 0.5, color = 'grey') + 
   geom_point(size = 1.5) + 
   facet_wrap(.~variable, scale = 'free_y' ) +
   theme_classic()
