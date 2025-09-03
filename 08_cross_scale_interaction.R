@@ -157,7 +157,8 @@ pre_disturb_stem_density_filt <- pre_disturb_stem_density_full %>%
                 forest_year,
                 disturbance_length,
                 n_trees_total, density_ha,share_spruce) %>% 
-  distinct()
+  distinct() %>% 
+  rename_with(~ paste0("pre_dst_", .x), -c(plot))
 
 
 ### pre-disturbance raster -----------------
@@ -185,7 +186,8 @@ pre_dist_wide <- pre_dist_history_2023_rst %>%
     names_glue = "{.value}_{buff}",            # e.g., mean_cover_dens_b25
     values_fn = dplyr::first                   # in case of duplicates
   ) %>%
-  arrange(plot)
+  arrange(plot) %>% 
+  rename_with(~ paste0("pre_dst_", .x), -c(plot, year))
 
 
 ### Field data: subplot level --------------------------------------
@@ -238,6 +240,64 @@ dat23_subplot_recode <- dat23_subplot %>%
   mutate(n = ifelse(is.na(n), 0L, n),
          stem_density = ifelse(is.na(stem_density), 0L, stem_density))
 
+# define teh species into pioneer/likely planted species
+dat23_subplot_recode <- dat23_subplot_recode %>%
+  mutate(group = case_when(
+    # --- Planted / late-successional / non-native ---
+    species %in% c("piab","pisy","abal","lade","psme","taba",
+                   "fasy","quro","acca","acpl","acps","frex",
+                   "casa","aehi","saca","rops") ~ "planted",
+    
+    # --- Pioneer / early successional ---
+    species %in% c("besp","alin","algl","alvi","potr","posp","prav",
+                   "tisp","soau","soto","soar","cabe","ulsp","aial",
+                   "fror","juni","jure","qusp","sasp","osca") ~ "pioneer",
+    
+    # --- Everything else / not clearly one of the two ---
+    TRUE ~ "other"
+  ))
+
+# get stem density by vertical class
+subplot_density <- dat23_subplot_recode %>%
+  group_by(subplot, plot, vegtype) %>%
+  summarise(stem_density_sum = sum(stem_density, na.rm = TRUE), 
+            .groups = "drop") %>% 
+  pivot_wider(
+    names_from = vegtype,
+    values_from = stem_density_sum,
+    values_fill = 0
+  ) %>% 
+  mutate(stem_regeneration = advanced + small)
+
+head(subplot_density)
+
+hist(subplot_density$stem_regeneration)
+
+# stem density by species group --------------
+subplot_group_density_wide <- dat23_subplot_recode %>%
+  filter(vegtype %in% c("small", "advanced")) %>%
+  group_by(subplot, plot, group, vegtype) %>%
+  summarise(stem_density_sum = sum(stem_density, na.rm = TRUE),
+            .groups = "drop") %>%
+  unite("group_veg", group, vegtype) %>%   # combine group + vegtype
+  pivot_wider(
+    names_from = group_veg,
+    values_from = stem_density_sum,
+    values_fill = 0
+  ) %>%
+  mutate(
+    pioneer_total = coalesce(pioneer_small, 0) + coalesce(pioneer_advanced, 0),
+    planted_total = coalesce(planted_small, 0) + coalesce(planted_advanced, 0)
+  )
+head(subplot_group_density_wide)
+View(subplot_group_density_wide)
+
+
+# does the planted vs pioneer trees correlate?
+subplot_group_density_wide %>% 
+  ggplot(aes(x = pioneer_small , y = planted_small)) +
+  geom_point() + 
+  geom_smooth(method = "lm")
 
 ## summary metrics on subplot level ----------------------------
 # drone
@@ -337,6 +397,10 @@ plot(df_cor_comb$field_cv_hgt, df_cor_comb$drone_cv_hgt)
 cor(df_cor_comb$field_cv_hgt, df_cor_comb$drone_cv_hgt)
 
 plot(df_cor_comb$field_cv_hgt, df_cor_comb$drone_cv_hgt)
+
+# very low correlation between height structure between drones and field data!
+
+
 # Cross scale variation ----------------------------------------------
 ##  variation of height classes across scales: subplot vs plot -----------------------
 
@@ -364,7 +428,7 @@ plot_metrics_mean <- field_sub_summ %>%
 
 
 # --- pooled CV directly from dat23_subplot_recode ---
-plot_metrics_pooled  <- subplot_metrics <- dat23_subplot_recode %>%
+plot_metrics_pooled  <- dat23_subplot_recode %>%
   group_by(plot) %>%
   summarise(
     stems_total = sum(n, na.rm = TRUE),
@@ -387,14 +451,16 @@ plot_metrics_pooled  <- subplot_metrics <- dat23_subplot_recode %>%
 
 plot_compare <- plot_metrics_mean %>%
   left_join(plot_metrics_pooled %>% 
-              dplyr::select(plot,
+              dplyr::select(
+                     plot,
+                     stems_total,
                      pooled_sp_richness = sp_richness,
                      pooled_shannon_sp  = shannon_sp,
                      pooled_evenness_sp = evenness_sp,
                      pooled_mean_hgt    = mean_hgt,
                      pooled_cv_hgt      = cv_hgt,
                      pooled_range_hgt   = range_hgt),
-            by = c("country","plot"))
+            by = c("plot"))
 
 
 # calculate differene between two metrics
@@ -416,11 +482,23 @@ plot_compare <- plot_compare %>%
     )
   )
 
-
+# SKIP ----------------
 hist(plot_compare$delta_richness)
 hist(plot_compare$delta_cv_hgt)
 
-
+# op <- par(mfrow = c(1, 2))  # two plots on one page
+# #windows()
+# hist(na.omit(plot_compare$delta_richness),
+#      main = "Δ Richness (pooled − mean)", xlab = "Difference",
+#      col = "grey85", border = "grey40")
+# abline(v = 0, col = "red", lty = 2, lwd = 2)
+# 
+# hist(na.omit(plot_compare$delta_cv_hgt),
+#      main = "Δ CV Height (pooled − mean)", xlab = "Difference",
+#      col = "grey85", border = "grey40")
+# abline(v = 0, col = "red", lty = 2, lwd = 2)
+# 
+# par(op)
 
 # -----------------------------------------
 # Linear model
@@ -430,16 +508,103 @@ hist(plot_compare$delta_cv_hgt)
 # what the subplot tells me on average? e
 # what the whole plot looks like if i pool everything?
 
+# dummy example: cross scale interaction
+# Two subplots in one plot: perfectly uniform inside each subplot,
+# but different means between subplots
+h1 <- c(1,1,1,1)   # subplot A
+h2 <- c(3,3,3,3)   # subplot B
+
+cv_A <- sd(h1)/mean(h1)         # 0
+cv_B <- sd(h2)/mean(h2)         # 0
+mean_cv <- mean(c(cv_A, cv_B))  # 0
+
+pooled <- c(h1, h2)
+pooled_cv <- sd(pooled)/mean(pooled)  # > 0 (here = 0.5)
+
+c(mean_cv = mean_cv, pooled_cv = pooled_cv, delta = pooled_cv - mean_cv)
+
+
 # prepare table:
 df_fin <- plot_compare %>% 
-  left_join(pre_dist_history_2023_rst) %>%  # add rasters for rought estimation: density_cover and % coniferous (leaf type)
-  left_join(pre_disturb_stem_density_filt) %>%  # addstem density based on tree calculation
+  left_join(pre_dist_wide) %>%  # add rasters for rought estimation: density_cover and % coniferous (leaf type)
+  left_join(pre_disturb_stem_density_filt) %>%  # stem density based on tree calculation
+  left_join(subplot_density) %>%   # get stem density by vertical classes
+  #left_join(subplot_group_density_wide) %>%  # get stem density by trees likely planted/pioneer - need to group on plot level!!
   mutate(
     log_mean = log1p(mean_cv_hgt),
     log_resp = log1p(pooled_cv_hgt)
   )
 
+# subset only important variables
+vars <- c(#"mean_sp_richness" ,     
+          # "mean_shannon_sp",         
+          #"mean_mean_hgt" ,         
+          "mean_cv_hgt" ,          
+        #"mean_range_hgt",
+       # "pooled_sp_richness" ,   
+         # "pooled_shannon_sp" ,
+        #  "pooled_mean_hgt"  ,
+       "stems_total",
+       "stem_regeneration",
+       "pooled_cv_hgt" ,        
+       #  "pooled_range_hgt",
+       # "median_cover_dens_b25", 
+        "median_cover_dens_b100",
+       "cv_cover_dens_b100",
+       # "share_coniferous_b25",
+        "share_coniferous_b100",
+       # "disturbance_year" ,     
+      #  "forest_year" ,           
+       # "disturbance_length" ,   
+        # "n_trees_total",          
+        "density_ha" ,           
+         "share_spruce"  )
 
+# select jus selected variables
+df_fin_sub <- df_fin %>% 
+  dplyr::select(all_of(vars))
+
+pairs(df_fin_sub)
+
+# link current structure with pre-disturbance history
+plot(df_fin$mean_cv_hgt      ~ df_fin$share_spruce)
+plot(df_fin$mean_cv_hgt      ~ df_fin$stems_total)
+plot(df_fin$stems_total ~ df_fin$share_spruce)
+plot(df_fin$stems_total ~ df_fin$cv_cover_dens_b100)
+
+plot(df_fin$pooled_cv_hgt      ~ df_fin$share_spruce)
+
+plot(df_fin$disturbance_length ~ df_fin$share_spruce)
+
+df_fin %>% 
+  ggplot(aes(x = cv_cover_dens_b100, y = stems_total)) +
+  geom_smooth(method = 'lm') +
+  geom_point()
+
+df_fin %>% 
+  ggplot(aes(x = mean_cv_hgt, y = share_spruce)) +
+  geom_smooth(method = 'lm') +
+  geom_point()
+
+
+
+# plots --------------------
+
+
+op <- par(mfrow = c(1, 2))  # two plots on one page
+
+hist(na.omit(df_fin$share_spruce),
+     main = "Spruce share", xlab = "Share [%]",
+     col = "grey85", border = "grey40")
+
+hist(na.omit(df_fin$density_ha),
+     main = "Mature trees stem density", xlab = "#/ha",
+     col = "grey85", border = "grey40")
+
+par(op)
+
+
+# drivers ---------------------------------------------------------
 # model testing -> best model is with logged values
 model <- lm(pooled_cv_hgt ~ mean_cv_hgt, data = df_fin)
 summary(model)
