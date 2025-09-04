@@ -508,20 +508,17 @@ hist(plot_compare$delta_cv_hgt)
 # what the subplot tells me on average? e
 # what the whole plot looks like if i pool everything?
 
-# dummy example: cross scale interaction
-# Two subplots in one plot: perfectly uniform inside each subplot,
-# but different means between subplots
-h1 <- c(1,1,1,1)   # subplot A
-h2 <- c(3,3,3,3)   # subplot B
 
-cv_A <- sd(h1)/mean(h1)         # 0
-cv_B <- sd(h2)/mean(h2)         # 0
-mean_cv <- mean(c(cv_A, cv_B))  # 0
 
-pooled <- c(h1, h2)
-pooled_cv <- sd(pooled)/mean(pooled)  # > 0 (here = 0.5)
 
-c(mean_cv = mean_cv, pooled_cv = pooled_cv, delta = pooled_cv - mean_cv)
+
+
+
+
+
+
+
+
 
 
 # prepare table:
