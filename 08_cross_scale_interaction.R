@@ -1,7 +1,7 @@
 
 
 # --------------------------------------------------------
-# Cross-scale interaction: 
+#             Cross-scale interaction: 
 #    field & drone variation in vertical structures 
 # --------------------------------------------------------
 
@@ -192,6 +192,8 @@ pre_dist_wide <- pre_dist_history_2023_rst %>%
 
 ### Field data: subplot level --------------------------------------
 
+
+
 # guestimate dbh and ba per individual based on height distribution 
 dat23_subplot_recode <- dat23_subplot %>% 
   dplyr::select(-country) %>% 
@@ -240,9 +242,11 @@ dat23_subplot_recode <- dat23_subplot %>%
   mutate(n = ifelse(is.na(n), 0L, n),
          stem_density = ifelse(is.na(stem_density), 0L, stem_density))
 
-# define teh species into pioneer/likely planted species
+  
+
+# define recovery type: based on species that are likely planted/pioneer
 dat23_subplot_recode <- dat23_subplot_recode %>%
-  mutate(group = case_when(
+  mutate(recovery_type = case_when(
     # --- Planted / late-successional / non-native ---
     species %in% c("piab","pisy","abal","lade","psme","taba",
                    "fasy","quro","acca","acpl","acps","frex",
@@ -269,17 +273,71 @@ subplot_density <- dat23_subplot_recode %>%
   ) %>% 
   mutate(stem_regeneration = advanced + small)
 
-head(subplot_density)
+# get information about context: salvage and protection intensity
+str(dat23_subplot_recode)
 
-hist(subplot_density$stem_regeneration)
+
+hist(dat23_subplot_recode$clear)
+
+
+# Get context information: management intensity at plot level 
+
+
+# --- 1) Columns to use & NA -> 0 ---
+management_types_v <- c("clear", "grndwrk", "logging_trail", "planting", "anti_browsing")
+
+dat23_subplot_recode <- dat23_subplot_recode %>%
+  mutate(across(all_of(management_types_v), ~ ifelse(is.na(.), 0, .))) 
+
+# --- 2) Subplot-level scores (use max within subplot to avoid duplicates) ---
+mng_subplot_scores <- dat23_subplot_recode %>%
+  group_by(plot, subplot) %>%
+  summarise(
+    clear          = max(clear),
+    grndwrk        = max(grndwrk),
+    logging_trail  = max(logging_trail),
+    planting       = max(planting),
+    anti_browsing  = max(anti_browsing),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    salvage_sub    = clear + grndwrk + logging_trail,          # 0..3
+    protection_sub = planting + anti_browsing,                  # 0..2
+    management_sub = salvage_sub + protection_sub               # 0..5
+  )
+
+# --- 3) Plot-level intensities (scaled 0–1) ---
+mng_plot_intensity <- mng_subplot_scores %>%
+  group_by(plot) %>%
+  summarise(
+    n_subplots          = n_distinct(subplot),
+    salvage_sum         = sum(salvage_sub),
+    protection_sum      = sum(protection_sub),
+    management_sum      = sum(management_sub),
+    salvage_intensity   = salvage_sum    / (3 * n_subplots),
+    protection_intensity= protection_sum / (2 * n_subplots),
+    management_intensity= management_sum / (5 * n_subplots),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    salvage_intensity    = pmin(pmax(salvage_intensity, 0), 1),
+    protection_intensity = pmin(pmax(protection_intensity, 0), 1),
+    management_intensity = pmin(pmax(management_intensity, 0), 1)
+  )
+
+
+
+
+
 
 # stem density by species group --------------
+# need to get plot level average! 
 subplot_group_density_wide <- dat23_subplot_recode %>%
   filter(vegtype %in% c("small", "advanced")) %>%
-  group_by(subplot, plot, group, vegtype) %>%
+  group_by(subplot, plot, recovery_type, vegtype) %>%
   summarise(stem_density_sum = sum(stem_density, na.rm = TRUE),
             .groups = "drop") %>%
-  unite("group_veg", group, vegtype) %>%   # combine group + vegtype
+  unite("group_veg", recovery_type, vegtype) %>%   # combine recovery_type + vegtype
   pivot_wider(
     names_from = group_veg,
     values_from = stem_density_sum,
