@@ -262,8 +262,8 @@ dat23_subplot_recode <- dat23_subplot_recode %>%
   ))
 
 # get stem density by vertical class
-subplot_density <- dat23_subplot_recode %>%
-  group_by(subplot, plot, vegtype) %>%
+plot_density <- dat23_subplot_recode %>%
+  group_by(plot, vegtype) %>%
   summarise(stem_density_sum = sum(stem_density, na.rm = TRUE), 
             .groups = "drop") %>% 
   pivot_wider(
@@ -583,17 +583,19 @@ hist(plot_compare$delta_cv_hgt)
 df_fin <- plot_compare %>% 
   left_join(pre_dist_wide) %>%  # add rasters for rought estimation: density_cover and % coniferous (leaf type)
   left_join(pre_disturb_stem_density_filt) %>%  # stem density based on tree calculation
-  left_join(subplot_density) %>%   # get stem density by vertical classes
+  left_join(plot_density) %>%   # get stem density by vertical classes
+  left_join(mng_plot_intensity ) %>% # add context information
   #left_join(subplot_group_density_wide) %>%  # get stem density by trees likely planted/pioneer - need to group on plot level!!
   mutate(
     log_mean = log1p(mean_cv_hgt),
     log_resp = log1p(pooled_cv_hgt)
-  )
+  ) 
 
 # subset only important variables
 vars <- c(#"mean_sp_richness" ,     
           # "mean_shannon_sp",         
-          #"mean_mean_hgt" ,         
+          #"mean_mean_hgt" ,  
+          "delta_cv_hgt",                 # pooled_cv_hgt - mean_cv_hgt: if + => larger variation at large scale
           "mean_cv_hgt" ,          
         #"mean_range_hgt",
        # "pooled_sp_richness" ,   
@@ -603,17 +605,20 @@ vars <- c(#"mean_sp_richness" ,
        "stem_regeneration",
        "pooled_cv_hgt" ,        
        #  "pooled_range_hgt",
-       # "median_cover_dens_b25", 
-        "median_cover_dens_b100",
-       "cv_cover_dens_b100",
-       # "share_coniferous_b25",
-        "share_coniferous_b100",
+       # "pre_dst_median_cover_dens_b25", 
+        "pre_dst_median_cover_dens_b100",
+       "pre_dst_cv_cover_dens_b100",
+       # "pre_dst_share_coniferous_b25",
+        "pre_dst_share_coniferous_b100",
        # "disturbance_year" ,     
       #  "forest_year" ,           
        # "disturbance_length" ,   
         # "n_trees_total",          
-        "density_ha" ,           
-         "share_spruce"  )
+        "pre_dst_density_ha" ,           
+         "pre_dst_share_spruce",
+      "management_intensity",
+      "salvage_intensity",
+      "protection_intensity")
 
 # select jus selected variables
 df_fin_sub <- df_fin %>% 
@@ -621,8 +626,21 @@ df_fin_sub <- df_fin %>%
 
 pairs(df_fin_sub)
 
+#library(corrplot)
+
+# compute correlation matrix (excluding NAs)
+cor_mat <- cor(df_fin_sub, use = "pairwise.complete.obs")
+
+# plot correlogram
+corrplot(cor_mat, method = "color", type = "upper",
+         addCoef.col = "black",#, # add correlation values
+         tl.col = "black", 
+        tl.srt = 45,
+         #diag = FALSE
+         )
+
 # link current structure with pre-disturbance history
-plot(df_fin$mean_cv_hgt      ~ df_fin$share_spruce)
+plot(df_fin$delta_cv_hgt      ~ df_fin$salvage_intensity)
 plot(df_fin$mean_cv_hgt      ~ df_fin$stems_total)
 plot(df_fin$stems_total ~ df_fin$share_spruce)
 plot(df_fin$stems_total ~ df_fin$cv_cover_dens_b100)
@@ -632,7 +650,7 @@ plot(df_fin$pooled_cv_hgt      ~ df_fin$share_spruce)
 plot(df_fin$disturbance_length ~ df_fin$share_spruce)
 
 df_fin %>% 
-  ggplot(aes(x = cv_cover_dens_b100, y = stems_total)) +
+  ggplot(aes(x = salvage_intensity, y = delta_cv_hgt)) +
   geom_smooth(method = 'lm') +
   geom_point()
 
@@ -643,21 +661,29 @@ df_fin %>%
 
 
 
-# plots --------------------
+# test: delta vs managemnet ------------------------------------------------------------------------
+library(mgcv)
+library(gratia)
 
+m1 <- gam(delta_cv_hgt ~ s(protection_intensity, k = 5), data = df_fin)
 
-op <- par(mfrow = c(1, 2))  # two plots on one page
-
-hist(na.omit(df_fin$share_spruce),
-     main = "Spruce share", xlab = "Share [%]",
-     col = "grey85", border = "grey40")
-
-hist(na.omit(df_fin$density_ha),
-     main = "Mature trees stem density", xlab = "#/ha",
-     col = "grey85", border = "grey40")
-
-par(op)
-
+summary(m1)
+plot.gam(m1)
+# # plots --------------------
+# 
+# 
+# op <- par(mfrow = c(1, 2))  # two plots on one page
+# 
+# hist(na.omit(df_fin$share_spruce),
+#      main = "Spruce share", xlab = "Share [%]",
+#      col = "grey85", border = "grey40")
+# 
+# hist(na.omit(df_fin$density_ha),
+#      main = "Mature trees stem density", xlab = "#/ha",
+#      col = "grey85", border = "grey40")
+# 
+# par(op)
+# 
 
 # drivers ---------------------------------------------------------
 # model testing -> best model is with logged values
@@ -675,8 +701,6 @@ library(MASS)
 model_robust <- rlm(pooled_cv_hgt ~ mean_cv_hgt, data = df_fin)
 summary(model_robust)
 
-library(mgcv)
-library(gratia)
 model_gam <- gam(pooled_cv_hgt ~ s(mean_cv_hgt, k = 4), data = df_fin)
 summary(model_gam)
 gam.check(model_gam)
