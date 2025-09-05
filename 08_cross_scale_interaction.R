@@ -74,17 +74,88 @@ pre_trees_3035   <- project(pre_trees, "EPSG:3035")
 buff_square_3035 <- project(buff_square, "EPSG:3035")
 
 # Get polygon area (in m²) & perimeter - this is convex hull + buffer around it to avoid edge effects
-convex_hull_3035$cvx_area_m2     <- expanse(convex_hull_3035, unit = "m")
-convex_hull_3035$cvx_perimeter_m <- perim(convex_hull_3035)
+convex_hull_3035$area_m2     <- expanse(convex_hull_3035, unit = "m")
+convex_hull_3035$perimeter_m <- perim(convex_hull_3035)
 
-buff_square_3035$are_m2      <- expanse(buff_square_3035, unit = "m")
-buff_square_3035$perimeter_m <- perim(buff_square_3035)
+buff_square_3035$area_m2      <- expanse(buff_square_3035, unit = "m")
+buff_square_3035$perimeter_m  <- perim(buff_square_3035)
 
 
-# recalculate per square buffer
+# clean up tree characteristics 
+trees_df <- as.data.frame(pre_trees_3035) %>%
+  mutate(
+    original_species = species,
+    species = case_when(
+      is.na(species) ~ "piab",
+      species == "l" ~ "deciduous",
+      species == "s" ~ "piab",
+      TRUE ~ species
+    ),
+    status = case_when(
+      original_species == "s" ~ "dry",
+      TRUE ~ "living"
+    )) %>%
+  dplyr::select(-original_species) 
 
-# Add plot info to each tree:  (spatial join)
-pre_trees_3035_joined <- terra::intersect(pre_trees_3035, convex_hull_3035)
+# Reattach cleaned attributes back to geometry
+# Reattach cleaned attributes back to geometry
+pre_trees_3035_clean          <- pre_trees_3035
+values(pre_trees_3035_clean)  <- trees_df
+
+# clean up convex hull characteristics -------------------------
+# START -------------
+cvx_clean <- as.data.frame(convex_hull_3035) %>%   # attributes only (no geometry)
+  mutate(
+    # rok_disturbancia like "2019-…", or "nie"
+    disturbance_year = case_when(
+      rok_disturbancia == "nie" ~ 2024L,
+      TRUE ~ suppressWarnings(as.integer(str_extract(rok_disturbancia, "^\\d{4}")))
+    ),
+    disturbance_note = case_when(
+      rok_disturbancia == "nie" ~ "nie",
+      TRUE ~ str_trim(str_remove(rok_disturbancia, "^\\d{4}[- ]*"))
+    ),
+    forest_year = suppressWarnings(as.integer(rok_les)),
+    disturbance_length = disturbance_year - forest_year
+  ) %>% 
+  rename(plot = cluster) %>% 
+  dplyr::select(-rok_les,-rok_disturbancia, -area, -perimeter,
+                - disturbance_note)
+
+# Write cleaned attributes back to the terra object
+convex_hull_3035_clean  <-convex_hull_3035[, c("cluster")]
+values(convex_hull_3035_clean)  <- cvx_clean
+
+
+
+
+# Add subplot/plot info to each tree  (spatial join)
+pre_trees_cvx_joined <- terra::intersect(pre_trees_3035_clean, convex_hull_3035_clean)
+# add convex hull information also to subplots
+#buff_squared_joined  <- terra::intersect(buff_square_3035, convex_hull_3035_clean)
+pre_trees_sq_joined  <- terra::intersect(pre_trees_3035_clean, buff_square_3035)
+
+# 3) Run once for convex hulls, once for squares -------------------------------
+cvx_df <- as.data.frame(pre_trees_cvx_joined) 
+sq_df  <- as.data.frame(pre_trees_sq_joined) 
+
+# calculate stem denisty at plot& subplot level 
+pre_disturb_stem_density_cvx <- compute_density(cvx_df, prefix = "cvx")                    # no extra_group
+pre_disturb_stem_density_sq  <- compute_density(sq_df,  prefix = "sq", extra_group = "buf_side")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 #  Clean up tree- and convex hull input data
 clean_trees <- pre_trees_3035_joined %>%
