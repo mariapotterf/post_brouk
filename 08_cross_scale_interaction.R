@@ -39,35 +39,25 @@ library(vegan) # for diversity indices
 
 
 # Read files --------------------------------------
+# --- Field data: 2023 
+dat23_subplot <- data.table::fread("outData/subplot_full_2023.csv")   # subplot-level table
+dat23_sf      <- sf::st_read("outData/sf_context_2023.gpkg")          # subplot spatial data
 
-## Field data 
-# 2023 
-dat23_subplot <- fread('outData/subplot_full_2023.csv')
-#dat23_cluster <- fread('outData/df_cluster_2023.csv')
-# Save spatial subplot data with cluster IDs
-dat23_sf <- st_read("outData/sf_context_2023.gpkg")
+# --- Drone CHM data 
+drone_cv <- data.table::fread("outTable/chm_buff_raw.csv")            # pixel-level values
 
-# 2025
-#dat25_subplot <- fread('outData/subplot_full_2025.csv')
-#dat25_cluster <- fread('outData/df_cluster_2025.csv')
+# --- Pre-disturbance history 
+# Raster-based history
+pre_dist_history <- data.table::fread("outTable/pre_disturb_history_raster_ALL_buffers.csv")
 
-# Save spatial subplot data with cluster IDs
-#dat25_sf <- st_read("outData/subplot_with_clusters_2025.gpkg")
+# Tree-based history (vector layers)
+convex_hull <- terra::vect("raw/pre-disturb_history_trees/convex_hull_full_5514_buffer.gpkg")
+pre_trees   <- terra::vect("raw/pre-disturb_history_trees/pre-disturbance_trees.gpkg")
 
-# Read drone CHM per pixel
-drone_cv <- fread("outTable/chm_buff_raw.csv")  # get values per pixel
-
-## read pre-disturbance site history: rasters
-pre_dist_history <- fread("outTable/pre_disturb_history_raster_ALL_buffers.csv")
-
-
-# pre-disturbance history: individual trees 
-convex_hull <- vect("raw/pre-disturb_history_trees/convex_hull_full_5514_buffer.gpkg")  # replace with correct path
-pre_trees  <- vect("raw/pre-disturb_history_trees/pre-disturbance_trees.gpkg")     # replace with correct path
-
+# --- Buffer polygons for study sites 
+buff_square <- terra::vect("outData/square_buffers_2m_all.gpkg")
 
 ## data clean up -------------------------------------------------
-
 
 # rename to 'subplots'
 drone_cv <- drone_cv %>% 
@@ -81,10 +71,17 @@ drone_cv <- drone_cv %>%
 # Reproject to EPSG:3035 (ETRS89-LAEA)
 convex_hull_3035 <- project(convex_hull, "EPSG:3035")
 pre_trees_3035   <- project(pre_trees, "EPSG:3035")
+buff_square_3035 <- project(buff_square, "EPSG:3035")
 
 # Get polygon area (in m²) & perimeter - this is convex hull + buffer around it to avoid edge effects
-convex_hull_3035$cvx_area_m2 <- expanse(convex_hull_3035, unit = "m")
+convex_hull_3035$cvx_area_m2     <- expanse(convex_hull_3035, unit = "m")
 convex_hull_3035$cvx_perimeter_m <- perim(convex_hull_3035)
+
+buff_square_3035$are_m2      <- expanse(buff_square_3035, unit = "m")
+buff_square_3035$perimeter_m <- perim(buff_square_3035)
+
+
+# recalculate per square buffer
 
 # Add plot info to each tree:  (spatial join)
 pre_trees_3035_joined <- terra::intersect(pre_trees_3035, convex_hull_3035)
@@ -327,7 +324,7 @@ mng_plot_intensity <- mng_subplot_scores %>%
 
 
 
-# stem density by species group --------------
+##  stem density by species group 
 # need to get plot level average! 
 subplot_group_density_wide <- dat23_subplot_recode %>%
   filter(vegtype %in% c("small", "advanced")) %>%
