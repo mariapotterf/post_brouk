@@ -13,14 +13,11 @@
 # - get sites history - from tree density cover, dominant leaf type
 #                     - from tree density (manually mapped)
 
-# correlate: vertical and horizontal structure across scales: field vs drone
+# correlate: vertical structure and composition across scales: field vs drone
 # cross scale interaction: 
 #  - vertical structure
 # effect of pre-disturbance condistions
 
-# extras: 
-# - identify damaged terminal: from raw data czechia 20203 - export gpkg
-# - identify types of damages: 2025 - export gpkg
 
 gc()
 
