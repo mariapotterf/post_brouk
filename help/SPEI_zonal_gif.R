@@ -53,7 +53,7 @@ plot_frame <- function(df, title_text) {
     coord_equal(expand = FALSE) +
     scale_fill_gradient2(
       low = "red", mid = "white", high = "blue",
-      limits = c(-2, 2), midpoint = 0,
+      limits = c(-3, 3), midpoint = 0,
       oob = scales::squish, name = "SPEI12"
     ) +
     labs(title = title_text, x = NULL, y = NULL) +
@@ -109,6 +109,6 @@ make_gif_yearly_gg <- function(folder, outfile, width = 7, height = 5, dpi = 150
 
 # ---- RUN (choose what you need) --------------------------------------------
 #make_gif_monthly_gg(spei_folder, file.path(out_dir, "SPEI12_monthly_fixedScale.gif"))
-make_gif_yearly_gg (spei_folder, file.path(out_dir, "SPEI12_yearly_fixedScale.gif"))
+make_gif_yearly_gg (spei_folder, file.path(out_dir, "SPEI12_yearly_fixedScale.gif", fps = 5))
 
 
