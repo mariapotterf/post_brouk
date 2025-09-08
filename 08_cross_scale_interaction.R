@@ -30,34 +30,30 @@ library(stringr)
 library(purrr)
 library(tidyr)
 library(ggpubr)
-
-
 library(corrplot)
 library(GGally)
-
 library(vegan) # for diversity indices
 
 
-# Read files --------------------------------------
+# Read files -------------- for 2023 --------------
 # --- Field data: 2023 
-dat23_subplot <- data.table::fread("outData/subplot_full_2023.csv")   # subplot-level table
-dat23_sf      <- sf::st_read("outData/sf_context_2023.gpkg")          # subplot spatial data
+dat23_subplot    <- data.table::fread("outData/subplot_full_2023.csv")   # subplot-level table
+dat23_sf         <- sf::st_read("outData/sf_context_2023.gpkg")          # subplot spatial data
 
 # --- Drone CHM data 
-drone_cv <- data.table::fread("outTable/chm_buff_raw.csv")            # pixel-level values
+drone_cv         <- data.table::fread("outTable/chm_buff_raw.csv")            # pixel-level values
 
-# --- Pre-disturbance history 
-# Raster-based history
+# --- Pre-disturbance history - Raster-based history
 pre_dist_history <- data.table::fread("outTable/pre_disturb_history_raster_ALL_buffers.csv")
 
-# Tree-based history (vector layers)
-convex_hull <- terra::vect("raw/pre-disturb_history_trees/convex_hull_full_5514_buffer.gpkg")
-pre_trees   <- terra::vect("raw/pre-disturb_history_trees/pre-disturbance_trees.gpkg")
+# --- Tree-based history (vector layers)
+convex_hull      <- terra::vect("raw/pre-disturb_history_trees/convex_hull_full_5514_buffer.gpkg")
+pre_trees        <- terra::vect("raw/pre-disturb_history_trees/pre-disturbance_trees.gpkg")
 
 # --- Buffer polygons for study sites 
-buff_square <- terra::vect("outData/square_buffers_2m_all.gpkg")
+buff_square      <- terra::vect("outData/square_buffers_2m_all.gpkg")
 
-## data clean up -------------------------------------------------
+## Data clean up -------------------------------------------------
 
 # rename to 'subplots'
 drone_cv <- drone_cv %>% 
@@ -67,8 +63,7 @@ drone_cv <- drone_cv %>%
   )
 
 
-### pre-disturbance cluster: tree density, % share of spruce  
-# Reproject to EPSG:3035 (ETRS89-LAEA)
+### pre-disturbance cluster: tree density, % share of spruce, Reproject to EPSG:3035 (ETRS89-LAEA)
 convex_hull_3035 <- project(convex_hull, "EPSG:3035")
 pre_trees_3035   <- project(pre_trees, "EPSG:3035")
 buff_square_3035 <- project(buff_square, "EPSG:3035")
@@ -81,7 +76,7 @@ buff_square_3035$area_m2      <- expanse(buff_square_3035, unit = "m")
 buff_square_3035$perimeter_m  <- perim(buff_square_3035)
 
 
-# clean up tree characteristics 
+# clean up tree characteristics: get species, ..
 trees_df <- as.data.frame(pre_trees_3035) %>%
   mutate(
     original_species = species,
@@ -98,13 +93,12 @@ trees_df <- as.data.frame(pre_trees_3035) %>%
   dplyr::select(-original_species) 
 
 # Reattach cleaned attributes back to geometry
-# Reattach cleaned attributes back to geometry
 pre_trees_3035_clean          <- pre_trees_3035
 values(pre_trees_3035_clean)  <- trees_df
 
 # clean up convex hull characteristics -------------------------
-# START -------------
-cvx_clean <- as.data.frame(convex_hull_3035) %>%   # attributes only (no geometry)
+cvx_clean <- convex_hull_3035 %>% 
+  as.data.frame() %>%   # attributes only (no geometry)
   mutate(
     # rok_disturbancia like "2019-…", or "nie"
     disturbance_year = case_when(
@@ -127,9 +121,7 @@ convex_hull_3035_clean  <-convex_hull_3035[, c("cluster")]
 values(convex_hull_3035_clean)  <- cvx_clean
 
 
-
-
-# Add subplot/plot info to each tree  (spatial join)
+# Add subplot (square)/plot (convex hull) info to each tree  (spatial join)
 pre_trees_cvx_joined <- terra::intersect(pre_trees_3035_clean, convex_hull_3035_clean)
 # add convex hull information also to subplots
 #buff_squared_joined  <- terra::intersect(buff_square_3035, convex_hull_3035_clean)
@@ -142,19 +134,20 @@ sq_df  <- as.data.frame(pre_trees_sq_joined)
 
 # Plot: stem density
 cvx_stem_density <- cvx_df %>%
-  group_by(plot, area_m2) %>%
-  dplyr::summarise(
+#  ungroup(.) %>% 
+  group_by(plot) %>%  #, area_m2
+  dplyr::reframe(
     n_trees = n(),
-    density_total = n_trees / area_m2 * 10000,
-    .groups = "drop"
+    area_m2 = mean(area_m2, na.rm  = T),  # keep are here instead of grouping
+    density_ha = n_trees / area_m2 * 10000
   )
 
 cxv_stem_density_species <- cvx_df %>%
-  group_by(plot, area_m2, species) %>%
-  summarise(
+  group_by(plot, species) %>%
+  dplyr::reframe(
     n_trees = n(),
-    density_sp = n_trees / area_m2 * 10000,
-    .groups = "drop"
+    area_m2 = mean(area_m2, na.rm  = T),  # keep are here instead of grouping
+    density_ha = n_trees / area_m2 * 10000
   )
 
 stem_density_status <- cvx_df %>%
