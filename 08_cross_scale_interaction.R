@@ -136,13 +136,34 @@ pre_trees_cvx_joined <- terra::intersect(pre_trees_3035_clean, convex_hull_3035_
 pre_trees_sq_joined  <- terra::intersect(pre_trees_3035_clean, buff_square_3035)
 
 # 3) Run once for convex hulls, once for squares -------------------------------
+# !!!!
 cvx_df <- as.data.frame(pre_trees_cvx_joined) 
 sq_df  <- as.data.frame(pre_trees_sq_joined) 
 
-# calculate stem denisty at plot& subplot level 
-pre_disturb_stem_density_cvx <- compute_density(cvx_df, prefix = "cvx")                    # no extra_group
-pre_disturb_stem_density_sq  <- compute_density(sq_df,  prefix = "sq", extra_group = "buf_side")
+# Plot: stem density
+cvx_stem_density <- cvx_df %>%
+  group_by(plot, area_m2) %>%
+  dplyr::summarise(
+    n_trees = n(),
+    density_total = n_trees / area_m2 * 10000,
+    .groups = "drop"
+  )
 
+cxv_stem_density_species <- cvx_df %>%
+  group_by(plot, area_m2, species) %>%
+  summarise(
+    n_trees = n(),
+    density_sp = n_trees / area_m2 * 10000,
+    .groups = "drop"
+  )
+
+stem_density_status <- cvx_df %>%
+  group_by(plot, area_m2, species, status) %>%
+  summarise(
+    n_trees = n(),
+    density_sp_status = n_trees / area_m2 * 10000,
+    .groups = "drop"
+  )
 
 
 
