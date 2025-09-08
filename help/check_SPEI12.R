@@ -7,6 +7,7 @@ library(dplyr)
 library(purrr)
 library(stringr)
 library(tibble)
+library(data.table)
 
 # --- auto-detect candidate subfolders under raw_SPEI12 ----------------------
 base_dir <- "raw/SPEI12"
@@ -143,6 +144,10 @@ summary_monthly <- summary_monthly %>%
 summary_yearly <- summary_yearly %>% 
   mutate(type = get_type(folder))
 
+
+# write to disk
+fwrite(summary_monthly, "outTable/SPEI12_monthly_summary.csv")
+fwrite(summary_yearly,  "outTable/SPEI12_yearly_summary.csv")
 
 
 
