@@ -64,14 +64,22 @@ summarize_folder <- function(folder_name) {
     vals <- values(r_all[[i]], mat = FALSE)
     vals <- vals[is.finite(vals)]
     if (!length(vals)) {
-      tibble(mean = NA_real_, sd = NA_real_,
-             median = NA_real_, q25 = NA_real_, q75 = NA_real_)
+      tibble(mean = NA_real_, 
+             sd = NA_real_,
+             median = NA_real_, 
+             q25 = NA_real_, 
+             q75 = NA_real_,
+             min = NA_real_,
+             max = NA_real_)
     } else {
       qs <- quantile(vals, c(0.25, 0.75), na.rm = TRUE, names = FALSE)
       tibble(mean = mean(vals, na.rm = TRUE),
              sd = sd(vals, na.rm = TRUE),
              median = median(vals, na.rm = TRUE),
-             q25 = qs[1], q75 = qs[2])
+             q25 = qs[1], 
+             q75 = qs[2],
+             min = min(vals, na.rm = TRUE), 
+             max = max(vals, na.rm = TRUE))
     }
   }) %>%
     bind_cols(meta[, c("year","month")]) %>%
@@ -89,15 +97,23 @@ summarize_folder <- function(folder_name) {
     vals <- vals[is.finite(vals)]
     if (!length(vals)) {
       tibble(year = as.integer(yr),
-             mean = NA_real_, sd = NA_real_,
-             median = NA_real_, q25 = NA_real_, q75 = NA_real_)
+             mean = NA_real_, 
+             sd = NA_real_,
+             median = NA_real_, 
+             q25 = NA_real_, 
+             q75 = NA_real_,
+             min = NA_real_, 
+             max = NA_real_)
     } else {
       qs <- quantile(vals, c(0.25, 0.75), na.rm = TRUE, names = FALSE)
       tibble(year   = as.integer(yr),
              mean   = mean(vals, na.rm = TRUE),
              sd     = sd(vals, na.rm = TRUE),
              median = median(vals, na.rm = TRUE),
-             q25    = qs[1], q75 = qs[2])
+             q25    = qs[1], 
+             q75 = qs[2],
+             min = min(vals, na.rm = TRUE), 
+             max = max(vals, na.rm = TRUE))
     }
   }) %>%
     mutate(folder = basename(folder_name)) %>%
