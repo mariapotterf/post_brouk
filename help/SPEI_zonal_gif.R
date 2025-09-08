@@ -90,7 +90,7 @@ make_gif_monthly_gg <- function(folder, outfile, width = 7, height = 5, dpi = 15
 }
 
 # YEARLY GIF (mean of months per year)
-make_gif_yearly_gg <- function(folder, outfile, width = 7, height = 5, dpi = 150, fps = 10) {
+make_gif_yearly_gg <- function(folder, outfile, width = 7, height = 5, dpi = 150, fps = 1) {
   meta <- get_meta(folder)
   years <- unique(meta$year)
   frames <- lapply(years, function(yr) {
@@ -109,6 +109,6 @@ make_gif_yearly_gg <- function(folder, outfile, width = 7, height = 5, dpi = 150
 
 # ---- RUN (choose what you need) --------------------------------------------
 #make_gif_monthly_gg(spei_folder, file.path(out_dir, "SPEI12_monthly_fixedScale.gif"))
-make_gif_yearly_gg (spei_folder, file.path(out_dir, "SPEI12_yearly_fixedScale.gif", fps = 5))
+make_gif_yearly_gg (spei_folder, file.path(out_dir, "SPEI12_yearly_fixedScale.gif"))
 
 
