@@ -186,7 +186,7 @@ levelplot(r,
 
 
 
-# Run animation using RasterVis - per months and years, fixed scale 
+# Run animation using RasterVis - per months and years, fixed scale ------------
 
 # Define palette
 spei_palette <- colorRampPalette(RColorBrewer::brewer.pal(11, "RdBu"))  # red = dry, blue = wet
@@ -242,3 +242,69 @@ animation <- image_animate(image_join(frames), fps = 5)
 
 # Save GIF
 image_write(animation, "outData/SPEI12_zonal/spei12_zonal_mean_animation2.gif")
+
+
+
+# Export gifs for yearly values ------------------------------------------------
+
+
+df <- readr::read_csv("outTable/okres_SPEI12_monthly_stats.csv")
+
+df_yearly <- df %>%
+  mutate(year = as.integer(year)) %>%
+  group_by(okres_id, year) %>%
+  summarise(mean = mean(mean, na.rm = TRUE), .groups = "drop")
+
+# --- RECREATE YEARLY RASTERS ------------------------------------------------
+# Load rasterized okres base
+#r_okres <- rast("your_saved_rasterized_okres.tif")  # or use your in-memory `r_okres`
+
+# Get unique year list
+years <- sort(unique(df_yearly$year))
+
+# Create raster for each year
+r_list <- lapply(years, function(yr) {
+  df_yr <- df_yearly %>% filter(year == yr)
+  
+  # Create full vector of values (fill with NA)
+  vals <- rep(NA_real_, ncell(r_okres))
+  match_ids <- match(values(r_okres), df_yr$okres_id)
+  valid <- !is.na(match_ids)
+  vals[valid] <- df_yr$mean[match_ids[valid]]
+  
+  # Create raster
+  r_out <- setValues(r_okres, vals)
+  names(r_out) <- as.character(yr)
+  return(r_out)
+})
+
+r_stack_yearly <- rast(r_list)
+
+make_plot_image <- function(r, year_label) {
+  r_raster <- raster::raster(r)
+  png_file <- tempfile(fileext = ".png")
+  png(png_file, width = 800, height = 800)
+  
+  plt <- levelplot(
+    r_raster,
+    margin = FALSE,
+    col.regions = spei_palette(100),
+    at = seq(-3, 3, length.out = 101),
+    scales = list(draw = FALSE),
+    main = paste("Yearly SPEI Mean", year_label),
+    colorkey = list(
+      space = "right",
+      labels = list(at = seq(-3, 3, by = 1), labels = seq(-3, 3, by = 1))
+    )
+  )
+  
+  print(plt)
+  dev.off()
+  magick::image_read(png_file)
+}
+
+# --- GENERATE PLOTS & ANIMATE -----------------------------------------------
+frames <- mapply(make_plot_image, r_list, years, SIMPLIFY = FALSE)
+animation <- image_animate(image_join(frames), fps = 2)
+image_write(animation, "outData/SPEI12_zonal/spei12_zonal_yearly_mean.gif")
+
