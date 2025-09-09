@@ -1,9 +1,7 @@
 
 
-# --------------------------------------------------------
 #             Cross-scale interaction: 
 #    field & drone variation in vertical structures 
-# --------------------------------------------------------
 
 
 # read data: 
@@ -35,7 +33,7 @@ library(GGally)
 library(vegan) # for diversity indices
 
 
-# Read files -------------- for 2023 --------------
+# Read files: only field 2023!  --------------
 # --- Field data: 2023 
 dat23_subplot    <- data.table::fread("outData/subplot_full_2023.csv")   # subplot-level table
 dat23_sf         <- sf::st_read("outData/sf_context_2023.gpkg")          # subplot spatial data
@@ -96,7 +94,7 @@ trees_df <- as.data.frame(pre_trees_3035) %>%
 pre_trees_3035_clean          <- pre_trees_3035
 values(pre_trees_3035_clean)  <- trees_df
 
-# clean up convex hull characteristics -------------------------
+## Clean up convex hull characteristics -------------------------
 cvx_clean <- convex_hull_3035 %>% 
   as.data.frame() %>%   # attributes only (no geometry)
   mutate(
@@ -127,12 +125,11 @@ pre_trees_cvx_joined <- terra::intersect(pre_trees_3035_clean, convex_hull_3035_
 #buff_squared_joined  <- terra::intersect(buff_square_3035, convex_hull_3035_clean)
 pre_trees_sq_joined  <- terra::intersect(pre_trees_3035_clean, buff_square_3035)
 
-# 3) Run once for convex hulls, once for squares -------------------------------
-# !!!!
+### Get stem density per Run once for convex hulls, once for squares  -------------------
 cvx_df <- as.data.frame(pre_trees_cvx_joined) 
 sq_df  <- as.data.frame(pre_trees_sq_joined) 
 
-# Plot: stem density
+####  Plot = CVX: stem density ------------------------------
 cvx_stem_density <- cvx_df %>%
 #  ungroup(.) %>% 
   group_by(plot) %>%  #, area_m2
@@ -150,97 +147,51 @@ cxv_stem_density_species <- cvx_df %>%
     density_ha = n_trees / area_m2 * 10000
   )
 
-stem_density_status <- cvx_df %>%
-  group_by(plot, area_m2, species, status) %>%
+cvx_stem_density_status <- cvx_df %>%
+  group_by(plot, species, status) %>%
   summarise(
     n_trees = n(),
+    area_m2 = mean(area_m2, na.rm  = T),  # keep are here instead of grouping
     density_sp_status = n_trees / area_m2 * 10000,
     .groups = "drop"
   )
 
 
 
+#### Density per square ------------------------------
+
+# Plot = CVX: stem density
+sq_stem_density <- sq_df %>%
+  #  ungroup(.) %>% 
+  group_by(plot_ID) %>%  #, area_m2
+  dplyr::reframe(
+    n_trees = n(),
+    area_m2 = mean(area_m2, na.rm  = T),  # keep are here instead of grouping
+    density_ha = n_trees / area_m2 * 10000
+  ) %>% 
+  rename(subplot = plot_ID)
+
+sq_stem_density_species <- sq_df %>%
+  group_by(plot_ID, species) %>%
+  dplyr::reframe(
+    n_trees = n(),
+    area_m2 = mean(area_m2, na.rm  = T),  # keep are here instead of grouping
+    density_ha = n_trees / area_m2 * 10000
+  ) %>% 
+  rename(subplot = plot_ID)
+
+sq_stem_density_status <- sq_df %>%
+  group_by(plot_ID, species, status) %>%
+  summarise(
+    n_trees = n(),
+    area_m2 = mean(area_m2, na.rm  = T),  # keep are here instead of grouping
+    density_sp_status = n_trees / area_m2 * 10000,
+    .groups = "drop"
+  ) %>% 
+  rename(subplot = plot_ID)
 
 
-
-
-
-
-
-
-
-
-
-#  Clean up tree- and convex hull input data
-clean_trees <- pre_trees_3035_joined %>%
-  as.data.frame() %>%
-  mutate(
-    original_species = species,
-    species = case_when(
-      is.na(species) ~ "piab",
-      species == "l" ~ "deciduous",
-      species == "s" ~ "piab",
-      TRUE ~ species
-    ),
-    status = case_when(
-      original_species == "s" ~ "dry",
-      TRUE ~ "living"
-    ),
-    # Split year and note from `rok_disturbancia`
-    disturbance_year = case_when(
-      rok_disturbancia == "nie" ~ 2024L,
-      TRUE ~ as.integer(str_extract(rok_disturbancia, "^\\d{4}"))
-    ),
-    disturbance_note = case_when(
-      rok_disturbancia == "nie" ~ "nie",
-      TRUE ~ str_trim(str_remove(rok_disturbancia, "^\\d{4}[- ]*"))
-    ),
-    # Parse rok_les safely and calculate disturbance length
-    disturbance_length = disturbance_year - as.integer(rok_les)
-  ) %>%
-  dplyr::select(-original_species) %>%
-  rename(
-    forest_year = rok_les,           
-    plot = cluster,
-    buff_area = area,
-    buff_perimeter = perimeter
-  )
-
-# calculate stem density from tree counst (based on mapped area - convex hull)
-pre_disturb_stem_density_full <- clean_trees %>% 
-  group_by(plot, species, status, 
-           cvx_area_m2, 
-           disturbance_year,
-           forest_year,
-           disturbance_length) %>%
-  summarise(n_trees_sp_vitality = n(), .groups = "drop") %>%
-  group_by(plot) %>%
-  mutate(
-    n_trees_total = sum(n_trees_sp_vitality),
-    n_trees_species = ave(n_trees_sp_vitality, species, FUN = sum)
-  ) %>%
-  ungroup() %>% 
-  # calculate stem density
-  mutate(
-    cvx_area_ha = cvx_area_m2 / 10000,
-    density_ha = round(n_trees_total / cvx_area_ha, 1),
-    density_species_ha = round(n_trees_species / cvx_area_ha, 1),
-    share_spruce = ifelse(species == "piab", round(n_trees_species / n_trees_total, 2), NA_real_)
-  )
-
-# filter only relevant information: per plot level
-pre_disturb_stem_density_filt <- pre_disturb_stem_density_full %>% 
-  dplyr::filter(species == 'piab') %>% 
-  dplyr::select(plot,cvx_area_m2, 
-                disturbance_year, 
-                forest_year,
-                disturbance_length,
-                n_trees_total, density_ha,share_spruce) %>% 
-  distinct() %>% 
-  rename_with(~ paste0("pre_dst_", .x), -c(plot))
-
-
-### pre-disturbance raster -----------------
+### Pre-disturbance raster -----------------
 
 pre_dist_history <- pre_dist_history %>%
   mutate(field_year = if_else(str_detect(cluster, "_"), 2023, 2025))
@@ -251,7 +202,7 @@ pre_dist_history_2023_rst <- pre_dist_history %>%   # filed only pre dicturbancs
   rename(plot = cluster)
 
 # convert to wide format 
-pre_dist_wide <- pre_dist_history_2023_rst %>%
+pre_dist_2023_wide <- pre_dist_history_2023_rst %>%
   dplyr::select(-ID, -field_year) %>%                 # drop unneeded cols
   mutate(buff = paste0("b", buffer_m)) %>%     # label buffers b25/b100
   pivot_wider(
@@ -270,8 +221,6 @@ pre_dist_wide <- pre_dist_history_2023_rst %>%
 
 
 ### Field data: subplot level --------------------------------------
-
-
 
 # guestimate dbh and ba per individual based on height distribution 
 dat23_subplot_recode <- dat23_subplot %>% 
@@ -359,16 +308,14 @@ str(dat23_subplot_recode)
 hist(dat23_subplot_recode$clear)
 
 
-# Get context information: management intensity at plot level 
-
-
-# --- 1) Columns to use & NA -> 0 ---
+### Get context information: management intensity at plot level ----------------------------
+# --- 1) Columns to use & NA -> 0 
 management_types_v <- c("clear", "grndwrk", "logging_trail", "planting", "anti_browsing")
 
 dat23_subplot_recode <- dat23_subplot_recode %>%
   mutate(across(all_of(management_types_v), ~ ifelse(is.na(.), 0, .))) 
 
-# --- 2) Subplot-level scores (use max within subplot to avoid duplicates) ---
+# --- 2) Subplot-level scores (use max within subplot to avoid duplicates)
 mng_subplot_scores <- dat23_subplot_recode %>%
   group_by(plot, subplot) %>%
   summarise(
@@ -385,7 +332,7 @@ mng_subplot_scores <- dat23_subplot_recode %>%
     management_sub = salvage_sub + protection_sub               # 0..5
   )
 
-# --- 3) Plot-level intensities (scaled 0–1) ---
+# --- 3) Plot-level intensities (scaled 0–1) 
 mng_plot_intensity <- mng_subplot_scores %>%
   group_by(plot) %>%
   summarise(
@@ -404,15 +351,10 @@ mng_plot_intensity <- mng_subplot_scores %>%
     management_intensity = pmin(pmax(management_intensity, 0), 1)
   )
 
-
-
-
-
-
-##  stem density by species group 
+###  Get Regeneration stem density based on height group: small, advanced, mature ------------- 
 # need to get plot level average! 
 subplot_group_density_wide <- dat23_subplot_recode %>%
-  filter(vegtype %in% c("small", "advanced")) %>%
+  dplyr::filter(vegtype %in% c("small", "advanced")) %>%
   group_by(subplot, plot, recovery_type, vegtype) %>%
   summarise(stem_density_sum = sum(stem_density, na.rm = TRUE),
             .groups = "drop") %>%
@@ -432,11 +374,12 @@ View(subplot_group_density_wide)
 
 # does the planted vs pioneer trees correlate?
 subplot_group_density_wide %>% 
-  ggplot(aes(x = pioneer_small , y = planted_small)) +
+  dplyr::filter()
+  ggplot(aes(x = pioneer_advanced , y = planted_small)) +
   geom_point() + 
   geom_smooth(method = "lm")
 
-## summary metrics on subplot level ----------------------------
+## correlation: field vs drone on subplot level ---------------------------
 # drone
 # field data
 
@@ -476,7 +419,7 @@ drone_plot_summ <- drone_cv %>%
 
 
 
-# --- Field data: Subplot-level metrics ---
+# --- Field data: Subplot-level metrics 
 field_sub_summ <- dat23_subplot_recode %>%
   group_by(plot, subplot) %>%
   summarise(
@@ -500,7 +443,7 @@ field_sub_summ <- dat23_subplot_recode %>%
 
 
 
-## Correlation of height structure between field& drone data ----------
+### Merge data: Correlation of height structure between field& drone data ----------
 # rename cols for correlation
 
 field_sub_summ_sub <- 
@@ -535,7 +478,20 @@ cor(df_cor_comb$field_cv_hgt, df_cor_comb$drone_cv_hgt)
 
 plot(df_cor_comb$field_cv_hgt, df_cor_comb$drone_cv_hgt)
 
-# very low correlation between height structure between drones and field data!
+# very low correlation between height structure between drones and field data on subplot level!!! 
+
+# maybe try again on mean plot/pooled plot level?
+
+
+## relationship between Shannon vs CV on subplot ------------------------------------------------------------
+
+field_sub_summ %>% 
+  dplyr::filter(shannon_sp >0) %>% 
+  ggplot(aes(x = cv_hgt,
+             y = shannon_sp)) +
+  geom_jitter() + 
+  geom_smooth(method = 'gam')
+
 
 
 # Cross scale variation ----------------------------------------------
