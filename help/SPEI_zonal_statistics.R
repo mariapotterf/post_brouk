@@ -7,9 +7,8 @@ library(readr)
 library(fs)
 
 # --- INPUTS -----------------------------------------------------------------
-spei_folder <- "raw/SPEI12/spei12_harg1_split"  # <-- choose one
+spei_folder <- "raw/SPEI12/spei12_harg1_split"  # 
 okres_shp   <- "raw/CR_administrativa/OKRESY_P.shp"
-
 
 # --- HELPERS ----------------------------------------------------------------
 # Parse YYYY_MM_DD from filenames like "spei12_2000_01_01.tif"
