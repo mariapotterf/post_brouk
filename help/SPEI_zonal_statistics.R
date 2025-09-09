@@ -5,118 +5,101 @@ library(stringr)
 library(tibble)
 library(readr)
 library(fs)
+library(tidyr)
+library(data.table)
+
+library(writexl)  # export xlsx for Roman
 
 # --- INPUTS -----------------------------------------------------------------
 spei_folder <- "raw/SPEI12/spei12_harg1_split"  # 
-okres_shp   <- "raw/CR_administrativa/OKRESY_P.shp"
+okres_shp   <- terra::vect("raw/CR_administrativa/OKRESY_P.shp")
 
-# --- HELPERS ----------------------------------------------------------------
-# Parse YYYY_MM_DD from filenames like "spei12_2000_01_01.tif"
-get_year_month_day <- function(x) {
-  m <- str_match(basename(x), "([12][0-9]{3})[-_ ]?(0?[1-9]|1[0-2])[-_ ]?(0?[1-9]|[12][0-9]|3[01])")
-  tibble(
-    year  = suppressWarnings(as.integer(m[,2])),
-    month = suppressWarnings(as.integer(m[,3])),
-    day   = suppressWarnings(as.integer(m[,4])),
-    file  = x
-  )
-}
-
-# Single-stat extractor (fast & memory-safe). fun can be mean, sd, median, min, max
-zonal_stat <- function(r, v, fun) {
-  terra::extract(r, v, fun = fun, na.rm = TRUE, ID = TRUE) |>
-    as_tibble() |>
-    rename(okres_id = ID, value = 2)
-}
-
-# --- LOAD DATA --------------------------------------------------------------
-# list rasters (one per month)
-files <- list.files(spei_folder, pattern = "\\.(tif|tiff)$", full.names = TRUE, ignore.case = TRUE)
-
-meta <- get_year_month_day(files) |>
+# --- READ FILES ---
+files <- list.files(spei_folder, pattern = "\\.tif$", full.names = TRUE)
+meta <- tibble(file = files) |>
+  mutate(
+    name = basename(file),
+    year = as.integer(str_extract(name, "(?<=_)(\\d{4})(?=_)")),
+    month = as.integer(str_extract(name, "(?<=_\\d{4}_)(\\d{2})(?=_)")),
+    day = as.integer(str_extract(name, "(?<=_\\d{4}_\\d{2}_)(\\d{2})(?=\\.)"))
+  ) |>
   dplyr::filter(!is.na(year), !is.na(month)) |>
   arrange(year, month, day)
 
-# read polygons
-v_ok <- vect(okres_shp)
+# --- PREPARE VECTORS & RASTER TEMPLATE ---
+# Convert SpatVector attribute table to tibble
+okres_attrib <- as_tibble(okres_shp) |>
+  mutate(okres_id = row_number())
 
-# make sure CRS aligns: project polygons to the first raster's CRS if needed
-r0 <- rast(meta$file[1])
-if (crs(v_ok) != crs(r0)) {
-  v_ok <- project(v_ok, r0)
+# Assign new attribute table back to SpatVector
+okres_shp$okres_id <- okres_attrib$okres_id
+
+# Now it's safe to use `okres_shp` with the new field
+v_ok <- okres_shp
+
+r_template <- rast(meta$file[1])
+
+if (!terra::same.crs(r_template, v_ok)) {
+  v_ok <- terra::project(v_ok, r_template)
 }
 
-# keep polygon attributes for later join
-okres_attrib <- as_tibble(v_ok) |>
-  mutate(okres_id = row_number())  # will match extract(ID=TRUE)
 
-# Try to pick a human-readable name column (fallback to none)
-name_col <- names(okres_attrib)[which(names(okres_attrib) %in% c("NAZEV", "NAZEV_OKRESU", "NAZ_LAU", "NAZEVNUTS", "NAZ_OKRES"))]
-name_col <- if (length(name_col)) name_col[1] else NULL
+# --- RASTERIZE OKRES POLYGONS ---
+r_okres <- terra::rasterize(v_ok, r_template, field = "okres_id")
 
-# --- MONTHLY ZONAL STATS ----------------------------------------------------
-monthly_stats <- lapply(seq_len(nrow(meta)), function(i) {
-  r <- rast(meta$file[i])
-  
-  df_mean   <- zonal_stat(r, v_ok, mean)
-  df_sd     <- zonal_stat(r, v_ok, sd)
-  df_med    <- zonal_stat(r, v_ok, median)
-  df_min    <- zonal_stat(r, v_ok, min)
-  df_max    <- zonal_stat(r, v_ok, max)
-  
-  df <- df_mean |>
-    rename(mean = value) |>
-    left_join(rename(df_sd,   sd = value),   by = "okres_id") |>
-    left_join(rename(df_med,  median = value), by = "okres_id") |>
-    left_join(rename(df_min,  min = value), by = "okres_id") |>
-    left_join(rename(df_max,  max = value), by = "okres_id") |>
-    mutate(year = meta$year[i], month = meta$month[i])
-  
-  df
-})
+# --- STACK RASTERS & EXTRACT VALUES ---
+r_stack <- rast(meta$file)
+names(r_stack) <- paste0(meta$year, "_", meta$month)
 
-monthly_stats <- bind_rows(monthly_stats) |>
-  left_join(okres_attrib, by = "okres_id") |>
-  relocate(any_of(name_col), .after = okres_id) |>
+# combine raster stack with rasterized okres
+r_all <- c(r_okres, r_stack)
+v_all <- values(r_all)
+
+# Convert matrix to data.table directly
+dt <- as.data.table(v_all)
+
+# Name columns - columns are properly named
+#setnames(dt, 1, "okres_id")
+#date_names <- paste0(meta$year, "_", meta$month)
+#setnames(dt, 2:ncol(dt), date_names)
+
+# Filter NA and melt to long format
+dt_filt <- dt[!is.na(okres_id)]  # remove NA values
+dt_long <- melt(dt_filt,
+                id.vars = "okres_id",
+                variable.name = "date",
+                value.name = "value"
+)
+
+# Split date into year and month
+#dt_long[, c("year", "month") := tstrsplit(date, "_", fixed = TRUE)]
+#dt_long[, `:=`(
+#  year = as.integer(year),
+#  month = as.integer(month)
+#)]
+
+# Fast zonal summary
+zonal_stats <- dt_long[
+  !is.na(value),
+  .(
+    mean = mean(value),
+    sd = sd(value),
+    median = median(value),
+    min = min(value),
+    max = max(value)
+  ),
+  by = .(okres_id, date)
+]
+
+# add new columns
+zonal_stats[, c("year", "month") := tstrsplit(date, "_", fixed = TRUE)]
+
+# --- JOIN ATTRIBUTES ---
+okres_attrib <- as_tibble(v_ok) |> dplyr::select(okres_id, NAZEV)
+df_final <- left_join(zonal_stats, okres_attrib, by = "okres_id") |>
+  relocate(NAZEV, .after = okres_id) |>
   arrange(year, month, okres_id)
 
-# Save monthly table
-write_csv(monthly_stats, "outTable/okres_SPEI12_monthly_stats.csv")
-
-# --- YEARLY ZONAL STATS (from monthly mean rasters) -------------------------
-# If memory is tight, we compute yearly means on-the-fly
-years <- sort(unique(meta$year))
-
-yearly_stats <- lapply(years, function(yr) {
-  f_yr <- meta$file[meta$year == yr]
-  r    <- rast(f_yr)
-  r_m  <- mean(r, na.rm = TRUE)      # yearly mean raster
-  
-  df_mean   <- zonal_stat(r_m, v_ok, mean)
-  df_sd     <- zonal_stat(r_m, v_ok, sd)
-  df_med    <- zonal_stat(r_m, v_ok, median)
-  df_min    <- zonal_stat(r_m, v_ok, min)
-  df_max    <- zonal_stat(r_m, v_ok, max)
-  
-  df <- df_mean |>
-    rename(mean = value) |>
-    left_join(rename(df_sd,   sd = value),   by = "okres_id") |>
-    left_join(rename(df_med,  median = value), by = "okres_id") |>
-    left_join(rename(df_min,  min = value), by = "okres_id") |>
-    left_join(rename(df_max,  max = value), by = "okres_id") |>
-    mutate(year = yr)
-  
-  df
-})
-
-yearly_stats <- bind_rows(yearly_stats) |>
-  left_join(okres_attrib, by = "okres_id") |>
-  relocate(any_of(name_col), .after = okres_id) |>
-  arrange(year, okres_id)
-
-# Save yearly table
-write_csv(yearly_stats, "outTable/okres_SPEI12_yearly_stats.csv")
-
-message("Written:",
-        "\n - outTable/okres_SPEI12_monthly_stats.csv",
-        "\n - outTable/okres_SPEI12_yearly_stats.csv")
+# --- SAVE ---
+write_csv(df_final, "outTable/okres_SPEI12_monthly_stats.csv")
+write_xlsx(df_final, "outTable/okres_SPEI12_monthly_stats.xlsx")
