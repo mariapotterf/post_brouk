@@ -10,6 +10,13 @@ library(data.table)
 
 library(writexl)  # export xlsx for Roman
 
+
+library(rasterVis)
+library(RColorBrewer)
+library(terra)
+
+
+
 # --- INPUTS -----------------------------------------------------------------
 spei_folder <- "raw/SPEI12/spei12_harg1_split"  # 
 okres_shp   <- terra::vect("raw/CR_administrativa/OKRESY_P.shp")
@@ -183,10 +190,6 @@ levelplot(r,
 
 
 # Run animation using RasterVis - per months and years, fixed scale 
-
-library(rasterVis)
-library(RColorBrewer)
-library(terra)
 
 # Define palette
 spei_palette <- colorRampPalette(RColorBrewer::brewer.pal(11, "RdBu"))  # red = dry, blue = wet
