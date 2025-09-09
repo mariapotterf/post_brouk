@@ -103,3 +103,100 @@ df_final <- left_join(zonal_stats, okres_attrib, by = "okres_id") |>
 # --- SAVE ---
 write_csv(df_final, "outTable/okres_SPEI12_monthly_stats.csv")
 write_xlsx(df_final, "outTable/okres_SPEI12_monthly_stats.xlsx")
+
+
+
+# --- EXPORT RASTERS OF ZONAL MEANS -------------------------------------------
+
+# Make sure output folder exists
+dir_create("outData/SPEI12_zonal")
+
+# Convert df_final to data.table
+dt_zonal <- as.data.table(df_final)
+
+# Loop over each year-month and create a raster
+unique_dates <- unique(dt_zonal[, .(year, month)])
+
+for (i in seq_len(nrow(unique_dates))) {
+  yr <- unique_dates$year[i]
+  mo <- unique_dates$month[i]
+  date_label <- sprintf("%04d_%02d", as.integer(yr), as.integer(mo))
+  
+  # Subset values for this date
+  vals <- dt_zonal[year == yr & month == mo, .(okres_id, mean)]
+  
+  # Create lookup vector: index = okres_id, value = mean
+  lookup <- rep(NA_real_, max(r_okres[], na.rm = TRUE))
+  lookup[vals$okres_id] <- vals$mean
+  
+  # Replace cell values: map okres_id to mean value
+  r_out <- classify(r_okres, matrix(c(1:length(lookup), lookup), ncol = 2))
+  
+  # Write raster to file
+  out_path <- sprintf("outData/SPEI12_zonal/spei12_mean_%s.tif", date_label)
+  writeRaster(r_out, out_path, overwrite = TRUE)
+}
+
+
+# make a gif from zonal stats ---------------------------
+
+
+library(terra)
+library(magick)
+
+# Diverging color palette (red-white-blue)
+spei_palette <- colorRampPalette(c("red", "white", "blue"))
+
+# Normalize to consistent limits
+raster_limits <- c(-3, 3)  # typical SPEI range
+
+
+# test limits on single file
+r <- rast("outData/SPEI12_zonal/spei12_mean_2006_06.tif")
+
+#png_file <- tempfile(fileext = ".png")
+#png(png_file, width = 600, height = 600)
+plot(r, col = spei_palette(100), #zlim = c(-1,1),
+     #main = paste("SPEI Mean", date_label),
+     axes = FALSE, box = FALSE)
+
+plot(r,
+     col = spei_palette(100),
+     breaks = seq(-3, 3, length.out = 101),  # exactly 100 intervals
+     #main = paste("SPEI Mean", date_label),
+     axes = FALSE, box = FALSE)
+
+
+# Create plot images from rasters
+make_plot_image <- function(r_path, date_label) {
+  r <- rast(r_path)
+  
+  png_file <- tempfile(fileext = ".png")
+  png(png_file, width = 600, height = 600)
+  plot(r, col = spei_palette(100), zlim = raster_limits,
+       main = paste("SPEI Mean", date_label),
+       axes = FALSE, box = FALSE)
+  dev.off()
+  
+  image_read(png_file)
+}
+
+
+
+# List all mean raster files
+raster_files <- list.files("outData/SPEI12_zonal", pattern = "^spei12_mean_\\d{4}_\\d{2}\\.tif$", full.names = TRUE)
+raster_files <- sort(raster_files)  # ensure chronological order
+
+# Extract date labels
+date_labels <- str_extract(basename(raster_files), "\\d{4}_\\d{2}")
+
+# Generate image frames
+frames <- mapply(make_plot_image, raster_files, date_labels, SIMPLIFY = FALSE)
+
+# Animate frames
+animation <- image_animate(image_join(frames), fps = 5)
+
+# Save GIF
+image_write(animation, "outData/SPEI12_zonal/spei12_zonal_mean_animation.gif")
+
+
