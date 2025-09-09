@@ -33,10 +33,9 @@ zonal_stat <- function(r, v, fun) {
 # --- LOAD DATA --------------------------------------------------------------
 # list rasters (one per month)
 files <- list.files(spei_folder, pattern = "\\.(tif|tiff)$", full.names = TRUE, ignore.case = TRUE)
-stopifnot(length(files) > 0)
 
 meta <- get_year_month_day(files) |>
-  filter(!is.na(year), !is.na(month)) |>
+  dplyr::filter(!is.na(year), !is.na(month)) |>
   arrange(year, month, day)
 
 # read polygons
