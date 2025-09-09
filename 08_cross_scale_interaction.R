@@ -484,7 +484,7 @@ plot(df_cor_comb$field_cv_hgt, df_cor_comb$drone_cv_hgt)
 
 
 ## relationship between Shannon vs CV on subplot ------------------------------------------------------------
-
+# CV of heights vs shannon
 field_sub_summ %>% 
   dplyr::filter(shannon_sp >0) %>% 
   ggplot(aes(x = cv_hgt,
@@ -492,6 +492,15 @@ field_sub_summ %>%
   geom_jitter() + 
   geom_smooth(method = 'gam')
 
+
+
+# how does mean height changes with cv? 
+field_sub_summ %>% 
+  dplyr::filter(shannon_sp >0) %>% 
+  ggplot(aes(x = median_hgt  ,
+             y =  cv_hgt)) +
+  geom_jitter() + 
+  geom_smooth(method = 'gam')
 
 
 # Cross scale variation ----------------------------------------------
