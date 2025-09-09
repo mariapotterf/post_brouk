@@ -7,10 +7,7 @@ library(readr)
 library(fs)
 library(tidyr)
 library(data.table)
-
 library(writexl)  # export xlsx for Roman
-
-
 library(rasterVis)
 library(RColorBrewer)
 library(terra)
