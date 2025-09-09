@@ -151,8 +151,10 @@ spei_palette <- colorRampPalette(c("red", "white", "blue"))
 raster_limits <- c(-3, 3)  # typical SPEI range
 
 
-# test limits on single file
+#  test how to fix limits  on single file ------------------------
 r <- rast("outData/SPEI12_zonal/spei12_mean_2006_06.tif")
+
+# using base R: 
 
 #png_file <- tempfile(fileext = ".png")
 #png(png_file, width = 600, height = 600)
@@ -166,26 +168,68 @@ plot(r,
      #main = paste("SPEI Mean", date_label),
      axes = FALSE, box = FALSE)
 
+# using Rastervis - seems working but slow!
+levelplot(r,
+          margin = FALSE,
+          col.regions = spei_palette(100),
+          at = seq(-3, 3, length.out = 101),  # fixed color breaks
+          scales = list(draw = FALSE),  # <-- Hides x and y axis
+          #main = paste("SPEI Mean", date_label),
+          colorkey = list(
+            space = "right",
+            labels = list(at = seq(-3, 3, by = 1), labels = seq(-3, 3, by = 1))
+          ))
 
-# Create plot images from rasters
+
+
+# Run animation using RasterVis - per months and years, fixed scale 
+
+library(rasterVis)
+library(RColorBrewer)
+library(terra)
+
+# Define palette
+spei_palette <- colorRampPalette(RColorBrewer::brewer.pal(11, "RdBu"))  # red = dry, blue = wet
+
 make_plot_image <- function(r_path, date_label) {
-  r <- rast(r_path)
+  library(terra)
+  library(raster)       # required for `raster()` conversion
+  library(rasterVis)
+  library(magick)
   
+  # Read and convert raster
+  r_terra <- rast(r_path)
+  r <- raster::raster(r_terra)  # proper conversion to RasterLayer
+  
+  # Temp PNG file
   png_file <- tempfile(fileext = ".png")
-  png(png_file, width = 600, height = 600)
-  plot(r, col = spei_palette(100), zlim = raster_limits,
-       main = paste("SPEI Mean", date_label),
-       axes = FALSE, box = FALSE)
+  png(png_file, width = 800, height = 800)
+  
+  # Plot with fixed z-scale and no axes
+  plt <- levelplot(
+    r,
+    margin = FALSE,
+    col.regions = spei_palette(100),
+    at = seq(-3, 3, length.out = 101),
+    scales = list(draw = FALSE),
+    main = paste("SPEI Mean", date_label),
+    colorkey = list(
+      space = "right",
+      labels = list(at = seq(-3, 3, by = 1), labels = seq(-3, 3, by = 1))
+    )
+  )
+  
+  print(plt)
   dev.off()
   
-  image_read(png_file)
+  magick::image_read(png_file)
 }
 
 
 
-# List all mean raster files
+# List and sort raster files
 raster_files <- list.files("outData/SPEI12_zonal", pattern = "^spei12_mean_\\d{4}_\\d{2}\\.tif$", full.names = TRUE)
-raster_files <- sort(raster_files)  # ensure chronological order
+raster_files <- sort(raster_files)
 
 # Extract date labels
 date_labels <- str_extract(basename(raster_files), "\\d{4}_\\d{2}")
@@ -193,10 +237,8 @@ date_labels <- str_extract(basename(raster_files), "\\d{4}_\\d{2}")
 # Generate image frames
 frames <- mapply(make_plot_image, raster_files, date_labels, SIMPLIFY = FALSE)
 
-# Animate frames
+# Create animation
 animation <- image_animate(image_join(frames), fps = 5)
 
 # Save GIF
-image_write(animation, "outData/SPEI12_zonal/spei12_zonal_mean_animation.gif")
-
-
+image_write(animation, "outData/SPEI12_zonal/spei12_zonal_mean_animation2.gif")
