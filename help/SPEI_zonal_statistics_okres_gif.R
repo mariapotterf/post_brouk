@@ -96,13 +96,45 @@ zonal_stats <- dt_long[
 ]
 
 # add new columns
+# Split date into components
 zonal_stats[, c("year", "month") := tstrsplit(date, "_", fixed = TRUE)]
+
+# Convert to integer first
+zonal_stats[, `:=`(
+  year = as.integer(year),
+  month = as.integer(month)
+)]
+
+# Now safely reformat the 'date' column with leading zeros
+zonal_stats[, date := sprintf("%04d_%02d", year, month)]
 
 # --- JOIN ATTRIBUTES ---
 okres_attrib <- as_tibble(v_ok) |> dplyr::select(okres_id, NAZEV)
 df_final <- left_join(zonal_stats, okres_attrib, by = "okres_id") |>
   relocate(NAZEV, .after = okres_id) |>
   arrange(year, month, okres_id)
+
+
+
+# get values per year
+# Convert to data.table if not already
+df_annual <- as.data.table(df_final)[
+  , .(
+    country_mean = mean(mean, na.rm = TRUE),
+    country_sd   = sd(mean, na.rm = TRUE),
+    country_median = median(mean, na.rm = TRUE),
+    country_min = min(mean, na.rm = TRUE),
+    country_max = max(mean, na.rm = TRUE),
+    n_okres = .N  # number of contributing okres values
+  ),
+  by = year
+][order(year)]
+
+
+# Save to CSV and XLSX
+write_csv(df_annual, "outTable/country_SPEI12_annual_stats.csv")
+write_xlsx(df_annual, "outTable/country_SPEI12_annual_stats.xlsx")
+
 
 # --- SAVE ---
 write_csv(df_final, "outTable/okres_SPEI12_monthly_stats.csv")
@@ -113,7 +145,7 @@ write_xlsx(df_final, "outTable/okres_SPEI12_monthly_stats.xlsx")
 # --- EXPORT RASTERS OF ZONAL MEANS -------------------------------------------
 
 # Make sure output folder exists
-dir_create("outData/SPEI12_zonal")
+#dir_create("outData/SPEI12_zonal")
 
 # Convert df_final to data.table
 dt_zonal <- as.data.table(df_final)
@@ -121,11 +153,16 @@ dt_zonal <- as.data.table(df_final)
 # Loop over each year-month and create a raster
 unique_dates <- unique(dt_zonal[, .(year, month)])
 
+unique_dates[, `:=`(
+  year = as.integer(year),
+  month = as.integer(month)
+)]
+
 for (i in seq_len(nrow(unique_dates))) {
   yr <- unique_dates$year[i]
   mo <- unique_dates$month[i]
   date_label <- sprintf("%04d_%02d", as.integer(yr), as.integer(mo))
-  
+  #print(date_label)
   # Subset values for this date
   vals <- dt_zonal[year == yr & month == mo, .(okres_id, mean)]
   
@@ -134,10 +171,13 @@ for (i in seq_len(nrow(unique_dates))) {
   lookup[vals$okres_id] <- vals$mean
   
   # Replace cell values: map okres_id to mean value
-  r_out <- classify(r_okres, matrix(c(1:length(lookup), lookup), ncol = 2))
+  r_out <- classify(r_okres, 
+                    matrix(c(1:length(lookup), lookup), 
+                           ncol = 2))
   
   # Write raster to file
   out_path <- sprintf("outData/SPEI12_zonal/spei12_mean_%s.tif", date_label)
+  # print(out_path)  # ccheck if values corresponds with 
   writeRaster(r_out, out_path, overwrite = TRUE)
 }
 
