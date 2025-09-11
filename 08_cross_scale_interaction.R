@@ -75,7 +75,7 @@ buff_square_3035$perimeter_m  <- perim(buff_square_3035)
 
 
 # clean up tree characteristics: get species, ..
-trees_df <- as.data.frame(pre_trees_3035) %>%
+pre_trees_df <- as.data.frame(pre_trees_3035) %>%
   mutate(
     original_species = species,
     species = case_when(
@@ -92,7 +92,7 @@ trees_df <- as.data.frame(pre_trees_3035) %>%
 
 # Reattach cleaned attributes back to geometry
 pre_trees_3035_clean          <- pre_trees_3035
-values(pre_trees_3035_clean)  <- trees_df
+values(pre_trees_3035_clean)  <- pre_trees_df
 
 ## Clean up convex hull characteristics -------------------------
 cvx_clean <- convex_hull_3035 %>% 
@@ -190,6 +190,9 @@ sq_stem_density_status <- sq_df %>%
   ) %>% 
   rename(subplot = plot_ID)
 
+
+head(sq_stem_density_species)
+head(cxv_stem_density_species)
 
 ### Pre-disturbance raster -----------------
 
@@ -728,25 +731,30 @@ ggplot(cross_scale, aes(x = x_height,
 # TOY example !!! -------------------
 #library(dplyr)
 
-# --- Toy dataset -------------------------------------------------------------
+# --- Toy dataset: decompose within subplot vs between subplot heterogeneity
 toy <- tibble::tibble(
-  plot     = c("P1","P1","P1","P1","P1"),
-  subplot  = c("S1","S1","S2","S2","S2"),
-  species  = c("PIAB","PIAB","PIAB","PIAB","FASY"),
-  height_m = c(0.30, 0.40, 0.30, 0.35, 0.50)
+  plot     = c("P1","P1","P1","P1","P1",
+               "P2","P2","P2","P2","P2"),
+  subplot  = c("S1","S1","S2","S2","S2",
+               "S3","S3","S3","S4","S4"),
+  species  = c("p","p","p","p","f",
+               "a","a","a","f","f"),
+  height_m = c(0.30,0.40,0.30,0.35,0.50,
+               0.45,0.55,0.60,0.50,0.70)
 )
 
 toy
 
 # --- Helper functions --------------------------------------------------------
-H <- function(counts) {
+H <- function(counts) {                 # shannon index
   p <- counts / sum(counts)
   p <- p[p > 0]
   -sum(p * log(p))
 }
-D1 <- function(counts) exp(H(counts))   # Hill number q = 1
+D1 <- function(counts) exp(H(counts))   # Hill number q = 1, H = from Shannon index
 
 # --- A) Composition (Hill q=1) ----------------------------------------------
+# continue from here!!! 09/11/2025
 
 # Subplot diversity (alpha per subplot)
 species_sub <- toy %>%
