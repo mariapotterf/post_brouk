@@ -725,7 +725,99 @@ ggplot(cross_scale, aes(x = x_height,
 
 
 
+# TOY example !!! -------------------
+#library(dplyr)
 
+# --- Toy dataset -------------------------------------------------------------
+toy <- tibble::tibble(
+  plot     = c("P1","P1","P1","P1","P1"),
+  subplot  = c("S1","S1","S2","S2","S2"),
+  species  = c("PIAB","PIAB","PIAB","PIAB","FASY"),
+  height_m = c(0.30, 0.40, 0.30, 0.35, 0.50)
+)
+
+toy
+
+# --- Helper functions --------------------------------------------------------
+H <- function(counts) {
+  p <- counts / sum(counts)
+  p <- p[p > 0]
+  -sum(p * log(p))
+}
+D1 <- function(counts) exp(H(counts))   # Hill number q = 1
+
+# --- A) Composition (Hill q=1) ----------------------------------------------
+
+# Subplot diversity (alpha per subplot)
+species_sub <- toy %>%
+  count(plot, subplot, species, name = "n")
+
+sub_D1 <- species_sub %>%
+  group_by(plot, subplot) %>%
+  summarise(
+    stems_total = sum(n),
+    D1_sub = D1(n),
+    .groups = "drop"
+  )
+sub_D1
+
+# Weighted mean alpha per plot
+plot_alpha <- sub_D1 %>%
+  group_by(plot) %>%
+  summarise(D1_alpha_plot = weighted.mean(D1_sub, w = stems_total),
+            stems_plot = sum(stems_total),
+            .groups="drop")
+plot_alpha
+
+# Gamma per plot (species pooled)
+plot_gamma <- species_sub %>%
+  group_by(plot, species) %>%
+  summarise(stems = sum(n), .groups="drop") %>%
+  group_by(plot) %>%
+  summarise(D1_gamma_plot = D1(stems),
+            stems_plot = sum(stems),
+            .groups="drop")
+plot_gamma
+
+# Beta (subplots -> plot)
+plot_beta <- left_join(plot_gamma, plot_alpha, by=c("plot","stems_plot")) %>%
+  mutate(D1_beta_subplots = D1_gamma_plot / D1_alpha_plot)
+plot_beta
+
+# --- B) Heights (variance decomposition -> CVs) -------------------------------
+
+sub_height <- toy %>%
+  group_by(plot, subplot) %>%
+  summarise(
+    N_sub   = n(),
+    mean_h  = mean(height_m),
+    var_h   = var(height_m),
+    SS_within_sub = (N_sub - 1) * var_h,
+    .groups = "drop"
+  )
+sub_height
+
+# Plot-level totals
+plot_stats <- sub_height %>%
+  group_by(plot) %>%
+  summarise(
+    N_tot   = sum(N_sub),
+    mu_plot = weighted.mean(mean_h, w = N_sub),
+    SS_within = sum(SS_within_sub),
+    SS_between_sub = sum(N_sub * (mean_h - mu_plot)^2),
+    .groups="drop"
+  )
+
+plot_stats <- plot_stats %>%
+  mutate(
+    var_total = (SS_within + SS_between_sub) / (N_tot - 1),
+    var_within = SS_within / (N_tot - 1),
+    var_bsub = SS_between_sub / (N_tot - 1),
+    cv_total = sqrt(var_total) / mu_plot,
+    cv_within = sqrt(var_within) / mu_plot,
+    cv_bsub = sqrt(var_bsub) / mu_plot
+  )
+plot_stats
 
 
 
