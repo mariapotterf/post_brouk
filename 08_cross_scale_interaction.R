@@ -383,7 +383,7 @@ subplot_group_density_wide %>%
 # drone
 # field data
 
-# test
+
 drone_cv_sub <- drone_cv %>% 
   dplyr::filter(subplot == '13_26_105_5')
 
@@ -481,6 +481,268 @@ plot(df_cor_comb$field_cv_hgt, df_cor_comb$drone_cv_hgt)
 # very low correlation between height structure between drones and field data on subplot level!!! 
 
 # maybe try again on mean plot/pooled plot level?
+
+
+# decompose teh variance between subplot, between subplots and between plots -------------
+
+
+aaa  <- c(3,4,5,6,12) 
+mean(aaa)
+sd(aaa)
+var(aaa)
+
+
+# TEST START -----------------------------------------
+
+trees <- dat23_subplot_recode
+
+# total species per plot
+species_totals_plot <- trees %>%
+  group_by(plot, species) %>%
+  summarise(
+    stems_n      = sum(n, na.rm = TRUE),
+    stems_density= sum(stem_density, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+
+# per subplot height stats 
+sub_height <- trees %>%
+  group_by(plot, subplot) %>%
+  summarise(
+    N_sub   = sum(n, na.rm = TRUE),                              # total trees in this subplot
+    mean_h  = ifelse(N_sub > 0, stats::weighted.mean(hgt_est, w = n, na.rm = TRUE), NA_real_),
+    # weighted "within-subplot" SS and variance (unbiased if N_sub>1)
+    SS_within_sub = ifelse(N_sub > 1, sum(n * (hgt_est - mean_h)^2, na.rm = TRUE), 0),
+    var_h   = ifelse(N_sub > 1, SS_within_sub / (N_sub - 1), NA_real_),
+    .groups = "drop"
+  )
+
+# decompose height variance within a plot: split variability within subplots and 
+# between subplots using sum of squares
+
+comp_plot <- sub_height %>%
+  group_by(plot) %>%
+  summarise(
+    N_tot     = sum(N_sub, na.rm = TRUE),
+    # Weighted mean height across *trees* in the plot
+    mu_plot   = ifelse(N_tot > 0, stats::weighted.mean(mean_h, w = N_sub, na.rm = TRUE), NA_real_),
+    
+    # Sum of within-subplot SS (already computed per subplot)
+    SS_within = sum(SS_within_sub, na.rm = TRUE),
+    
+    # Between-subplots SS: variation of subplot means around the plot mean, weighted by N_sub
+    SS_between_sub = sum(N_sub * (mean_h - mu_plot)^2, na.rm = TRUE),
+    
+    # Total SS and convert to variances with common denominator (N_tot - 1)
+    var_total_plot   = ifelse(N_tot > 1, (SS_within + SS_between_sub) / (N_tot - 1), NA_real_),
+    var_within_plot  = ifelse(N_tot > 1,  SS_within                 / (N_tot - 1), NA_real_),
+    var_bsub_plot    = ifelse(N_tot > 1,  SS_between_sub            / (N_tot - 1), NA_real_),
+    
+    # Convert components to CVs (unitless). Use the *plot* mean as the scale.
+    cv_total_plot   = ifelse(!is.na(mu_plot) && mu_plot > 0, sqrt(var_total_plot)  / mu_plot, NA_real_),
+    cv_within_plot  = ifelse(!is.na(mu_plot) && mu_plot > 0, sqrt(var_within_plot) / mu_plot, NA_real_),
+    cv_bsub_plot    = ifelse(!is.na(mu_plot) && mu_plot > 0, sqrt(var_bsub_plot)   / mu_plot, NA_real_),
+    .groups = "drop"
+  )
+
+
+# aggregate on landscape and get between plots
+
+# Keep SS to aggregate
+plot_ss <- sub_height %>%
+  group_by(plot) %>%
+  summarise(
+    N_tot   = sum(N_sub, na.rm = TRUE),
+    mu_plot = ifelse(N_tot > 0, stats::weighted.mean(mean_h, w = N_sub, na.rm = TRUE), NA_real_),
+    SS_within = sum(SS_within_sub, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# SS between subplots summed across plots
+SS_between_sub_all <- sub_height %>%
+  group_by(plot) %>%
+  summarise(mu_plot = stats::weighted.mean(mean_h, w = N_sub, na.rm = TRUE),
+            SS_between_sub = sum(N_sub * (mean_h - mu_plot)^2, na.rm = TRUE),
+            N_tot = sum(N_sub, na.rm = TRUE), .groups="drop") %>%
+  summarise(SS_between_sub_all = sum(SS_between_sub, na.rm=TRUE),
+            N_all = sum(N_tot, na.rm=TRUE), .groups="drop")
+
+# Grand mean across all trees
+mu_grand <- with(plot_ss, ifelse(sum(N_tot, na.rm=TRUE) > 0,
+                                 stats::weighted.mean(mu_plot, w = N_tot, na.rm = TRUE), NA_real_))
+
+# SS between plots
+SS_between_plots <- plot_ss %>%
+  summarise(SS = sum(N_tot * (mu_plot - mu_grand)^2, na.rm = TRUE),
+            N_all = sum(N_tot, na.rm=TRUE), .groups="drop")
+
+# Components on a common denominator (N_all - 1)
+SS_within_all  <- sum(plot_ss$SS_within, na.rm=TRUE)
+SS_bsub_all    <- SS_between_sub_all$SS_between_sub_all
+SS_bplots_all  <- SS_between_plots$SS
+N_all          <- SS_between_plots$N_all
+
+var_within_all <- SS_within_all / (N_all - 1)
+var_bsub_all   <- SS_bsub_all   / (N_all - 1)
+var_bplots_all <- SS_bplots_all / (N_all - 1)
+
+cv_within_all  <- sqrt(var_within_all) / mu_grand
+cv_bsub_all    <- sqrt(var_bsub_all)   / mu_grand
+cv_bplots_all  <- sqrt(var_bplots_all) / mu_grand
+
+# species composition ---------------------
+
+# Shannon entropy and Hill number q = 1
+H <- function(counts) {
+  p <- counts / sum(counts)
+  p <- p[p > 0]   # drop zeros
+  -sum(p * log(p))
+}
+D1 <- function(counts) exp(H(counts))   # effective number of species
+
+
+
+
+species_sub <- trees %>%
+  group_by(plot, subplot, species) %>%
+  summarise(stems = sum(n, na.rm=TRUE), .groups="drop")
+
+
+species_plot <- trees %>%
+  group_by(plot, species) %>%
+  summarise(stems = sum(n, na.rm=TRUE), .groups="drop")
+
+# Recompute LANDSCAPE species vector correctly: pool across PLOTS by SPECIES
+spp_land <- species_plot %>%
+  group_by(species) %>%
+  summarise(stems = sum(stems, na.rm = TRUE), .groups = "drop")
+
+# subplot diversity 
+
+sub_D1 <- species_sub %>%
+  group_by(plot, subplot) %>%
+  summarise(
+    stems_total = sum(stems, na.rm = TRUE),
+    D1_sub = ifelse(stems_total > 0, D1(stems), NA_real_),
+    .groups = "drop"
+  )
+
+head(sub_D1, 20)
+
+# get alpha, and gamma diversity and betta as its difference 
+# γ diversity per plot (all stems pooled)
+plot_gamma <- species_plot %>%
+  group_by(plot) %>%
+  summarise(
+    stems_plot = sum(stems, na.rm = TRUE),
+    D1_gamma_plot = ifelse(stems_plot > 0, D1(stems), NA_real_),
+    .groups = "drop"
+  )
+
+# α diversity per plot (mean of subplot diversities, weighted by stems)
+plot_alpha <- sub_D1 %>%
+  group_by(plot) %>%
+  summarise(
+    D1_alpha_plot = weighted.mean(D1_sub, w = stems_total, na.rm = TRUE),
+    stems_plot    = sum(stems_total, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# β diversity between subplots → plot
+plot_beta <- left_join(plot_gamma, plot_alpha, by = c("plot","stems_plot")) %>%
+  mutate(D1_beta_subplots = D1_gamma_plot / D1_alpha_plot)
+
+head(plot_beta, 20)  
+
+# alpha = 1 - monoculture, NA - empty plots, 
+
+
+# Landscape γ (all stems pooled across plots)
+# Landscape γ (pooled across all plots, by species)
+land_gamma <- spp_land %>%
+  summarise(D1_gamma_land = ifelse(sum(stems, na.rm=TRUE) > 0,
+                                   D1(stems),
+                                   NA_real_)) %>%
+  pull(D1_gamma_land)
+
+# Mean γ across plots (weighted by stems)
+mean_gamma_plot <- weighted.mean(plot_beta$D1_gamma_plot,
+                                 w = plot_beta$stems_plot,
+                                 na.rm = TRUE)
+
+# β diversity among plots (plot → landscape)
+D1_beta_plots <- land_gamma / mean_gamma_plot
+
+# Summarise
+landscape_div <- tibble::tibble(
+  D1_alpha_sub_mean  = weighted.mean(sub_D1$D1_sub, 
+                                     w = sub_D1$stems_total, 
+                                     na.rm = TRUE),
+  D1_beta_subplots_mean = weighted.mean(plot_beta$D1_beta_subplots, w = plot_beta$stems_plot, na.rm = TRUE),
+  D1_gamma_land = land_gamma,
+  D1_beta_plots = D1_beta_plots
+)
+
+landscape_div
+
+# make a tidy table with 3 rows (scales)
+cross_scale <- tibble::tibble(
+  scale = c("within_subplot", "between_subplots", "between_plots"),
+  x_height = c(cv_within_all, cv_bsub_all, cv_bplots_all),
+  y_composition = c(landscape_div$D1_alpha_sub_mean,
+                    landscape_div$D1_beta_subplots_mean,
+                    landscape_div$D1_beta_plots)
+)
+
+cross_scale
+
+cross_scale$scale <- factor(
+  cross_scale$scale,
+  levels = c("within_subplot", "between_subplots", "between_plots")
+)
+
+# make a plot cross-scale post-disturbance
+ggplot(cross_scale, aes(x = x_height, 
+                        y = y_composition,
+                        color = scale)) +
+  geom_point(aes(shape = scale,
+                 color = scale), size = 5, fill = "white") +
+  #geom_text(aes(label = scale), vjust = -1, size = 4.5) +
+  # scale_shape_manual(values = c(
+  #   within_subplot = 21,   # circle with fill
+  #   between_subplots = 21,
+  #   between_plots = 21
+  # )) +
+  labs(
+    x = "Height heterogeneity (CV)",
+    y = "Compositional heterogeneity (Hill number, q=1)",
+    title = "Cross-scale heterogeneity (post-disturbance)"
+  ) +
+  theme_classic(base_size = 8) + 
+  lims(x = c(0,1),
+       y = c(0,4))
+
+
+
+
+
+
+
+
+
+
+
+# TEST END -----------------------------------
+
+
+
+
+
+
+
+
+
 
 
 ## relationship between Shannon vs CV on subplot ------------------------------------------------------------
