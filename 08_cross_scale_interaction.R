@@ -302,7 +302,8 @@ plot_density <- dat23_subplot_recode %>%
     values_from = stem_density_sum,
     values_fill = 0
   ) %>% 
-  mutate(stem_regeneration = advanced + small)
+  mutate(stem_regeneration = advanced + small,
+         sum_density = advanced + small + mature)
 
 # get information about context: salvage and protection intensity
 str(dat23_subplot_recode)
@@ -371,18 +372,12 @@ subplot_group_density_wide <- dat23_subplot_recode %>%
     pioneer_total = coalesce(pioneer_small, 0) + coalesce(pioneer_advanced, 0),
     planted_total = coalesce(planted_small, 0) + coalesce(planted_advanced, 0)
   )
-head(subplot_group_density_wide)
-View(subplot_group_density_wide)
+#head(subplot_group_density_wide)
+#View(subplot_group_density_wide)
 
 
-# does the planted vs pioneer trees correlate?
-subplot_group_density_wide %>% 
-  dplyr::filter()
-  ggplot(aes(x = pioneer_advanced , y = planted_small)) +
-  geom_point() + 
-  geom_smooth(method = "lm")
 
-## correlation: field vs drone on subplot level ---------------------------
+## Correlation: field vs drone on subplot level ---------------------------
 # drone
 # field data
 
@@ -390,8 +385,8 @@ subplot_group_density_wide %>%
 drone_cv_sub <- drone_cv %>% 
   dplyr::filter(subplot == '13_26_105_5')
 
-my_mean = mean(drone_cv_sub$pixel_value)
-my_sd = sd(drone_cv_sub$pixel_value)
+#my_mean = mean(drone_cv_sub$pixel_value)
+#my_sd = sd(drone_cv_sub$pixel_value)
 
 # Drone: subplot vs plot level 
 
@@ -485,11 +480,105 @@ plot(df_cor_comb$field_cv_hgt, df_cor_comb$drone_cv_hgt)
 
 # maybe try again on mean plot/pooled plot level?
 
+# test for Spatial autocorrelation ----------------------------------------------
+# summarize first on plot level (as subplots arre not independent): stem density, species composition (Hill number)
+str(dat23_sf)
+
+# Step 1: rename columns
+dat23_sf <- dat23_sf %>%
+  rename(
+    subplot = ID,
+    plot = cluster
+  )
+
+# Step 2: calculate mean coordinates per plot
+# First extract coordinates
+coords <- st_coordinates(dat23_sf)
+
+dat23_plot_sf <- dat23_sf %>%
+  mutate(
+    X = coords[,1],
+    Y = coords[,2]
+  ) %>%
+  st_drop_geometry() %>%       # drop geometry so we can summarise easily
+  group_by(plot) %>%
+  summarise(
+    mean_X = mean(X, na.rm=TRUE),
+    mean_Y = mean(Y, na.rm=TRUE),
+    .groups = "drop"
+  ) %>%
+  st_as_sf(coords = c("mean_X","mean_Y"), crs = st_crs(dat23_sf))
+
+# Check result
+plot(dat23_plot_sf)
+
+# join attributes to spatial object
+dat23_plot_merged <- dat23_plot_sf %>%
+  left_join(plot_density, by = "plot")
+
+# check result
+dat23_plot_merged
+
+library(spdep)
+
+# extract coordinates
+coords <- st_coordinates(dat23_plot_merged)
+
+# neighbor list: here I set max distance = 50 km (adjust to your context)
+nb <- dnearneigh(coords, d1 = 0, d2 = 60000)   # neighbors within 0–50 km
+lw <- nb2listw(nb, style = "W", zero.policy = TRUE)                 # row-standardized weights
+
+# run Moran's I test
+moran_res <- moran.test(dat23_plot_merged$sum_density, lw, zero.policy=TRUE)
+
+moran_res
+
+
+# use k-nearest neightbour - make suer each plot has a neighbours
+
+nb <- knn2nb(knearneigh(coords, k = 5))  # 5 nearest neighbors for each plot
+lw <- nb2listw(nb, style="W")
+moran.test(dat23_plot_merged$sum_density, lw)
+
+# strong spatial correlation up to 60 km!!!!
+
+# see correlogram
+
+library(ncf)
+
+coords <- st_coordinates(dat23_plot_merged)
+
+# correlogram with 10 km bins
+correlog_res <- correlog(
+  x = coords[,1],
+  y = coords[,2],
+  z = dat23_plot_merged$sum_density,
+  increment = 10000,  # 10 km bin width
+  resamp = 1000       # permutation test
+)
+
+# inspect results
+head(correlog_res)
+# keep only bins up to 60 km (60000 m)
+correlog_trim <- correlog_res
+keep <- correlog_res$mean.of.class <= 60000
+correlog_trim$mean.of.class <- correlog_res$mean.of.class[keep]
+correlog_trim$cor           <- correlog_res$cor[keep]
+correlog_trim$p             <- correlog_res$p[keep]
+
+# plot
+plot(correlog_trim$mean.of.class, correlog_trim$cor,
+     type="b", pch=16,
+     xlab="Distance class (m)", ylab="Moran's I",
+     main="Spatial correlogram up to 60 km")
+abline(h=0, lty=2, col="red")
+
+
+
 
 # Decompose the heterogeneity across scales -----------------------
-#- variance between subplot, between subplots and between plots -------------
 
-# TEST START -----------------------------------------
+## TEST START -----------------------------------------
 
 trees <- dat23_subplot_recode
 
@@ -768,7 +857,9 @@ plot_stats <- sub_height %>%
 
 # --- Step 3: landscape-level decomposition -------------------
 # grand mean across all trees in all plots
-mu_grand <- weighted.mean(plot_stats$mu_plot, w=plot_stats$N_tot, na.rm=TRUE)
+mu_grand <- weighted.mean(plot_stats$mu_plot, 
+                          w=plot_stats$N_tot, 
+                          na.rm=TRUE)
 
 SS_within_all  <- sum(plot_stats$SS_within)
 SS_bsub_all    <- sum(plot_stats$SS_between_sub)
@@ -825,13 +916,6 @@ field_sub_summ %>%
 
 
 
-# how does mean height changes with cv? 
-field_sub_summ %>% 
-  dplyr::filter(shannon_sp >0) %>% 
-  ggplot(aes(x = median_hgt  ,
-             y =  cv_hgt)) +
-  geom_jitter() + 
-  geom_smooth(method = 'gam')
 
 
 # Cross scale variation ----------------------------------------------
@@ -956,8 +1040,8 @@ hist(plot_compare$delta_cv_hgt)
 
 # prepare table:
 df_fin <- plot_compare %>% 
-  left_join(pre_dist_wide) %>%  # add rasters for rought estimation: density_cover and % coniferous (leaf type)
-  left_join(pre_disturb_stem_density_filt) %>%  # stem density based on tree calculation
+ # left_join(pre_dist_wide) %>%  # add rasters for rought estimation: density_cover and % coniferous (leaf type)
+ # left_join(pre_disturb_stem_density_filt) %>%  # stem density based on tree calculation
   left_join(plot_density) %>%   # get stem density by vertical classes
   left_join(mng_plot_intensity ) %>% # add context information
   #left_join(subplot_group_density_wide) %>%  # get stem density by trees likely planted/pioneer - need to group on plot level!!
@@ -965,6 +1049,66 @@ df_fin <- plot_compare %>%
     log_mean = log1p(mean_cv_hgt),
     log_resp = log1p(pooled_cv_hgt)
   ) 
+
+
+# merge data based on subplot and plot level to make a scatter plot ----------------
+# select from teh subplot data
+df_subplot_select <- field_sub_summ %>% 
+  dplyr::select(subplot, 
+                shannon_sp ,
+                cv_hgt) %>% 
+  mutate(type = 'subplot') %>% 
+  rename(ID = subplot,
+         shannon = shannon_sp,
+         cv = cv_hgt
+         )
+
+
+# select from teh plot data
+df_plot_select <- df_fin %>% 
+  dplyr::select(plot, 
+                mean_shannon_sp, 
+               # mean_mean_hgt, 
+                mean_cv_hgt, 
+                pooled_shannon_sp,
+                #pooled_mean_hgt, 
+                pooled_cv_hgt )  %>% 
+  # Step 2: Pivot longer to get variable and value columns
+  pivot_longer(cols = -plot, names_to = "variable", values_to = "value") %>%
+  
+  # Step 3: Separate the variable into type and metric
+  separate(variable, into = c("scale", "metric"), sep = "_", extra = "merge") %>%
+  
+  # Step 4: Clean up metric names
+  mutate(metric = recode(metric,
+                         "shannon_sp" = "shannon",
+                         "cv_hgt" = "cv")) %>%
+  
+  # Step 5: Pivot wider to get shannon and cv as separate columns
+  pivot_wider(names_from = metric, values_from = value) %>% 
+  rename(ID = plot)
+
+
+# merge data from subplot and plot level 
+df_merge <- rbind(df_subplot_select, df_plot_select)
+
+df_merge <- df_merge %>%
+  mutate(type = case_when(
+    type == "mean"   ~ "mean_plot",
+    type == "pooled" ~ "pooled_plot",
+    TRUE             ~ type  # keep "subplot" as is
+  ))
+
+df_merge %>% 
+  ggplot(aes(x = cv,
+             y = shannon,
+             color = type,
+             fill = type)) +
+  stat_ellipse(geom = "polygon", type = "norm", level = 0.68, alpha = 0.5) +  # 68% confidence ellipse
+   geom_point(alpha = 0.3) +
+ theme_bw()
+
+
 
 # subset only important variables
 vars <- c(#"mean_sp_richness" ,     
