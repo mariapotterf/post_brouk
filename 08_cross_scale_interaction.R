@@ -486,14 +486,8 @@ plot(df_cor_comb$field_cv_hgt, df_cor_comb$drone_cv_hgt)
 # maybe try again on mean plot/pooled plot level?
 
 
-# decompose teh variance between subplot, between subplots and between plots -------------
-
-
-aaa  <- c(3,4,5,6,12) 
-mean(aaa)
-sd(aaa)
-var(aaa)
-
+# Decompose the heterogeneity across scales -----------------------
+#- variance between subplot, between subplots and between plots -------------
 
 # TEST START -----------------------------------------
 
@@ -730,102 +724,77 @@ ggplot(cross_scale, aes(x = x_height,
 
 # TOY example !!! -------------------
 #library(dplyr)
+# library(tidyr)
 
-# --- Toy dataset: decompose within subplot vs between subplot heterogeneity
-toy <- tibble::tibble(
-  plot     = c("P1","P1","P1","P1","P1",
-               "P2","P2","P2","P2","P2"),
-  subplot  = c("S1","S1","S2","S2","S2",
-               "S3","S3","S3","S4","S4"),
-  species  = c("p","p","p","p","f",
-               "a","a","a","f","f"),
-  height_m = c(0.30,0.40,0.30,0.35,0.50,
-               0.45,0.55,0.60,0.50,0.70)
+# Variance decomposition: within-subplot, between subplots (within plots), between-plots (landscape)
+
+#library(dplyr)
+
+# --- Toy dataset: two plots -----------------------------------
+dd <- tibble::tibble(
+  plot     = c("p1","p1","p1","p1","p1",  "p2","p2","p2"),
+  subplot  = c("s1","s1","s2","s2","s3",  "s1","s2","s3"),
+  species  = c("a","b","c","a", NA,       "a","b","c"),
+  counts   = c(5,2,1,1,NA,                 3,2,1),
+  height_m = c(5,0.2,3,1,NA,               4,2,6)
 )
 
-toy
-
-# --- Helper functions --------------------------------------------------------
-H <- function(counts) {                 # shannon index
-  p <- counts / sum(counts)
-  p <- p[p > 0]
-  -sum(p * log(p))
-}
-D1 <- function(counts) exp(H(counts))   # Hill number q = 1, H = from Shannon index
-
-# --- A) Composition (Hill q=1) ----------------------------------------------
-# continue from here!!! 09/11/2025
-
-# Subplot diversity (alpha per subplot)
-species_sub <- toy %>%
-  count(plot, subplot, species, name = "n")
-
-sub_D1 <- species_sub %>%
+# --- Step 1: subplot means and within-subplot SS --------------
+sub_height <- dd %>%
   group_by(plot, subplot) %>%
   summarise(
-    stems_total = sum(n),
-    D1_sub = D1(n),
-    .groups = "drop"
-  )
-sub_D1
-
-# Weighted mean alpha per plot
-plot_alpha <- sub_D1 %>%
-  group_by(plot) %>%
-  summarise(D1_alpha_plot = weighted.mean(D1_sub, w = stems_total),
-            stems_plot = sum(stems_total),
-            .groups="drop")
-plot_alpha
-
-# Gamma per plot (species pooled)
-plot_gamma <- species_sub %>%
-  group_by(plot, species) %>%
-  summarise(stems = sum(n), .groups="drop") %>%
-  group_by(plot) %>%
-  summarise(D1_gamma_plot = D1(stems),
-            stems_plot = sum(stems),
-            .groups="drop")
-plot_gamma
-
-# Beta (subplots -> plot)
-plot_beta <- left_join(plot_gamma, plot_alpha, by=c("plot","stems_plot")) %>%
-  mutate(D1_beta_subplots = D1_gamma_plot / D1_alpha_plot)
-plot_beta
-
-# --- B) Heights (variance decomposition -> CVs) -------------------------------
-
-sub_height <- toy %>%
-  group_by(plot, subplot) %>%
-  summarise(
-    N_sub   = n(),
-    mean_h  = mean(height_m),
-    var_h   = var(height_m),
-    SS_within_sub = (N_sub - 1) * var_h,
-    .groups = "drop"
-  )
-sub_height
-
-# Plot-level totals
-plot_stats <- sub_height %>%
-  group_by(plot) %>%
-  summarise(
-    N_tot   = sum(N_sub),
-    mu_plot = weighted.mean(mean_h, w = N_sub),
-    SS_within = sum(SS_within_sub),
-    SS_between_sub = sum(N_sub * (mean_h - mu_plot)^2),
+    N_sub = sum(counts, na.rm=TRUE),
+    mean_h = ifelse(N_sub > 0,
+                    stats::weighted.mean(height_m, w=counts, na.rm=TRUE),
+                    NA_real_),
+    SS_within_sub = ifelse(N_sub > 1,
+                           sum(counts * (height_m - mean_h)^2, na.rm=TRUE),
+                           0),
     .groups="drop"
   )
 
-plot_stats <- plot_stats %>%
-  mutate(
-    var_total = (SS_within + SS_between_sub) / (N_tot - 1),
-    var_within = SS_within / (N_tot - 1),
-    var_bsub = SS_between_sub / (N_tot - 1),
-    cv_total = sqrt(var_total) / mu_plot,
-    cv_within = sqrt(var_within) / mu_plot,
-    cv_bsub = sqrt(var_bsub) / mu_plot
+# --- Step 2: plot-level decomposition -------------------------
+plot_stats <- sub_height %>%
+  group_by(plot) %>%
+  summarise(
+    N_tot = sum(N_sub),
+    mu_plot = ifelse(N_tot > 0,
+                     stats::weighted.mean(mean_h, w=N_sub, na.rm=TRUE),
+                     NA_real_),
+    SS_within = sum(SS_within_sub),
+    SS_between_sub = sum(N_sub * (mean_h - mu_plot)^2, na.rm=TRUE),
+    .groups="drop"
   )
-plot_stats
+
+# --- Step 3: landscape-level decomposition -------------------
+# grand mean across all trees in all plots
+mu_grand <- weighted.mean(plot_stats$mu_plot, w=plot_stats$N_tot, na.rm=TRUE)
+
+SS_within_all  <- sum(plot_stats$SS_within)
+SS_bsub_all    <- sum(plot_stats$SS_between_sub)
+SS_bplots_all  <- sum(plot_stats$N_tot * (plot_stats$mu_plot - mu_grand)^2)
+
+N_all <- sum(plot_stats$N_tot)
+
+var_within_all <- SS_within_all  / (N_all - 1)
+var_bsub_all   <- SS_bsub_all    / (N_all - 1)
+var_bplots_all <- SS_bplots_all  / (N_all - 1)
+var_total_all  <- (SS_within_all + SS_bsub_all + SS_bplots_all) / (N_all - 1)
+
+cv_within_all <- sqrt(var_within_all)/mu_grand
+cv_bsub_all   <- sqrt(var_bsub_all)/mu_grand
+cv_bplots_all <- sqrt(var_bplots_all)/mu_grand
+cv_total_all  <- sqrt(var_total_all)/mu_grand
+
+landscape_stats <- tibble::tibble(
+  mu_grand,
+  cv_within_all,
+  cv_bsub_all,
+  cv_bplots_all,
+  cv_total_all
+)
+
+landscape_stats
 
 
 
