@@ -309,7 +309,7 @@ plot_density <- dat23_subplot_recode %>%
 str(dat23_subplot_recode)
 
 
-hist(dat23_subplot_recode$clear)
+#hist(dat23_subplot_recode$clear)
 
 
 ### Get context information: management intensity at plot level ----------------------------
@@ -438,6 +438,19 @@ field_sub_summ <- dat23_subplot_recode %>%
   ) %>% 
   mutate(cv_hgt = ifelse(is.na(cv_hgt), 0L, cv_hgt),
          mean_hgt = ifelse(is.na(mean_hgt), 0L, mean_hgt)) # replace NA by 0 if stems are missing
+
+
+
+# summarize subplot information 
+# how many trees?
+sum(field_sub_summ$stems_total)  # 2125 stems/7816 stems/ha
+sum(field_sub_summ$stems_total == 0)
+
+# how many tree species? 
+length(unique(dat23_subplot_recode$species[dat23_subplot_recode$n > 0]))
+
+sort(unique(dat23_subplot_recode$species[dat23_subplot_recode$n > 0]))
+
 
 
 
