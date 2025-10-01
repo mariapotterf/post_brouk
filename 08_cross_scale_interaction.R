@@ -38,6 +38,12 @@ library(vegan) # for diversity indices
 dat23_subplot    <- data.table::fread("outData/subplot_full_2023.csv")   # subplot-level table
 dat23_sf         <- sf::st_read("outData/sf_context_2023.gpkg")          # subplot spatial data
 
+# Select and rename
+dat23_sf_min <- dat23_sf %>%
+  dplyr::select(subplot = ID, plot = cluster)
+
+
+
 # --- Drone CHM data 
 drone_cv         <- data.table::fread("outTable/chm_buff_raw.csv")            # pixel-level values
 
@@ -305,8 +311,153 @@ plot_density <- dat23_subplot_recode %>%
   mutate(stem_regeneration = advanced + small,
          sum_density = advanced + small + mature)
 
-# get information about context: salvage and protection intensity
-str(dat23_subplot_recode)
+
+# get stem density by vertical class
+subplot_density <- dat23_subplot_recode %>%
+  group_by(subplot, vegtype) %>%
+  summarise(stem_density_sum = sum(stem_density, na.rm = TRUE), 
+            .groups = "drop") %>% 
+  pivot_wider(
+    names_from = vegtype,
+    values_from = stem_density_sum,
+    values_fill = 0
+  ) %>% 
+  mutate(stem_regeneration = advanced + small,
+         sum_density = advanced + small + mature)
+
+
+
+# histogram of stem denisty per vertcal class:
+dat23_subplot_recode %>% 
+  dplyr::filter(stem_density > 0) %>% 
+  ggplot(aes(stem_density )) +
+  geom_histogram() + 
+  facet_grid(~vegtype, scales = 'free')
+
+# no mature trees!!
+
+
+# Make a threshold for legacy effects: > 4 m
+
+# ---- 1) Tall-stem legacy (change threshold to 4 for sensitivity) ----
+tall_thresh <- 4   # meters
+
+tall_sub <- dat23_subplot_recode %>%
+  filter(!is.na(hgt_est), n > 0) %>%
+  mutate(is_tall = hgt_est >= tall_thresh) %>%
+  group_by(plot, subplot) %>%
+  summarise(
+    tall_n      = sum(n[is_tall], na.rm = TRUE),
+    stems_total = sum(n, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(tall_density_m2 = tall_n / 4)  # 4 m² subplot
+
+legacy_plot <- tall_sub %>%
+  group_by(plot) %>%
+  summarise(
+    tall_presence        = as.integer(any(tall_n > 0)),
+    tall_share_subplots  = mean(tall_n > 0),
+    tall_density_m2      = sum(tall_n) / 20,     # 20 m² per plot (5×4 m²)
+    .groups = "drop"
+  )
+
+# graded class; collapse to binary later if sample sizes are tiny
+nz <- legacy_plot %>% filter(tall_density_m2 > 0)
+cuts <- if (nrow(nz) >= 3) quantile(nz$tall_density_m2, probs = c(1/3, 2/3), na.rm = TRUE) else c(0, 0)
+
+legacy_plot <- legacy_plot %>%
+  mutate(legacy_class = case_when(
+    tall_density_m2 == 0 ~ "none",
+    tall_density_m2 <= cuts[1] ~ "low",
+    tall_density_m2 <= cuts[2] ~ "mid",
+    TRUE ~ "high"
+  )) %>%
+  mutate(legacy_class = factor(legacy_class, 
+                               levels = c("none","low","mid","high")))
+
+# ---- 2) Join onto your modelling frame (both_levels_re2 already has plot_id) ----
+both_levels_re4 <- both_levels_re2 %>%
+  left_join(legacy_plot, by = c("plot_id" = "plot")) %>%
+  mutate(
+    legacy_class = as.character(legacy_class),
+    legacy_class = ifelse(is.na(legacy_class), "none", legacy_class),
+    legacy_class = factor(legacy_class, levels = c("none","low","mid","high")),
+    tall_presence = ifelse(is.na(tall_presence), 0L, tall_presence)
+  )
+
+
+# If any legacy_class × level cell has < 10 rows, collapse to binary
+tbl <- table(both_levels_re4$legacy_class, both_levels_re4$level)
+if (length(tbl) > 0 && min(tbl) < 10) {
+  both_levels_re4 <- both_levels_re4 %>%
+    mutate(legacy_class = factor(ifelse(tall_presence == 1, "present", "absent"),
+                                 levels = c("absent","present")))
+}
+
+# make sure types are right and there are no NAs for covariates/weights
+both_levels_re4 <- both_levels_re4 %>%
+  mutate(
+    plot_id      = factor(plot_id),
+    level        = factor(level, levels = c("subplot","plot")),
+    legacy_class = factor(legacy_class),      # e.g. "none/low/mid/high" or "absent/present"
+    w            = pmin(pmax(w, 1), 50)
+  ) %>%
+  filter(!is.na(mean_hgt), !is.na(w), !is.na(cv_hgt), !is.na(dens_m2))
+
+
+# ---- 3) Fit GAM with level × legacy-specific smooths (controls: mean_hgt; RE: plot) ----
+m_cv_legacy <- gam(
+  cv_hgt ~ level + legacy_class +
+    s(dens_m2, by = interaction(level, legacy_class), k = 4) +
+    s(mean_hgt, k = 5) +
+    s(plot_id, bs = "re"),
+  data    = both_levels_re4,
+  weights = w,
+  family  = Gamma(link = "log"),
+  method  = "REML"
+)
+summary(m_cv_legacy)
+library(gratia)
+appraise(m_cv_legacy)
+plot.gam(m_cv_legacy, page = 1)
+##### !!!!
+
+# check different distributions
+m_t  <- mgcv::gam(update(formula(m_cv_legacy), . ~ .),
+                  data = both_levels_re4, weights = w,
+                  family = mgcv::scat(), method = "REML")   # scaled t
+m_tw <- mgcv::gam(update(formula(m_cv_legacy), . ~ .),
+                  data = both_levels_re4, weights = w,
+                  family = mgcv::tw(link = "log"), method = "REML")  # Tweedie
+
+AIC(m_cv_legacy, m_t, m_tw)    # pick the one that’s lower / with cleaner residuals
+
+
+# run all with the same methods "ML" to make AIC comparable
+
+m_gamma_ML <- gam(
+  cv_hgt ~ level + legacy_class +
+    s(dens_m2, by = interaction(level, legacy_class), k = 4) +
+    s(mean_hgt, k = 5) + s(plot_id, bs = "re"),
+  data = both_levels_re4, weights = w,
+  family = Gamma(link="log"), method = "ML"
+)
+
+m_t_ML <- gam(update(formula(m_gamma_ML), . ~ .),
+              data = both_levels_re4, weights = w,
+              family = mgcv::scat(), method = "ML")
+
+m_tw_ML <- gam(update(formula(m_gamma_ML), . ~ .),
+               data = both_levels_re4, weights = w,
+               family = mgcv::tw(link="log"), method = "ML")
+
+AIC(m_gamma_ML, m_t_ML, m_tw_ML)
+
+
+
+
+
 
 
 #hist(dat23_subplot_recode$clear)
@@ -360,12 +511,12 @@ mng_plot_intensity <- mng_subplot_scores %>%
 subplot_group_density_wide <- dat23_subplot_recode %>%
   dplyr::filter(vegtype %in% c("small", "advanced")) %>%
   group_by(subplot, plot, recovery_type, vegtype) %>%
-  summarise(stem_density_sum = sum(stem_density, na.rm = TRUE),
+  summarise(reg_density_sum = sum(stem_density, na.rm = TRUE),
             .groups = "drop") %>%
   unite("group_veg", recovery_type, vegtype) %>%   # combine recovery_type + vegtype
   pivot_wider(
     names_from = group_veg,
-    values_from = stem_density_sum,
+    values_from = reg_density_sum,
     values_fill = 0
   ) %>%
   mutate(
@@ -445,11 +596,350 @@ field_sub_summ <- dat23_subplot_recode %>%
 # how many trees?
 sum(field_sub_summ$stems_total)  # 2125 stems/7816 stems/ha
 sum(field_sub_summ$stems_total == 0)
+sum(field_sub_summ$cv_hgt > 1)
+
+
+field_sub_summ_filt <- field_sub_summ %>%
+  filter(stems_total > 0 & cv_hgt > 0)
+
+ggplot(field_sub_summ_filt, aes(x = stems_total, y = cv_hgt)) +
+  geom_point(alpha = 0.4, size = 2, color = "grey40") +
+  geom_smooth(method = "loess", se = TRUE, color = "red") +
+  geom_smooth(method = "gam", formula = y ~ s(x, k = 3),
+              se = TRUE, color = "blue", linetype = "dashed") +
+  labs(
+    x = "Stem count per subplot",
+    y = "CV of tree height",
+    title = "Stem density vs. Vertical Structural Variation",
+    subtitle = "Empty subplots excluded"
+  ) +
+  theme_minimal(base_size = 14)
+
+# ssame analysis on both scales? 
+# START
+
+library(dplyr)
+library(ggplot2)
+library(mgcv)
+
+# --- 1) Make COMPARABLE x-axis: stem density per m² --------------------
+area_subplot_m2 <- 4      # 4 m²
+area_plot_m2    <- 5*4    # 20 m²
+
+# Subplot level (already computed above)
+sub_df <- field_sub_summ %>%
+  filter(stems_total > 0, cv_hgt > 0) %>%             # exclude empty/artefactual zeros
+  transmute(
+    ID      = subplot,
+    level   = "subplot",
+    dens_m2 = stems_total / area_subplot_m2,
+    cv_hgt  = cv_hgt
+  )
+
+# Plot level (use pooled CV that ignores subplot boundaries)
+plot_df <- plot_metrics_pooled %>%
+  transmute(
+    ID      = plot,
+    level   = "plot",
+    dens_m2 = stems_total / area_plot_m2,
+    cv_hgt  = cv_hgt
+  ) %>%
+  filter(!is.na(cv_hgt) & cv_hgt > 0)                 # keep only plots with measurable structure
+
+both_levels <- bind_rows(sub_df, plot_df) %>%
+  mutate(level = factor(level, levels = c("subplot","plot")))
+
+# --- 2) Visual compare: same axes, different levels --------------------
+ggplot(both_levels, aes(x = dens_m2, y = cv_hgt, color = level)) +
+  geom_point(alpha = 0.35, size = 1.8) +
+  geom_smooth(method = "loess", k = 4, se = TRUE, span = 0.8, width = 1.1) +
+  scale_color_manual(values = c("subplot"="#d95f02","plot"="#1b9e77")) +
+  labs(x = "Stem density (per m²)",
+       y = "CV of tree height",
+       title = "Same relationship, two spatial scales",
+       subtitle = "Loess smooths by level; x-axis harmonized as stems per m²") +
+  theme_minimal(base_size = 8)
+
+# --- 3) Formal test: does the curve differ by scale? -------------------
+# Use a Gamma GAM on log link (cv > 0), with separate smooths by 'level'
+library(mgcv)
+library(ggeffects)
+
+m_gam <- gam(cv_hgt ~ level + s(dens_m2, by = level, k = 3),
+             data = both_levels,
+             family = Gamma(link = "log"),
+             method = "REML")
+summary(m_gam)
+plot(m_gam, page = 1)
+# If the s(dens_m2) terms differ (edf and F/p), the scale changes the shape.
+
+# Optional: a single-curve null model (no scale-specific smooth)
+m_null <- gam(cv_hgt ~ s(dens_m2, k = 3), data = both_levels,
+              family = Gamma(link = "log"), method = "REML")
+
+
+# Add random intercept by plot (keeps plot rows too; they just have one obs)
+# 1) Build a plot_id: for subplots extract the plot from the subplot ID; for plot rows keep the plot ID
+both_levels_re <- both_levels %>%
+  mutate(
+    plot_id = if_else(
+      level == "subplot",
+      # extract the middle "15_103" from "13_15_103_2"
+      str_replace(ID, "^[^_]+_([^_]+_[^_]+)_.*$", "\\1"),
+      ID
+    ),
+    plot_id = factor(plot_id),
+    ID      = factor(ID),                         # harmless, but not used in RE term now
+    level   = factor(level, levels = c("subplot","plot"))
+  )
+
+# 2) Random intercept by plot_id (not by unique ID)
+m_gam_re <- gam(
+  cv_hgt ~ level + s(dens_m2, by = level, k = 6) + s(plot_id, bs = "re"),
+  data   = both_levels_re,
+  family = Gamma(link = "log"),
+  method = "REML"
+)
+
+summary(m_gam_re)
+AIC(m_gam_re)
+
+AIC(m_null, m_gam, m_gam_re)   # If m_gam << m_null, scale matters.
+
+# edf is basically  = 1 -> replace by linear model
+m_lin_re <- gam(
+  cv_hgt ~ level + dens_m2 + dens_m2:level + s(plot_id, bs = "re"),
+  data   = both_levels_re,
+  family = Gamma(link = "log"),
+  method = "REML"
+)
+summary(m_lin_re)
+
+
+# add avergate height as a covariate
+
+# --- 1) Subplot table (has subplot mean_hgt and stems_total as weights)
+sub_df <- field_sub_summ %>%
+  filter(stems_total > 0, cv_hgt > 0) %>%
+  transmute(
+    ID       = subplot,
+    plot_id  = str_replace(subplot, "^[^_]+_([^_]+_[^_]+)_.*$", "\\1"),
+    level    = "subplot",
+    dens_m2  = stems_total / 4,     # 4 m² subplot
+    cv_hgt   = cv_hgt,
+    mean_hgt = mean_hgt,
+    w        = stems_total
+  )
+
+# --- 2) Plot table (pooled metrics already computed)
+plot_df <- plot_metrics_pooled %>%
+  transmute(
+    ID       = plot,
+    plot_id  = plot,
+    level    = "plot",
+    dens_m2  = stems_total / 20,    # 5×4 m² = 20 m²
+    cv_hgt   = cv_hgt,
+    mean_hgt = mean_hgt,
+    w        = stems_total
+  ) %>%
+  filter(!is.na(cv_hgt), cv_hgt > 0)
+
+# --- 3) Bind & clean
+both_levels_re2 <- bind_rows(sub_df, plot_df) %>%
+  mutate(
+    level   = factor(level, levels = c("subplot","plot")),
+    plot_id = factor(plot_id),
+    w       = pmin(pmax(w, 1), 50)   # cap weights so a few dense plots don't dominate
+  )
+
+# Quick sanity check
+stopifnot(!all(is.na(both_levels_re2$mean_hgt)))
+stopifnot(!all(is.na(both_levels_re2$w)))
+
+# --- 4) Model: CV ~ density + mean height (with plot RE, weights)
+m_cv_adj <- gam(
+  cv_hgt ~ level +
+    s(dens_m2, by = level, k = 6) +
+    s(mean_hgt, k = 5) +
+    s(plot_id, bs = "re"),
+  data    = both_levels_re2,
+  weights = w,
+  family  = Gamma(link = "log"),
+  method  = "REML"
+)
+summary(m_cv_adj)
+
+# --- 5) ggpredict at a fixed mean height (hold cohort stage constant)
+mh <- median(both_levels_re2$mean_hgt, na.rm = TRUE)
+
+ggp <- ggpredict(
+  m_cv_adj,
+  terms          = c("dens_m2 [all]", "level"),
+  condition      = list(mean_hgt = mh),
+  type           = "fixed",
+  back.transform = TRUE
+)
+
+# Built-in plot (both levels shown)
+plot(ggp) +
+  labs(x = "Stem density (per m²)",
+       y = "CV of tree height",
+       title = "Predicted CV ~ density at subplot vs plot scale",
+       subtitle = sprintf("Predictions at mean_hgt = %.2f m", mh)) +
+  theme_minimal(base_size = 13)
+
+
+
+
+
+
+
+
+
+# ggpredict automatically marginalizes the random effect s(plot_id) to its mean (≈0),
+# and returns predictions on the RESPONSE scale for Gamma(log).
+# make sure 'level' is a factor with the two groups you want
+both_levels_re$level <- factor(both_levels_re$level, levels = c("subplot","plot"))
+
+# Predict CV ~ dens_m2 for BOTH levels on one plot
+ggp <- ggpredict(
+  m_lin_re,
+  terms = c("dens_m2 [all]", "level"),  # x-axis + grouping
+  type  = "fixed",          # ignores s(plot_id) random effect
+  back.transform = TRUE     # back to response scale
+)
+
+# Quick built-in plot (shows both levels)
+plot(ggp) +
+  labs(x = "Stem density (per m²)", y = "CV of tree height",
+       title = "Predicted CV ~ density at two scales") +
+  theme_minimal(base_size = 13)
+
+
+# optional: overlay with raw points
+pred_df <- as.data.frame(ggp)
+ggplot() +
+  geom_point(aes(dens_m2, cv_hgt, color = level),
+             data = both_levels_re, alpha = 0.25, size = 1.6) +
+  geom_ribbon(aes(x, ymin = conf.low, ymax = conf.high, fill = group),
+              data = pred_df, alpha = 0.18) +
+  geom_line(aes(x, predicted, color = group),
+            data = pred_df, size = 1.1) +
+  scale_color_manual(values = c(subplot = "#d95f02", plot = "#1b9e77"), name = "level") +
+  scale_fill_manual(values  = c(subplot = "#d95f02", plot = "#1b9e77"), name = "level") +
+  labs(x = "Stem density (per m²)", y = "CV of tree height",
+       title = "Predicted CV ~ density (with raw data)") +
+  theme_minimal(base_size = 13)
+
+
+
+
+# Extract slopes (on log scale)
+b  <- coef(m_lin_re); V <- vcov(m_lin_re)
+slope_sub  <- b["dens_m2"]
+slope_plot <- b["dens_m2"] + b["dens_m2:levelplot"]
+
+# SE for plot slope
+se_plot <- sqrt(V["dens_m2","dens_m2"] +
+                  V["dens_m2:levelplot","dens_m2:levelplot"] +
+                  2*V["dens_m2","dens_m2:levelplot"])
+
+# 95% CI
+ci_plot <- slope_plot + c(-1.96, 1.96) * se_plot
+c(slope_sub = slope_sub, slope_plot = slope_plot, plot_CI = ci_plot)
+
+
+
+# --- 4) Nice overlay plot of model fits --------------------------------
+# Predict on a common density grid for each level
+newdat <- tidyr::expand_grid(
+  level   = levels(both_levels$level),
+  dens_m2 = seq(0.01, quantile(both_levels$dens_m2, 0.99, na.rm = TRUE), length.out = 200)
+)
+
+pred <- cbind(newdat,
+              as.data.frame(predict(m_gam, newdata = newdat, type = "link", se.fit = TRUE)))
+pred <- pred %>%
+  mutate(fit = exp(fit),
+         lo  = exp(fit - 1.96*se.fit),
+         hi  = exp(fit + 1.96*se.fit))
+
+ggplot() +
+  geom_point(aes(dens_m2, cv_hgt, color = level), data = both_levels, alpha = 0.25, size = 1.6) +
+  geom_ribbon(aes(dens_m2, ymin = lo, ymax = hi, fill = level), data = pred, alpha = 0.18) +
+  geom_line(aes(dens_m2, fit, color = level), data = pred, size = 1.1) +
+  scale_color_manual(values = c("subplot"="#d95f02","plot"="#1b9e77")) +
+  scale_fill_manual(values  = c("subplot"="#d95f02","plot"="#1b9e77")) +
+  labs(x = "Stem density (per m²)",
+       y = "CV of tree height",
+       title = "GAM fits by spatial scale (Gamma–log link)") +
+  theme_minimal(base_size = 13)
+
+
+
+# END
+
+
+
+
+
+
 
 # how many tree species? 
 length(unique(dat23_subplot_recode$species[dat23_subplot_recode$n > 0]))
 
 sort(unique(dat23_subplot_recode$species[dat23_subplot_recode$n > 0]))
+
+# which species has teh most stems?
+dat23_subplot_recode %>%
+  group_by(species) %>%
+  summarise(total_stems = sum(n, na.rm = TRUE)) %>%
+  mutate(share = total_stems / sum(total_stems)) %>%
+  arrange(desc(total_stems))# %>%
+  #slice(1)
+
+# which species occured in most plots?
+# Total number of unique subplots in the whole dataset (including empty ones)
+total_subplots <- length(unique(dat23_subplot_recode$subplot))
+
+# Species occurrence with subplot share
+dat23_subplot_recode %>%
+  filter(n > 0) %>%
+  distinct(species, subplot) %>%
+  count(species, name = "n_subplots") %>%
+  mutate(share = n_subplots / total_subplots) %>%
+  arrange(desc(n_subplots))
+
+
+# get height structure
+summary(field_sub_summ$median_hgt)
+hist(dat23_subplot_recode$hgt_est)
+summary(dat23_subplot_recode$hgt_est)
+
+mean(dat23_subplot_recode$hgt_est < 1, na.rm = TRUE) * 100 # % of trees less than 1 m tall?
+
+# merge subplot levels summaries with sf data to see it on the map
+# 
+
+field_sub_summ_sf <- left_join(dat23_sf_min,
+                               field_sub_summ)
+# Select variables to map
+field_sub_summ_sf %>%
+  dplyr::select(geom, 
+               # stems_total, 
+                #mean_hgt,
+               cv_hgt 
+               # sp_richness 
+               ) %>%
+  pivot_longer(cols = -geom, names_to = "variable", values_to = "value") %>%
+  ggplot() +
+  geom_sf(aes(color = value), size = 2, alpha = 0.5) +
+  facet_wrap(~variable) +
+  scale_color_viridis_c(option = "C", na.value = "grey80", guide = "colorbar") +
+  theme_minimal() +
+  theme(legend.position = "right")
+
+summary(field_sub_summ$cv_hgt)
 
 
 
