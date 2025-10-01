@@ -673,50 +673,6 @@ plot(ggp) +
 
 
 
-
-
-
-
-
-# ggpredict automatically marginalizes the random effect s(plot_id) to its mean (≈0),
-# and returns predictions on the RESPONSE scale for Gamma(log).
-# make sure 'level' is a factor with the two groups you want
-both_levels_re$level <- factor(both_levels_re$level, levels = c("subplot","plot"))
-
-# Predict CV ~ dens_m2 for BOTH levels on one plot
-ggp <- ggpredict(
-  m_lin_re,
-  terms = c("dens_m2 [all]", "level"),  # x-axis + grouping
-  type  = "fixed",          # ignores s(plot_id) random effect
-  back.transform = TRUE     # back to response scale
-)
-
-# Quick built-in plot (shows both levels)
-plot(ggp) +
-  labs(x = "Stem density (per m²)", y = "CV of tree height",
-       title = "Predicted CV ~ density at two scales") +
-  theme_minimal(base_size = 13)
-
-
-# optional: overlay with raw points
-pred_df <- as.data.frame(ggp)
-ggplot() +
-  geom_point(aes(dens_m2, cv_hgt, color = level),
-             data = both_levels_re, alpha = 0.25, size = 1.6) +
-  geom_ribbon(aes(x, ymin = conf.low, ymax = conf.high, fill = group),
-              data = pred_df, alpha = 0.18) +
-  geom_line(aes(x, predicted, color = group),
-            data = pred_df, size = 1.1) +
-  scale_color_manual(values = c(subplot = "#d95f02", plot = "#1b9e77"), name = "level") +
-  scale_fill_manual(values  = c(subplot = "#d95f02", plot = "#1b9e77"), name = "level") +
-  labs(x = "Stem density (per m²)", y = "CV of tree height",
-       title = "Predicted CV ~ density (with raw data)") +
-  theme_minimal(base_size = 13)
-
-
-
-
-
 # Make a threshold for legacy effects: > 4 m
 
 # ---- 1) Tall-stem legacy (change threshold to 4 for sensitivity) ----
@@ -789,7 +745,7 @@ both_levels_re4 <- both_levels_re4 %>%
 # ---- 3) Fit GAM with level × legacy-specific smooths (controls: mean_hgt; RE: plot) ----
 m_cv_legacy <- gam(
   cv_hgt ~ level + legacy_class +
-    s(dens_m2, by = interaction(level, legacy_class), k = 4) +
+    s(dens_m2, by = interaction(level, legacy_class), k = 5) +
     s(mean_hgt, k = 5) +
     s(plot_id, bs = "re"),
   data    = both_levels_re4,
@@ -801,7 +757,7 @@ summary(m_cv_legacy)
 library(gratia)
 appraise(m_cv_legacy)
 plot.gam(m_cv_legacy, page = 1)
-##### !!!!
+
 
 # check different distributions
 m_t  <- mgcv::gam(update(formula(m_cv_legacy), . ~ .),
@@ -830,22 +786,118 @@ m_t_ML <- gam(update(formula(m_gamma_ML), . ~ .),
 
 m_tw_ML <- gam(update(formula(m_gamma_ML), . ~ .),
                data = both_levels_re4, weights = w,
-               family = mgcv::tw(link="log"), method = "ML")
+               family = mgcv::tw(link="log"), method = "ML", select = TRUE)
 
 AIC(m_gamma_ML, m_t_ML, m_tw_ML)
 
-appraise(m_t_ML)     # QQ tails should be much straighter
-gam.check(m_t_ML)    # k-index; bump k slightly only if warned
+appraise(m_tw_ML)     # QQ tails should be much straighter
+gam.check(m_tw_ML)    # k-index; bump k slightly only if warned
 
 
 
 
+# the t- family is not fitting anything else - go back to gamma
+eps <- 1e-6
+both_levels_re4$log_cv <- log(pmax(both_levels_re4$cv_hgt, eps))
+
+m_logt <- mgcv::gam(
+  log_cv ~ level + legacy_class +
+    s(dens_m2, by = interaction(level, legacy_class), k = 4) +
+    s(mean_hgt, k = 5) +
+    s(plot_id, bs = "re"),
+  data = both_levels_re4, weights = w,
+  family = mgcv::scat(), method = "ML"
+)
+
+m_tw_ML <- mgcv::gam(
+  cv_hgt ~ level + legacy_class +
+    s(dens_m2, by = interaction(level, legacy_class), k = 5) +
+    s(mean_hgt, k = 5) + s(plot_id, bs = "re"),
+  data = both_levels_re4, weights = w,
+  family = mgcv::tw(link = "log"), method = "ML", select = TRUE
+)
+
+fin.m <- m_tw_ML
+plot.gam(fin.m, page = 1, shade = T)
+
+# 0) build the interaction factor explicitly
+both_levels_re4 <- both_levels_re4 %>%
+  mutate(
+    level        = factor(level, levels = c("subplot","plot")),
+    legacy_class = factor(legacy_class, levels = c("absent","present")),
+    lev_legacy   = interaction(level, legacy_class, drop = TRUE)
+  )
+
+# 1) Refit Tweedie log model using the explicit by-variable
+m_tw2 <- gam(
+  cv_hgt ~ level + legacy_class +
+    s(dens_m2, by = lev_legacy, k = 3) +
+    s(mean_hgt, k = 3) +
+    s(plot_id, bs = "re"),
+  data = both_levels_re4, weights = w,
+  family = mgcv::tw(link = "log"), method = "ML", select = TRUE
+)
+AIC(m_tw2, m_tw_ML)
+
+
+# use the same explicit interaction, same k, and ML
+m_gam2 <- mgcv::gam(
+  cv_hgt ~ level + legacy_class +
+    s(dens_m2, by = lev_legacy, k = 3, bs = "cs") +
+    s(mean_hgt, k = 3, bs = "cs") +
+    s(plot_id, bs = "re"),
+  data = both_levels_re4, weights = w,
+  family = Gamma(link = "log"), method = "ML", select = TRUE
+)
+
+AIC(m_gam2, m_tw2)      # now comparable
+gratia::appraise(m_gam2)
+gratia::appraise(m_tw2)
 
 
 
+# anchors for conditioning
+mh <- median(both_levels_re4$mean_hgt, na.rm = TRUE)
+md <- median(both_levels_re4$dens_m2,  na.rm = TRUE)
 
+## ------------ A) CV ~ mean_hgt (two lines: subplot vs plot), legacy fixed -----------
+# choose which legacy panel you want ("absent" here)
+levels_abs <- c("subplot.absent","plot.absent")
 
+g_mean <- ggpredict(
+  m_tw2,
+  terms          = c("mean_hgt [all]", paste0("lev_legacy [", paste(levels_abs, collapse=","), "]")),
+  condition      = list(dens_m2 = md),
+  type           = "fixed",
+  back.transform = TRUE
+) |> as.data.frame() |>
+  mutate(level = ifelse(grepl("^subplot", group), "subplot", "plot"))
 
+ggplot(g_mean, aes(x, predicted, color = level, fill = level)) +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.18, color = NA) +
+  geom_line(size = 1.1) +
+  labs(x = "Mean height (m)", y = "CV of tree height",
+       title = "CV ~ mean height",
+       subtitle = sprintf("dens_m2 fixed at %.2f; legacy = absent", md)) +
+  theme_minimal(base_size = 13)
+
+## ------------ B) CV ~ dens_m2 (two lines), legacy fixed ----------------------------
+g_dens <- ggpredict(
+  m_tw2,
+  terms          = c("dens_m2 [all]", paste0("lev_legacy [", paste(levels_abs, collapse=","), "]")),
+  condition      = list(mean_hgt = mh),
+  type           = "fixed",
+  back.transform = TRUE
+) |> as.data.frame() |>
+  mutate(level = ifelse(grepl("^subplot", group), "subplot", "plot"))
+
+ggplot(g_dens, aes(x, predicted, color = level, fill = level)) +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.18, color = NA) +
+  geom_line(size = 1.1) +
+  labs(x = "Stem density (per m²)", y = "CV of tree height",
+       title = "CV ~ stem density",
+       subtitle = sprintf("mean_hgt fixed at %.2f m; legacy = absent", mh)) +
+  theme_minimal(base_size = 8)
 
 
 
