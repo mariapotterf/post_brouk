@@ -337,124 +337,6 @@ dat23_subplot_recode %>%
 # no mature trees!!
 
 
-# Make a threshold for legacy effects: > 4 m
-
-# ---- 1) Tall-stem legacy (change threshold to 4 for sensitivity) ----
-tall_thresh <- 4   # meters
-
-tall_sub <- dat23_subplot_recode %>%
-  filter(!is.na(hgt_est), n > 0) %>%
-  mutate(is_tall = hgt_est >= tall_thresh) %>%
-  group_by(plot, subplot) %>%
-  summarise(
-    tall_n      = sum(n[is_tall], na.rm = TRUE),
-    stems_total = sum(n, na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
-  mutate(tall_density_m2 = tall_n / 4)  # 4 m² subplot
-
-legacy_plot <- tall_sub %>%
-  group_by(plot) %>%
-  summarise(
-    tall_presence        = as.integer(any(tall_n > 0)),
-    tall_share_subplots  = mean(tall_n > 0),
-    tall_density_m2      = sum(tall_n) / 20,     # 20 m² per plot (5×4 m²)
-    .groups = "drop"
-  )
-
-# graded class; collapse to binary later if sample sizes are tiny
-nz <- legacy_plot %>% filter(tall_density_m2 > 0)
-cuts <- if (nrow(nz) >= 3) quantile(nz$tall_density_m2, probs = c(1/3, 2/3), na.rm = TRUE) else c(0, 0)
-
-legacy_plot <- legacy_plot %>%
-  mutate(legacy_class = case_when(
-    tall_density_m2 == 0 ~ "none",
-    tall_density_m2 <= cuts[1] ~ "low",
-    tall_density_m2 <= cuts[2] ~ "mid",
-    TRUE ~ "high"
-  )) %>%
-  mutate(legacy_class = factor(legacy_class, 
-                               levels = c("none","low","mid","high")))
-
-# ---- 2) Join onto your modelling frame (both_levels_re2 already has plot_id) ----
-both_levels_re4 <- both_levels_re2 %>%
-  left_join(legacy_plot, by = c("plot_id" = "plot")) %>%
-  mutate(
-    legacy_class = as.character(legacy_class),
-    legacy_class = ifelse(is.na(legacy_class), "none", legacy_class),
-    legacy_class = factor(legacy_class, levels = c("none","low","mid","high")),
-    tall_presence = ifelse(is.na(tall_presence), 0L, tall_presence)
-  )
-
-
-# If any legacy_class × level cell has < 10 rows, collapse to binary
-tbl <- table(both_levels_re4$legacy_class, both_levels_re4$level)
-if (length(tbl) > 0 && min(tbl) < 10) {
-  both_levels_re4 <- both_levels_re4 %>%
-    mutate(legacy_class = factor(ifelse(tall_presence == 1, "present", "absent"),
-                                 levels = c("absent","present")))
-}
-
-# make sure types are right and there are no NAs for covariates/weights
-both_levels_re4 <- both_levels_re4 %>%
-  mutate(
-    plot_id      = factor(plot_id),
-    level        = factor(level, levels = c("subplot","plot")),
-    legacy_class = factor(legacy_class),      # e.g. "none/low/mid/high" or "absent/present"
-    w            = pmin(pmax(w, 1), 50)
-  ) %>%
-  filter(!is.na(mean_hgt), !is.na(w), !is.na(cv_hgt), !is.na(dens_m2))
-
-
-# ---- 3) Fit GAM with level × legacy-specific smooths (controls: mean_hgt; RE: plot) ----
-m_cv_legacy <- gam(
-  cv_hgt ~ level + legacy_class +
-    s(dens_m2, by = interaction(level, legacy_class), k = 4) +
-    s(mean_hgt, k = 5) +
-    s(plot_id, bs = "re"),
-  data    = both_levels_re4,
-  weights = w,
-  family  = Gamma(link = "log"),
-  method  = "REML"
-)
-summary(m_cv_legacy)
-library(gratia)
-appraise(m_cv_legacy)
-plot.gam(m_cv_legacy, page = 1)
-##### !!!!
-
-# check different distributions
-m_t  <- mgcv::gam(update(formula(m_cv_legacy), . ~ .),
-                  data = both_levels_re4, weights = w,
-                  family = mgcv::scat(), method = "REML")   # scaled t
-m_tw <- mgcv::gam(update(formula(m_cv_legacy), . ~ .),
-                  data = both_levels_re4, weights = w,
-                  family = mgcv::tw(link = "log"), method = "REML")  # Tweedie
-
-AIC(m_cv_legacy, m_t, m_tw)    # pick the one that’s lower / with cleaner residuals
-
-
-# run all with the same methods "ML" to make AIC comparable
-
-m_gamma_ML <- gam(
-  cv_hgt ~ level + legacy_class +
-    s(dens_m2, by = interaction(level, legacy_class), k = 4) +
-    s(mean_hgt, k = 5) + s(plot_id, bs = "re"),
-  data = both_levels_re4, weights = w,
-  family = Gamma(link="log"), method = "ML"
-)
-
-m_t_ML <- gam(update(formula(m_gamma_ML), . ~ .),
-              data = both_levels_re4, weights = w,
-              family = mgcv::scat(), method = "ML")
-
-m_tw_ML <- gam(update(formula(m_gamma_ML), . ~ .),
-               data = both_levels_re4, weights = w,
-               family = mgcv::tw(link="log"), method = "ML")
-
-AIC(m_gamma_ML, m_t_ML, m_tw_ML)
-
-
 
 
 
@@ -834,50 +716,150 @@ ggplot() +
 
 
 
-# Extract slopes (on log scale)
-b  <- coef(m_lin_re); V <- vcov(m_lin_re)
-slope_sub  <- b["dens_m2"]
-slope_plot <- b["dens_m2"] + b["dens_m2:levelplot"]
 
-# SE for plot slope
-se_plot <- sqrt(V["dens_m2","dens_m2"] +
-                  V["dens_m2:levelplot","dens_m2:levelplot"] +
-                  2*V["dens_m2","dens_m2:levelplot"])
+# Make a threshold for legacy effects: > 4 m
 
-# 95% CI
-ci_plot <- slope_plot + c(-1.96, 1.96) * se_plot
-c(slope_sub = slope_sub, slope_plot = slope_plot, plot_CI = ci_plot)
+# ---- 1) Tall-stem legacy (change threshold to 4 for sensitivity) ----
+tall_thresh <- 4   # meters
+
+tall_sub <- dat23_subplot_recode %>%
+  filter(!is.na(hgt_est), n > 0) %>%
+  mutate(is_tall = hgt_est >= tall_thresh) %>%
+  group_by(plot, subplot) %>%
+  summarise(
+    tall_n      = sum(n[is_tall], na.rm = TRUE),
+    stems_total = sum(n, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(tall_density_m2 = tall_n / 4)  # 4 m² subplot
+
+legacy_plot <- tall_sub %>%
+  group_by(plot) %>%
+  summarise(
+    tall_presence        = as.integer(any(tall_n > 0)),
+    tall_share_subplots  = mean(tall_n > 0),
+    tall_density_m2      = sum(tall_n) / 20,     # 20 m² per plot (5×4 m²)
+    .groups = "drop"
+  )
+
+# graded class; collapse to binary later if sample sizes are tiny
+nz <- legacy_plot %>% filter(tall_density_m2 > 0)
+cuts <- if (nrow(nz) >= 3) quantile(nz$tall_density_m2, probs = c(1/3, 2/3), na.rm = TRUE) else c(0, 0)
+
+legacy_plot <- legacy_plot %>%
+  mutate(legacy_class = case_when(
+    tall_density_m2 == 0 ~ "none",
+    tall_density_m2 <= cuts[1] ~ "low",
+    tall_density_m2 <= cuts[2] ~ "mid",
+    TRUE ~ "high"
+  )) %>%
+  mutate(legacy_class = factor(legacy_class, 
+                               levels = c("none","low","mid","high")))
+
+# ---- 2) Join onto your modelling frame (both_levels_re2 already has plot_id) ----
+both_levels_re4 <- both_levels_re2 %>%
+  left_join(legacy_plot, by = c("plot_id" = "plot")) %>%
+  mutate(
+    legacy_class = as.character(legacy_class),
+    legacy_class = ifelse(is.na(legacy_class), "none", legacy_class),
+    legacy_class = factor(legacy_class, levels = c("none","low","mid","high")),
+    tall_presence = ifelse(is.na(tall_presence), 0L, tall_presence)
+  )
 
 
+# If any legacy_class × level cell has < 10 rows, collapse to binary
+tbl <- table(both_levels_re4$legacy_class, both_levels_re4$level)
+if (length(tbl) > 0 && min(tbl) < 10) {
+  both_levels_re4 <- both_levels_re4 %>%
+    mutate(legacy_class = factor(ifelse(tall_presence == 1, "present", "absent"),
+                                 levels = c("absent","present")))
+}
 
-# --- 4) Nice overlay plot of model fits --------------------------------
-# Predict on a common density grid for each level
-newdat <- tidyr::expand_grid(
-  level   = levels(both_levels$level),
-  dens_m2 = seq(0.01, quantile(both_levels$dens_m2, 0.99, na.rm = TRUE), length.out = 200)
+# make sure types are right and there are no NAs for covariates/weights
+both_levels_re4 <- both_levels_re4 %>%
+  mutate(
+    plot_id      = factor(plot_id),
+    level        = factor(level, levels = c("subplot","plot")),
+    legacy_class = factor(legacy_class),      # e.g. "none/low/mid/high" or "absent/present"
+    w            = pmin(pmax(w, 1), 50)
+  ) %>%
+  filter(!is.na(mean_hgt), !is.na(w), !is.na(cv_hgt), !is.na(dens_m2))
+
+
+# ---- 3) Fit GAM with level × legacy-specific smooths (controls: mean_hgt; RE: plot) ----
+m_cv_legacy <- gam(
+  cv_hgt ~ level + legacy_class +
+    s(dens_m2, by = interaction(level, legacy_class), k = 4) +
+    s(mean_hgt, k = 5) +
+    s(plot_id, bs = "re"),
+  data    = both_levels_re4,
+  weights = w,
+  family  = Gamma(link = "log"),
+  method  = "REML"
+)
+summary(m_cv_legacy)
+library(gratia)
+appraise(m_cv_legacy)
+plot.gam(m_cv_legacy, page = 1)
+##### !!!!
+
+# check different distributions
+m_t  <- mgcv::gam(update(formula(m_cv_legacy), . ~ .),
+                  data = both_levels_re4, weights = w,
+                  family = mgcv::scat(), method = "REML")   # scaled t
+m_tw <- mgcv::gam(update(formula(m_cv_legacy), . ~ .),
+                  data = both_levels_re4, weights = w,
+                  family = mgcv::tw(link = "log"), method = "REML")  # Tweedie
+
+AIC(m_cv_legacy, m_t, m_tw)    # pick the one that’s lower / with cleaner residuals
+
+
+# run all with the same methods "ML" to make AIC comparable
+
+m_gamma_ML <- gam(
+  cv_hgt ~ level + legacy_class +
+    s(dens_m2, by = interaction(level, legacy_class), k = 4) +
+    s(mean_hgt, k = 5) + s(plot_id, bs = "re"),
+  data = both_levels_re4, weights = w,
+  family = Gamma(link="log"), method = "ML"
 )
 
-pred <- cbind(newdat,
-              as.data.frame(predict(m_gam, newdata = newdat, type = "link", se.fit = TRUE)))
-pred <- pred %>%
-  mutate(fit = exp(fit),
-         lo  = exp(fit - 1.96*se.fit),
-         hi  = exp(fit + 1.96*se.fit))
+m_t_ML <- gam(update(formula(m_gamma_ML), . ~ .),
+              data = both_levels_re4, weights = w,
+              family = mgcv::scat(), method = "ML")
 
-ggplot() +
-  geom_point(aes(dens_m2, cv_hgt, color = level), data = both_levels, alpha = 0.25, size = 1.6) +
-  geom_ribbon(aes(dens_m2, ymin = lo, ymax = hi, fill = level), data = pred, alpha = 0.18) +
-  geom_line(aes(dens_m2, fit, color = level), data = pred, size = 1.1) +
-  scale_color_manual(values = c("subplot"="#d95f02","plot"="#1b9e77")) +
-  scale_fill_manual(values  = c("subplot"="#d95f02","plot"="#1b9e77")) +
-  labs(x = "Stem density (per m²)",
-       y = "CV of tree height",
-       title = "GAM fits by spatial scale (Gamma–log link)") +
-  theme_minimal(base_size = 13)
+m_tw_ML <- gam(update(formula(m_gamma_ML), . ~ .),
+               data = both_levels_re4, weights = w,
+               family = mgcv::tw(link="log"), method = "ML")
+
+AIC(m_gamma_ML, m_t_ML, m_tw_ML)
+
+appraise(m_t_ML)     # QQ tails should be much straighter
+gam.check(m_t_ML)    # k-index; bump k slightly only if warned
 
 
 
-# END
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
