@@ -33,6 +33,7 @@ library(GGally)
 library(vegan) # for diversity indices
 
 library(mgcv)
+library(ggeffects)
 
 
 
@@ -476,9 +477,9 @@ field_sub_summ <- dat23_subplot_recode %>%
       if (any(idx)) diff(range(hgt_est[idx], na.rm = TRUE)) else NA_real_
     },
     .groups = "drop"
-  ) %>% 
-  mutate(cv_hgt = ifelse(is.na(cv_hgt), 0L, cv_hgt),
-         mean_hgt = ifelse(is.na(mean_hgt), 0L, mean_hgt)) # replace NA by 0 if stems are missing
+  ) #%>% 
+ # mutate(cv_hgt = ifelse(is.na(cv_hgt), 0L, cv_hgt),
+  #       mean_hgt = ifelse(is.na(mean_hgt), 0L, mean_hgt)) # replace NA by 0 if stems are missing
 
 
 
@@ -527,106 +528,16 @@ ggarrange(p1, p2)
 area_subplot_m2 <- 4      # 4 m²
 area_plot_m2    <- 5*4    # 20 m²
 
-# Subplot level (already computed above)
-sub_df <- field_sub_summ %>%
-  filter(stems_total > 0, cv_hgt > 0) %>%             # exclude empty/artefactual zeros
-  transmute(
-    ID      = subplot,
-    level   = "subplot",
-    dens_m2 = stems_total / area_subplot_m2,
-    cv_hgt  = cv_hgt
-  )
-
-# Plot level (use pooled CV that ignores subplot boundaries)
-plot_df <- plot_metrics_pooled %>%
-  transmute(
-    ID      = plot,
-    level   = "plot",
-    dens_m2 = stems_total / area_plot_m2,
-    cv_hgt  = cv_hgt
-  ) %>%
-  filter(!is.na(cv_hgt) & cv_hgt > 0)                 # keep only plots with measurable structure
-
-both_levels <- bind_rows(sub_df, plot_df) %>%
-  mutate(level = factor(level, levels = c("subplot","plot")))
-
-# --- 2) Visual compare: same axes, different levels --------------------
-ggplot(both_levels, aes(x = dens_m2, y = cv_hgt, color = level)) +
-  geom_point(alpha = 0.35, size = 1.8) +
-  geom_smooth(method = "loess", k = 4, se = TRUE, span = 0.8, width = 1.1) +
-  scale_color_manual(values = c("subplot"="#d95f02","plot"="#1b9e77")) +
-  labs(x = "Stem density (per m²)",
-       y = "CV of tree height",
-       title = "Same relationship, two spatial scales",
-       subtitle = "Loess smooths by level; x-axis harmonized as stems per m²") +
-  theme_minimal(base_size = 8)
-
-# --- 3) Formal test: does the curve differ by scale? -------------------
-# Use a Gamma GAM on log link (cv > 0), with separate smooths by 'level'
-library(mgcv)
-library(ggeffects)
-
-m_gam <- gam(cv_hgt ~ level + s(dens_m2, by = level, k = 3),
-             data = both_levels,
-             family = Gamma(link = "log"),
-             method = "REML")
-summary(m_gam)
-plot(m_gam, page = 1)
-# If the s(dens_m2) terms differ (edf and F/p), the scale changes the shape.
-
-# Optional: a single-curve null model (no scale-specific smooth)
-m_null <- gam(cv_hgt ~ s(dens_m2, k = 3), data = both_levels,
-              family = Gamma(link = "log"), method = "REML")
-
-
-# Add random intercept by plot (keeps plot rows too; they just have one obs)
-# 1) Build a plot_id: for subplots extract the plot from the subplot ID; for plot rows keep the plot ID
-both_levels_re <- both_levels %>%
-  mutate(
-    plot_id = if_else(
-      level == "subplot",
-      # extract the middle "15_103" from "13_15_103_2"
-      str_replace(ID, "^[^_]+_([^_]+_[^_]+)_.*$", "\\1"),
-      ID
-    ),
-    plot_id = factor(plot_id),
-    ID      = factor(ID),                         # harmless, but not used in RE term now
-    level   = factor(level, levels = c("subplot","plot"))
-  )
-
-# 2) Random intercept by plot_id (not by unique ID)
-m_gam_re <- gam(
-  cv_hgt ~ level + s(dens_m2, by = level, k = 6) + s(plot_id, bs = "re"),
-  data   = both_levels_re,
-  family = Gamma(link = "log"),
-  method = "REML"
-)
-
-summary(m_gam_re)
-AIC(m_gam_re)
-
-AIC(m_null, m_gam, m_gam_re)   # If m_gam << m_null, scale matters.
-
-# edf is basically  = 1 -> replace by linear model
-m_lin_re <- gam(
-  cv_hgt ~ level + dens_m2 + dens_m2:level + s(plot_id, bs = "re"),
-  data   = both_levels_re,
-  family = Gamma(link = "log"),
-  method = "REML"
-)
-summary(m_lin_re)
-
-
 # add avergate height as a covariate
 
 # --- 1) Subplot table (has subplot mean_hgt and stems_total as weights)
 sub_df <- field_sub_summ %>%
-  filter(stems_total > 0, cv_hgt > 0) %>%
+  filter(stems_total > 0) %>% #, cv_hgt > 0
   transmute(
     ID       = subplot,
     plot_id  = str_replace(subplot, "^[^_]+_([^_]+_[^_]+)_.*$", "\\1"),
     level    = "subplot",
-    dens_m2  = stems_total / 4,     # 4 m² subplot
+    dens_m2  = stems_total / area_subplot_m2,     # 4 m² subplot
     cv_hgt   = cv_hgt,
     mean_hgt = mean_hgt,
     sp_richness = sp_richness,
@@ -640,7 +551,7 @@ plot_df <- plot_metrics_pooled %>%
     ID       = plot,
     plot_id  = plot,
     level    = "plot",
-    dens_m2  = stems_total / 20,    # 5×4 m² = 20 m²
+    dens_m2  = stems_total / area_plot_m2,    # 5×4 m² = 20 m²
     cv_hgt   = cv_hgt,
     mean_hgt = mean_hgt,
     sp_richness = sp_richness,
@@ -656,44 +567,6 @@ both_levels_re2 <- bind_rows(sub_df, plot_df) %>%
     plot_id = factor(plot_id),
     w       = pmin(pmax(w, 1), 50)   # cap weights so a few dense plots don't dominate
   )
-
-# Quick sanity check
-stopifnot(!all(is.na(both_levels_re2$mean_hgt)))
-stopifnot(!all(is.na(both_levels_re2$w)))
-
-# --- 4) Model: CV ~ density + mean height (with plot RE, weights)
-m_cv_adj <- gam(
-  cv_hgt ~ level +
-    s(dens_m2, by = level, k = 6) +
-    s(mean_hgt, k = 5) +
-    s(plot_id, bs = "re"),
-  data    = both_levels_re2,
-  weights = w,
-  family  = Gamma(link = "log"),
-  method  = "REML"
-)
-summary(m_cv_adj)
-
-# --- 5) ggpredict at a fixed mean height (hold cohort stage constant)
-mh <- median(both_levels_re2$mean_hgt, na.rm = TRUE)
-
-ggp <- ggpredict(
-  m_cv_adj,
-  terms          = c("dens_m2 [all]", "level"),
-  condition      = list(mean_hgt = mh),
-  type           = "fixed",
-  back.transform = TRUE
-)
-
-# Built-in plot (both levels shown)
-plot(ggp) +
-  labs(x = "Stem density (per m²)",
-       y = "CV of tree height",
-       title = "Predicted CV ~ density at subplot vs plot scale",
-       subtitle = sprintf("Predictions at mean_hgt = %.2f m", mh)) +
-  theme_minimal(base_size = 13)
-
-
 
 
 # Make a threshold for legacy effects: > 4 m
@@ -755,14 +628,18 @@ if (length(tbl) > 0 && min(tbl) < 10) {
 }
 
 # make sure types are right and there are no NAs for covariates/weights
+# build the interaction factor explicitly
 both_levels_re4 <- both_levels_re4 %>%
   mutate(
     plot_id      = factor(plot_id),
     level        = factor(level, levels = c("subplot","plot")),
-    legacy_class = factor(legacy_class),      # e.g. "none/low/mid/high" or "absent/present"
+    legacy_class = factor(legacy_class, levels = c("absent","present")),
+    lev_legacy   = interaction(level, legacy_class, drop = TRUE),
     w            = pmin(pmax(w, 1), 50)
-  ) %>%
+  ) %>% 
   filter(!is.na(mean_hgt), !is.na(w), !is.na(cv_hgt), !is.na(dens_m2))
+
+
 
 
 # ---- 3) Fit GAM with level × legacy-specific smooths (controls: mean_hgt; RE: plot) ----
@@ -843,66 +720,12 @@ m_tw_ML <- mgcv::gam(
 fin.m <- m_tw_ML
 plot.gam(fin.m, page = 1, shade = T)
 
-# 0) build the interaction factor explicitly
-both_levels_re4 <- both_levels_re4 %>%
-  mutate(
-    level        = factor(level, levels = c("subplot","plot")),
-    legacy_class = factor(legacy_class, levels = c("absent","present")),
-    lev_legacy   = interaction(level, legacy_class, drop = TRUE)
-  )
-
-# 1) Refit Tweedie log model using the explicit by-variable
-m_tw2 <- gam(
-  cv_hgt ~ level + legacy_class +
-    s(dens_m2, by = lev_legacy, k = 3) +
-    s(mean_hgt, k = 3) +
-    s(plot_id, bs = "re"),
-  data = both_levels_re4, weights = w,
-  family = mgcv::tw(link = "log"), method = "ML", select = TRUE
-)
-AIC(m_tw2, m_tw_ML)
-
-
-# use the same explicit interaction, same k, and ML
-m_gam2 <- mgcv::gam(
-  cv_hgt ~ level + legacy_class +
-    s(dens_m2, by = lev_legacy, k = 3, bs = "cs") +
-    s(mean_hgt, k = 3, bs = "cs") +
-    s(plot_id, bs = "re"),
-  data = both_levels_re4, weights = w,
-  family = Gamma(link = "log"), method = "ML", select = TRUE
-)
-
-AIC(m_gam2, m_tw2)      # now comparable
-gratia::appraise(m_gam2)
-gratia::appraise(m_tw2)
-
-
 
 # anchors for conditioning
 mh <- median(both_levels_re4$mean_hgt, na.rm = TRUE)
 md <- median(both_levels_re4$dens_m2,  na.rm = TRUE)
 
-## ------------ A) CV ~ mean_hgt (two lines: subplot vs plot), legacy fixed -----------
-# choose which legacy panel you want ("absent" here)
-levels_abs <- c("subplot.absent","plot.absent")
 
-g_mean <- ggpredict(
-  m_tw2,
-  terms          = c("mean_hgt [all]", paste0("lev_legacy [", paste(levels_abs, collapse=","), "]")),
-  condition      = list(dens_m2 = md),
-  type           = "fixed",
-  back.transform = TRUE
-) |> as.data.frame() |>
-  mutate(level = ifelse(grepl("^subplot", group), "subplot", "plot"))
-
-ggplot(g_mean, aes(x, predicted, color = level, fill = level)) +
-  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.18, color = NA) +
-  geom_line(size = 1.1) +
-  labs(x = "Mean height (m)", y = "CV of tree height",
-       title = "CV ~ mean height",
-       subtitle = sprintf("dens_m2 fixed at %.2f; legacy = absent", md)) +
-  theme_minimal(base_size = 13)
 
 ## ------------ B) CV ~ dens_m2 (two lines), legacy fixed ----------------------------
 g_dens <- ggpredict(
@@ -920,45 +743,6 @@ ggplot(g_dens, aes(x, predicted, color = level, fill = level)) +
   labs(x = "Stem density (per m²)", y = "CV of tree height",
        title = "CV ~ stem density",
        subtitle = sprintf("mean_hgt fixed at %.2f m; legacy = absent", mh)) +
-  theme_bw(base_size = 8)
-
-
-
-# keep same anchors/range as your “absent” plot
-mh <- median(both_levels_re4$mean_hgt, na.rm = TRUE)
-xr <- range(g_dens$x, na.rm = TRUE)   # reuse the x-range from your existing object
-
-# Predictions for legacy = present (two curves: subplot.present, plot.present)
-g_dens_pres <- ggpredict(
-  m_tw2,
-  terms = c(sprintf("dens_m2 [%.3f:%.3f]", xr[1], xr[2]),
-            "lev_legacy [subplot.present,plot.present]"),
-  condition      = list(mean_hgt = mh),
-  type           = "fixed",
-  back.transform = TRUE
-) |> as.data.frame() |>
-  dplyr::mutate(level = ifelse(grepl("^subplot", group), "subplot", "plot"))
-
-# Optional: raw points in the back, filtered to legacy = present and same x-range
-bg_pts <- dplyr::filter(
-  both_levels_re4,
-  legacy_class == "present",
-  dens_m2 >= xr[1], dens_m2 <= xr[2]
-)
-# CONTIINUE HERE!!!!
-ggplot() +
-  # geom_point(data = bg_pts,
-  #            aes(dens_m2, cv_hgt, color = level),
-  #            alpha = 0.20, size = 1, show.legend = FALSE) +
-  geom_ribbon(data = g_dens_pres,
-              aes(x, ymin = conf.low, ymax = conf.high, fill = level),
-              alpha = 0.18, color = NA) +
-  geom_line(data = g_dens_pres,
-            aes(x, predicted, color = level),
-            size = 1.1) +
-  labs(x = "Stem density (per m²)", y = "CV of tree height",
-       title = "CV ~ stem density",
-       subtitle = sprintf("mean_hgt fixed at %.2f m; legacy = present", mh)) +
   theme_bw(base_size = 8)
 
 
