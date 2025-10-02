@@ -693,16 +693,16 @@ g_dens <- ggpredict(
 ) |> as.data.frame() |>
   mutate(level = ifelse(grepl("^subplot", group), "subplot", "plot"))
 
-ggplot(g_dens, aes(x, predicted, color = level, fill = level)) +
+p.density <- ggplot(g_dens, aes(x, predicted, color = level, fill = level)) +
   geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.18, color = NA) +
   geom_line(size = 1.1) +
   labs(x = "Stem density (per m²)", y = "CV of tree height",
        title = "CV ~ stem density",
        subtitle = sprintf("mean_hgt fixed at %.2f m", mh)) +
-  theme_bw(base_size = 8)
+  theme_classic2(base_size = 8)
 
 
-# test for Shanon - does shannon predicts vertical diversity? 
+# test for Shannon - does shannon predicts vertical diversity? -------------
 
 # Tweedie (log link)
 m_tw_shan <- gam(
@@ -775,7 +775,7 @@ summary(m_tw_shan)
 summary(m_tw_shan2)
 summary(m_cs_shan)
 
-plot.gam(m_cs_shan, page = 1)
+plot.gam(m_lin_shan, page = 1)
 
 # Gamma (log link) with shrinkage
 m_gam_shan <- gam(
@@ -789,7 +789,7 @@ m_gam_shan <- gam(
 
 AIC(m_tw_shan, m_gam_shan)
 gratia::appraise(m_tw_shan); 
-gratia::appraise(m_cs_shan)
+gratia::appraise(m_gam_shan)
 
 p <- ggpredict(m_cs_shan)
 
@@ -797,16 +797,9 @@ plot(p, one_plot = TRUE )
 
 p <- predict_response(m_lin_shan, terms = c("shannon_sp [all]" , "level [all]"
                                            ))
-
+fin.m.shannon <- m_lin_shan
 p
 plot(p, one_plot = TRUE)
-ggplot(p, aes(x, predicted)) +
-  geom_line() +
-  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.1)
-
-library(dplyr)
-library(ggeffects)
-library(ggplot2)
 
 # anchors for conditioning
 mh <- median(both_levels_re4$mean_hgt, na.rm = TRUE)
@@ -822,10 +815,10 @@ w_legacy <- both_levels_re4 %>%
 
 # 2) Get predictions for all level×legacy combos across Shannon
 p_all <- ggpredict(
-  m_tw_shan2,
+  fin.m.shannon,
   terms = c(
     "shannon_sp [all]",
-    "lev_legacy [subplot.absent,subplot.present,plot.absent,plot.present]"
+    "level [all]"
   ),
   condition      = list(mean_hgt = mh, dens_m2 = md),
   type           = "fixed",
@@ -854,7 +847,7 @@ p_marg <- p_all %>%
   )
 
 # 4) Plot: two lines (subplot vs plot), legacy averaged
-ggplot(p_marg, aes(x, predicted, color = level, fill = level)) +
+p.shannon <- ggplot(p_marg, aes(x, predicted, color = level, fill = level)) +
   geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.18, color = NA) +
   geom_line(size = 1.1) +
   labs(
@@ -863,10 +856,10 @@ ggplot(p_marg, aes(x, predicted, color = level, fill = level)) +
     title = "CV ~ Shannon, legacy-marginalized",
     subtitle = sprintf("Density fixed at %.2f per m²; mean height fixed at %.2f m", md, mh)
   ) +
-  theme_bw(base_size = 10)
+  theme_classic2(base_size = 8)
 
 
-
+ggarrange(p.density, p.shannon, common.legend = TRUE)
 
 
 
