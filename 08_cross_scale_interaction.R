@@ -462,20 +462,24 @@ field_sub_summ <- dat23_subplot_recode %>%
     sp_richness = if (stems_total > 0) n_distinct(species[n > 0]) else 0,
     shannon_sp  = if (stems_total > 0) vegan::diversity(n, index = "shannon") else 0,
     evenness_sp = if (sp_richness > 1) shannon_sp / log(sp_richness) else 0,
-    # count-weighted mean height
-    mean_hgt    = if (stems_total > 0) sum(n * hgt_est, na.rm = TRUE) / stems_total else NA_real_,
+    # weighted mean height using only present stems
+    mean_hgt    = if (stems_total > 0) weighted.mean(hgt_est[n > 0], n[n > 0]) else NA_real_,
     
-    # Bessel-corrected, count-weighted variance and CV
-    var_hgt     = if (stems_total > 1) {
-      mu <- sum(n * hgt_est, na.rm = TRUE) / stems_total
-      sum(n * (hgt_est - mu)^2, na.rm = TRUE) / (stems_total - 1)
-    } else NA_real_,
-    cv_hgt      = if (stems_total > 1 && is.finite(mean_hgt) && mean_hgt > 0)
-      sqrt(var_hgt) / mean_hgt else NA_real_,
-    range_hgt = {
-      idx <- (n > 0) & is.finite(hgt_est)
-      if (any(idx)) diff(range(hgt_est[idx], na.rm = TRUE)) else NA_real_
+    # weighted variance (Bessel corrected), only if we have ≥ 2 distinct heights
+    var_hgt = {
+      if (stems_total > 1) {
+        h  <- hgt_est[n > 0]
+        ww <- n[n > 0]
+        if (length(unique(h[is.finite(h)])) >= 2) {
+          mu <- weighted.mean(h, ww)
+          sum(ww * (h - mu)^2) / (sum(ww) - 1)
+        } else NA_real_
+      } else NA_real_
     },
+    
+    cv_hgt    = if (!is.na(var_hgt) && is.finite(mean_hgt) && mean_hgt > 0)
+      sqrt(var_hgt) / mean_hgt else NA_real_,
+    range_hgt = if (sum(n > 0) >= 2) diff(range(hgt_est[n > 0], na.rm = TRUE)) else NA_real_,
     .groups = "drop"
   ) #%>% 
  # mutate(cv_hgt = ifelse(is.na(cv_hgt), 0L, cv_hgt),
@@ -487,7 +491,7 @@ field_sub_summ <- dat23_subplot_recode %>%
 # how many trees?
 sum(field_sub_summ$stems_total)  # 2125 stems/7816 stems/ha
 sum(field_sub_summ$stems_total == 0) # 147 
-sum(field_sub_summ$cv_hgt > 1)     # 11
+sum(field_sub_summ$cv_hgt > 1, na.rm = T)     # 11
 
 
 field_sub_summ_filt <- field_sub_summ %>%
@@ -572,7 +576,7 @@ both_levels_re2 <- bind_rows(sub_df, plot_df) %>%
 # Make a threshold for legacy effects: > 4 m
 
 # ---- 1) Tall-stem legacy (change threshold to 4 for sensitivity) ----
-tall_thresh <- 4   # meters
+tall_thresh <- 3.5   # meters
 
 tall_sub <- dat23_subplot_recode %>%
   filter(!is.na(hgt_est), n > 0) %>%
@@ -659,61 +663,13 @@ appraise(m_cv_legacy)
 plot.gam(m_cv_legacy, page = 1)
 
 
-# check different distributions
-m_t  <- mgcv::gam(update(formula(m_cv_legacy), . ~ .),
-                  data = both_levels_re4, weights = w,
-                  family = mgcv::scat(), method = "REML")   # scaled t
-m_tw <- mgcv::gam(update(formula(m_cv_legacy), . ~ .),
-                  data = both_levels_re4, weights = w,
-                  family = mgcv::tw(link = "log"), method = "REML")  # Tweedie
-
-AIC(m_cv_legacy, m_t, m_tw)    # tw is teh best!!
-
-
-# run all with the same methods "ML" to make AIC comparable
-
-m_gamma_ML <- gam(
-  cv_hgt ~ level + legacy_class +
-    s(dens_m2, by = interaction(level, legacy_class), k = 4) +
-    s(mean_hgt, k = 5) + s(plot_id, bs = "re"),
-  data = both_levels_re4, weights = w,
-  family = Gamma(link="log"), method = "ML"
-)
-
-m_t_ML <- gam(update(formula(m_gamma_ML), . ~ .),
-              data = both_levels_re4, weights = w,
-              family = mgcv::scat(), method = "ML")
-
-m_tw_ML <- gam(update(formula(m_gamma_ML), . ~ .),
-               data = both_levels_re4, weights = w,
-               family = mgcv::tw(link="log"), method = "ML", select = TRUE)
-
-AIC(m_gamma_ML, m_t_ML, m_tw_ML)
-
-appraise(m_tw_ML)     # QQ tails should be much straighter
-gam.check(m_tw_ML)    # k-index; bump k slightly only if warned
-
-
-
-
-# the t- family is not fitting anything else - go back to gamma/tweedie
-eps <- 1e-6
-both_levels_re4$log_cv <- log(pmax(both_levels_re4$cv_hgt, eps))
-
-m_logt <- mgcv::gam(
-  log_cv ~ level + legacy_class +
-    s(dens_m2, by = interaction(level, legacy_class), k = 4) +
-    s(mean_hgt, k = 5) +
-    s(plot_id, bs = "re"),
-  data = both_levels_re4, weights = w,
-  family = mgcv::scat(), method = "ML"
-)
-
 m_tw_ML <- mgcv::gam(
   cv_hgt ~ level + legacy_class +
     s(dens_m2, by = interaction(level, legacy_class), k = 5) +
-    s(mean_hgt, k = 5) + s(plot_id, bs = "re"),
-  data = both_levels_re4, weights = w,
+    s(mean_hgt, k = 5) + 
+    s(plot_id, bs = "re"),
+  data = both_levels_re4, 
+  weights = w,
   family = mgcv::tw(link = "log"), method = "ML", select = TRUE
 )
 
@@ -742,14 +698,11 @@ ggplot(g_dens, aes(x, predicted, color = level, fill = level)) +
   geom_line(size = 1.1) +
   labs(x = "Stem density (per m²)", y = "CV of tree height",
        title = "CV ~ stem density",
-       subtitle = sprintf("mean_hgt fixed at %.2f m; legacy = absent", mh)) +
+       subtitle = sprintf("mean_hgt fixed at %.2f m", mh)) +
   theme_bw(base_size = 8)
 
 
 # test for Shanon - does shannon predicts vertical diversity? 
-
-library(dplyr)
-library(tidyr)
 
 # Tweedie (log link)
 m_tw_shan <- gam(
