@@ -46,20 +46,29 @@ dat23_sf         <- sf::st_read("outData/sf_context_2023.gpkg")          # subpl
 dat23_sf_min <- dat23_sf %>%
   dplyr::select(subplot = ID, plot = cluster)
 
+# read data from 2025
+dat25_subplot    <- data.table::fread("outData/subplot_full_2025.csv")   # subplot-level table
+dat25_sf         <- sf::st_read("outData/subplot_with_clusters_2025.gpkg")          # subplot spatial data
+
+# Select and rename
+dat25_sf_min <- dat25_sf %>%
+  dplyr::select(plot_key, cluster,plot_id)
+
+
 
 
 # --- Drone CHM data 
 drone_cv         <- data.table::fread("outTable/chm_buff_raw.csv")            # pixel-level values
 
 # --- Pre-disturbance history - Raster-based history
-pre_dist_history <- data.table::fread("outTable/pre_disturb_history_raster_ALL_buffers.csv")
+#pre_dist_history <- data.table::fread("outTable/pre_disturb_history_raster_ALL_buffers.csv")
 
 # --- Tree-based history (vector layers)
-convex_hull      <- terra::vect("raw/pre-disturb_history_trees/convex_hull_full_5514_buffer.gpkg")
-pre_trees        <- terra::vect("raw/pre-disturb_history_trees/pre-disturbance_trees.gpkg")
+convex_hull      <- terra::vect("raw/pre-disturb_history_trees/cvx_hull_completed_3035.gpkg")
+pre_trees        <- terra::vect("raw/pre-disturb_history_trees/pre-disturbance_trees_3035.gpkg")
 
 # --- Buffer polygons for study sites 
-buff_square      <- terra::vect("outData/square_buffers_2m_all.gpkg")
+#buff_square      <- terra::vect("outData/square_buffers_2m_all.gpkg")
 
 ## Data clean up -------------------------------------------------
 
@@ -72,25 +81,26 @@ drone_cv <- drone_cv %>%
 
 
 ### pre-disturbance cluster: tree density, % share of spruce, Reproject to EPSG:3035 (ETRS89-LAEA)
-convex_hull_3035 <- project(convex_hull, "EPSG:3035")
-pre_trees_3035   <- project(pre_trees, "EPSG:3035")
-buff_square_3035 <- project(buff_square, "EPSG:3035")
+#convex_hull_3035 <- project(convex_hull, "EPSG:3035")
+#pre_trees_3035   <- project(pre_trees, "EPSG:3035")
+#buff_square_3035 <- project(buff_square, "EPSG:3035")
 
 # Get polygon area (in m²) & perimeter - this is convex hull + buffer around it to avoid edge effects
-convex_hull_3035$area_m2     <- expanse(convex_hull_3035, unit = "m")
-convex_hull_3035$perimeter_m <- perim(convex_hull_3035)
+convex_hull$area_m2     <- expanse(convex_hull, unit = "m")
+convex_hull$perimeter_m <- perim(convex_hull)
 
-buff_square_3035$area_m2      <- expanse(buff_square_3035, unit = "m")
-buff_square_3035$perimeter_m  <- perim(buff_square_3035)
+#buff_square_3035$area_m2      <- expanse(buff_square_3035, unit = "m")
+#buff_square_3035$perimeter_m  <- perim(buff_square_3035)
 
 
 # clean up tree characteristics: get species, ..
-pre_trees_df <- as.data.frame(pre_trees_3035) %>%
+pre_trees_df <- as.data.frame(pre_trees) %>%
   mutate(
     original_species = species,
     species = case_when(
       is.na(species) ~ "piab",
       species == "l" ~ "deciduous",
+      species == "d" ~ "deciduous",
       species == "s" ~ "piab",
       TRUE ~ species
     ),
@@ -101,11 +111,11 @@ pre_trees_df <- as.data.frame(pre_trees_3035) %>%
   dplyr::select(-original_species) 
 
 # Reattach cleaned attributes back to geometry
-pre_trees_3035_clean          <- pre_trees_3035
+pre_trees_3035_clean          <- pre_trees
 values(pre_trees_3035_clean)  <- pre_trees_df
 
 ## Clean up convex hull characteristics -------------------------
-cvx_clean <- convex_hull_3035 %>% 
+cvx_clean <- convex_hull %>% 
   as.data.frame() %>%   # attributes only (no geometry)
   mutate(
     # rok_disturbancia like "2019-…", or "nie"
@@ -122,22 +132,26 @@ cvx_clean <- convex_hull_3035 %>%
   ) %>% 
   rename(plot = cluster) %>% 
   dplyr::select(-rok_les,-rok_disturbancia, -area, -perimeter,
-                - disturbance_note)
+                - disturbance_note,
+                -layer, - path)
 
 # Write cleaned attributes back to the terra object
-convex_hull_3035_clean  <-convex_hull_3035[, c("cluster")]
+convex_hull_3035_clean  <-convex_hull[, c("cluster")]
 values(convex_hull_3035_clean)  <- cvx_clean
+
+# add cluster id to convex hull - the pre-disturbances tree were mapped before the field work was done: 
+# so some cluster names might not match. make 
 
 
 # Add subplot (square)/plot (convex hull) info to each tree  (spatial join)
 pre_trees_cvx_joined <- terra::intersect(pre_trees_3035_clean, convex_hull_3035_clean)
 # add convex hull information also to subplots
 #buff_squared_joined  <- terra::intersect(buff_square_3035, convex_hull_3035_clean)
-pre_trees_sq_joined  <- terra::intersect(pre_trees_3035_clean, buff_square_3035)
+#pre_trees_sq_joined  <- terra::intersect(pre_trees_3035_clean, buff_square_3035)
 
 ### Get stem density per Run once for convex hulls, once for squares  -------------------
 cvx_df <- as.data.frame(pre_trees_cvx_joined) 
-sq_df  <- as.data.frame(pre_trees_sq_joined) 
+#sq_df  <- as.data.frame(pre_trees_sq_joined) 
 
 ####  Plot = CVX: stem density ------------------------------
 cvx_stem_density <- cvx_df %>%
@@ -171,67 +185,39 @@ cvx_stem_density_status <- cvx_df %>%
 #### Density per square ------------------------------
 
 # Plot = CVX: stem density
-sq_stem_density <- sq_df %>%
-  #  ungroup(.) %>% 
-  group_by(plot_ID) %>%  #, area_m2
-  dplyr::reframe(
-    n_trees = n(),
-    area_m2 = mean(area_m2, na.rm  = T),  # keep are here instead of grouping
-    density_ha = n_trees / area_m2 * 10000
-  ) %>% 
-  rename(subplot = plot_ID)
-
-sq_stem_density_species <- sq_df %>%
-  group_by(plot_ID, species) %>%
-  dplyr::reframe(
-    n_trees = n(),
-    area_m2 = mean(area_m2, na.rm  = T),  # keep are here instead of grouping
-    density_ha = n_trees / area_m2 * 10000
-  ) %>% 
-  rename(subplot = plot_ID)
-
-sq_stem_density_status <- sq_df %>%
-  group_by(plot_ID, species, status) %>%
-  summarise(
-    n_trees = n(),
-    area_m2 = mean(area_m2, na.rm  = T),  # keep are here instead of grouping
-    density_sp_status = n_trees / area_m2 * 10000,
-    .groups = "drop"
-  ) %>% 
-  rename(subplot = plot_ID)
-
-
-head(sq_stem_density_species)
-head(cxv_stem_density_species)
-
-### Pre-disturbance raster -----------------
-
-pre_dist_history <- pre_dist_history %>%
-  mutate(field_year = if_else(str_detect(cluster, "_"), 2023, 2025))
-
-pre_dist_history_2023_rst <- pre_dist_history %>%   # filed only pre dicturbancs history for sites collected in 2023
-  dplyr::filter(field_year == "2023",
-                buffer_m %in% c(25, 100)) %>% # filter only two buffer widths 
-  rename(plot = cluster)
-
-# convert to wide format 
-pre_dist_2023_wide <- pre_dist_history_2023_rst %>%
-  dplyr::select(-ID, -field_year) %>%                 # drop unneeded cols
-  mutate(buff = paste0("b", buffer_m)) %>%     # label buffers b25/b100
-  pivot_wider(
-    id_cols   = c(plot, year),
-    names_from = buff,
-    values_from = c(
-      mean_cover_dens, median_cover_dens, cv_cover_dens,
-      total_cells, n_coniferous, n_deciduous, forest_cells,
-      share_coniferous, share_deciduous, shannon
-    ),
-    names_glue = "{.value}_{buff}",            # e.g., mean_cover_dens_b25
-    values_fn = dplyr::first                   # in case of duplicates
-  ) %>%
-  arrange(plot) %>% 
-  rename_with(~ paste0("pre_dst_", .x), -c(plot, year))
-
+# sq_stem_density <- sq_df %>%
+#   #  ungroup(.) %>% 
+#   group_by(plot_ID) %>%  #, area_m2
+#   dplyr::reframe(
+#     n_trees = n(),
+#     area_m2 = mean(area_m2, na.rm  = T),  # keep are here instead of grouping
+#     density_ha = n_trees / area_m2 * 10000
+#   ) %>% 
+#   rename(subplot = plot_ID)
+# 
+# sq_stem_density_species <- sq_df %>%
+#   group_by(plot_ID, species) %>%
+#   dplyr::reframe(
+#     n_trees = n(),
+#     area_m2 = mean(area_m2, na.rm  = T),  # keep are here instead of grouping
+#     density_ha = n_trees / area_m2 * 10000
+#   ) %>% 
+#   rename(subplot = plot_ID)
+# 
+# sq_stem_density_status <- sq_df %>%
+#   group_by(plot_ID, species, status) %>%
+#   summarise(
+#     n_trees = n(),
+#     area_m2 = mean(area_m2, na.rm  = T),  # keep are here instead of grouping
+#     density_sp_status = n_trees / area_m2 * 10000,
+#     .groups = "drop"
+#   ) %>% 
+#   rename(subplot = plot_ID)
+# 
+# 
+# head(sq_stem_density_species)
+# head(cxv_stem_density_species)
+# 
 
 ### Field data: subplot level --------------------------------------
 
