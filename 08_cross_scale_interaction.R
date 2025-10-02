@@ -32,6 +32,9 @@ library(corrplot)
 library(GGally)
 library(vegan) # for diversity indices
 
+library(mgcv)
+
+
 
 # Read files: only field 2023!  --------------
 # --- Field data: 2023 
@@ -458,15 +461,20 @@ field_sub_summ <- dat23_subplot_recode %>%
     sp_richness = if (stems_total > 0) n_distinct(species[n > 0]) else 0,
     shannon_sp  = if (stems_total > 0) vegan::diversity(n, index = "shannon") else 0,
     evenness_sp = if (sp_richness > 1) shannon_sp / log(sp_richness) else 0,
-    mean_hgt    = if (stems_total > 0) weighted.mean(hgt_est, n, na.rm = TRUE) else NA_real_,
-    median_hgt    = if (stems_total > 0) median(hgt_est, na.rm = TRUE) else NA_real_,
+    # count-weighted mean height
+    mean_hgt    = if (stems_total > 0) sum(n * hgt_est, na.rm = TRUE) / stems_total else NA_real_,
     
-    # fix CV - if all subplots have not stems, CV is 0
-    cv_hgt = if (stems_total > 0 && mean(hgt_est, na.rm = TRUE) > 0) {
-      sd(hgt_est, na.rm = TRUE) / mean(hgt_est, na.rm = TRUE)
-    } else 0,
-    range_hgt   = if (stems_total > 0 && !all(is.na(hgt_est)))
-      max(hgt_est, na.rm = TRUE) - min(hgt_est, na.rm = TRUE) else NA_real_,
+    # Bessel-corrected, count-weighted variance and CV
+    var_hgt     = if (stems_total > 1) {
+      mu <- sum(n * hgt_est, na.rm = TRUE) / stems_total
+      sum(n * (hgt_est - mu)^2, na.rm = TRUE) / (stems_total - 1)
+    } else NA_real_,
+    cv_hgt      = if (stems_total > 1 && is.finite(mean_hgt) && mean_hgt > 0)
+      sqrt(var_hgt) / mean_hgt else NA_real_,
+    range_hgt = {
+      idx <- (n > 0) & is.finite(hgt_est)
+      if (any(idx)) diff(range(hgt_est[idx], na.rm = TRUE)) else NA_real_
+    },
     .groups = "drop"
   ) %>% 
   mutate(cv_hgt = ifelse(is.na(cv_hgt), 0L, cv_hgt),
@@ -477,14 +485,14 @@ field_sub_summ <- dat23_subplot_recode %>%
 # summarize subplot information 
 # how many trees?
 sum(field_sub_summ$stems_total)  # 2125 stems/7816 stems/ha
-sum(field_sub_summ$stems_total == 0)
-sum(field_sub_summ$cv_hgt > 1)
+sum(field_sub_summ$stems_total == 0) # 147 
+sum(field_sub_summ$cv_hgt > 1)     # 11
 
 
 field_sub_summ_filt <- field_sub_summ %>%
   filter(stems_total > 0 & cv_hgt > 0)
 
-ggplot(field_sub_summ_filt, aes(x = stems_total, y = cv_hgt)) +
+p1 <- ggplot(field_sub_summ_filt, aes(x = stems_total, y = cv_hgt)) +
   geom_point(alpha = 0.4, size = 2, color = "grey40") +
   geom_smooth(method = "loess", se = TRUE, color = "red") +
   geom_smooth(method = "gam", formula = y ~ s(x, k = 3),
@@ -495,14 +503,25 @@ ggplot(field_sub_summ_filt, aes(x = stems_total, y = cv_hgt)) +
     title = "Stem density vs. Vertical Structural Variation",
     subtitle = "Empty subplots excluded"
   ) +
-  theme_minimal(base_size = 14)
+  theme_classic2(base_size = 8)
 
+
+p2 <- ggplot(field_sub_summ_filt, aes(x = shannon_sp, y = cv_hgt)) +
+  geom_point(alpha = 0.4, size = 2, color = "grey40") +
+  geom_smooth(method = "loess", se = TRUE, color = "red") +
+  geom_smooth(method = "gam", formula = y ~ s(x, k = 3),
+              se = TRUE, color = "blue", linetype = "dashed") +
+  labs(
+    x = "Shannon per subplot",
+    y = "CV of tree height",
+    title = "Shannon vs. Vertical Structural Variation",
+    subtitle = "Empty subplots excluded"
+  ) +
+  theme_classic2(base_size = 8)
+
+ggarrange(p1, p2)
 # ssame analysis on both scales? 
 # START
-
-library(dplyr)
-library(ggplot2)
-library(mgcv)
 
 # --- 1) Make COMPARABLE x-axis: stem density per m² --------------------
 area_subplot_m2 <- 4      # 4 m²
@@ -610,6 +629,8 @@ sub_df <- field_sub_summ %>%
     dens_m2  = stems_total / 4,     # 4 m² subplot
     cv_hgt   = cv_hgt,
     mean_hgt = mean_hgt,
+    sp_richness = sp_richness,
+    shannon_sp  = shannon_sp ,
     w        = stems_total
   )
 
@@ -622,6 +643,8 @@ plot_df <- plot_metrics_pooled %>%
     dens_m2  = stems_total / 20,    # 5×4 m² = 20 m²
     cv_hgt   = cv_hgt,
     mean_hgt = mean_hgt,
+    sp_richness = sp_richness,
+    shannon_sp  = shannon_sp ,
     w        = stems_total
   ) %>%
   filter(!is.na(cv_hgt), cv_hgt > 0)
@@ -767,7 +790,7 @@ m_tw <- mgcv::gam(update(formula(m_cv_legacy), . ~ .),
                   data = both_levels_re4, weights = w,
                   family = mgcv::tw(link = "log"), method = "REML")  # Tweedie
 
-AIC(m_cv_legacy, m_t, m_tw)    # pick the one that’s lower / with cleaner residuals
+AIC(m_cv_legacy, m_t, m_tw)    # tw is teh best!!
 
 
 # run all with the same methods "ML" to make AIC comparable
@@ -796,7 +819,7 @@ gam.check(m_tw_ML)    # k-index; bump k slightly only if warned
 
 
 
-# the t- family is not fitting anything else - go back to gamma
+# the t- family is not fitting anything else - go back to gamma/tweedie
 eps <- 1e-6
 both_levels_re4$log_cv <- log(pmax(both_levels_re4$cv_hgt, eps))
 
@@ -897,20 +920,213 @@ ggplot(g_dens, aes(x, predicted, color = level, fill = level)) +
   labs(x = "Stem density (per m²)", y = "CV of tree height",
        title = "CV ~ stem density",
        subtitle = sprintf("mean_hgt fixed at %.2f m; legacy = absent", mh)) +
-  theme_minimal(base_size = 8)
+  theme_bw(base_size = 8)
 
 
 
+# keep same anchors/range as your “absent” plot
+mh <- median(both_levels_re4$mean_hgt, na.rm = TRUE)
+xr <- range(g_dens$x, na.rm = TRUE)   # reuse the x-range from your existing object
+
+# Predictions for legacy = present (two curves: subplot.present, plot.present)
+g_dens_pres <- ggpredict(
+  m_tw2,
+  terms = c(sprintf("dens_m2 [%.3f:%.3f]", xr[1], xr[2]),
+            "lev_legacy [subplot.present,plot.present]"),
+  condition      = list(mean_hgt = mh),
+  type           = "fixed",
+  back.transform = TRUE
+) |> as.data.frame() |>
+  dplyr::mutate(level = ifelse(grepl("^subplot", group), "subplot", "plot"))
+
+# Optional: raw points in the back, filtered to legacy = present and same x-range
+bg_pts <- dplyr::filter(
+  both_levels_re4,
+  legacy_class == "present",
+  dens_m2 >= xr[1], dens_m2 <= xr[2]
+)
+# CONTIINUE HERE!!!!
+ggplot() +
+  # geom_point(data = bg_pts,
+  #            aes(dens_m2, cv_hgt, color = level),
+  #            alpha = 0.20, size = 1, show.legend = FALSE) +
+  geom_ribbon(data = g_dens_pres,
+              aes(x, ymin = conf.low, ymax = conf.high, fill = level),
+              alpha = 0.18, color = NA) +
+  geom_line(data = g_dens_pres,
+            aes(x, predicted, color = level),
+            size = 1.1) +
+  labs(x = "Stem density (per m²)", y = "CV of tree height",
+       title = "CV ~ stem density",
+       subtitle = sprintf("mean_hgt fixed at %.2f m; legacy = present", mh)) +
+  theme_bw(base_size = 8)
 
 
+# test for Shanon - does shannon predicts vertical diversity? 
+
+library(dplyr)
+library(tidyr)
+
+# Tweedie (log link)
+m_tw_shan <- gam(
+  cv_hgt ~ level + legacy_class +
+    s(shannon_sp, by = lev_legacy, k = 3) +
+    s(mean_hgt, k = 3) +
+    #s(dens_m2, k = 3 ) +
+    s(plot_id, bs = "re"),
+  data = both_levels_re4, weights = w,
+  family = mgcv::tw(link = "log"), method = "ML", select = TRUE
+)
+
+m_tw_shan2 <- gam(
+  cv_hgt ~ level + legacy_class +
+    s(shannon_sp, by = lev_legacy, k = 3) +
+    s(mean_hgt, k = 3) +
+    s(dens_m2, k = 3 ) +
+    s(plot_id, bs = "re"),
+  data = both_levels_re4, weights = w,
+  family = mgcv::tw(link = "log"), method = "ML", select = TRUE
+)
 
 
+m_cs_shan <- gam(
+  cv_hgt ~ level + legacy_class +
+    s(shannon_sp, by = lev_legacy, k = 3, bs = "cs") +  # ‘cs’ lets the wiggle shrink away
+    s(dens_m2,  k = 3, bs = "cs") +
+    s(mean_hgt, k = 3, bs = "cs") +
+    s(plot_id, bs = "re"),
+  data = both_levels_re4, weights = w,
+  family = mgcv::tw(link = "log"), method = "ML", select = TRUE
+)
 
 
+m_lin_shan <- gam(
+  cv_hgt ~ legacy_class + level * shannon_sp +                 # <- linear slopes by level
+    s(dens_m2,  k = 3, bs = "cs") +
+    s(mean_hgt, k = 3, bs = "cs") +
+    s(plot_id,  bs = "re"),
+  data = both_levels_re4, weights = w,
+  family = tw(link = "log"), method = "ML", select = TRUE
+)
+
+# lev_legacy has levels like "subplot.absent", "plot.absent", ...
+m_lin_4 <- gam(
+  cv_hgt ~ 0 + lev_legacy + shannon_sp:lev_legacy +         # separate intercepts & slopes per group
+    s(dens_m2,  k = 3, bs = "cs") +
+    s(mean_hgt, k = 3, bs = "cs") +
+    s(plot_id,  bs = "re"),
+  data = both_levels_re4, weights = w,
+  family = tw(link = "log"), method = "ML", select = TRUE
+)
+
+p4 <- predict_response(m_lin_4, terms = c("shannon_sp [all]", "lev_legacy"))
+plot(p4, one_plot = TRUE)
+
+AIC(m_lin_4, m_lin_shan)
+
+both_levels_re4 %>% 
+  ggplot(aes(x = shannon_sp,
+             y = cv_hgt,
+             color = level)) + 
+  geom_point() + 
+  geom_smooth()
 
 
+# !!!!
+AIC(m_tw_shan, m_tw_shan2,m_cs_shan,m_lin_shan)
+summary(m_tw_shan)
+summary(m_tw_shan2)
+summary(m_cs_shan)
 
+plot.gam(m_cs_shan, page = 1)
 
+# Gamma (log link) with shrinkage
+m_gam_shan <- gam(
+  cv_hgt ~ level + legacy_class +
+    s(shannon_sp, by = lev_legacy, k = 3, bs = "cs") +
+    s(mean_hgt, k = 3, bs = "cs") +
+    s(plot_id, bs = "re"),
+  data = both_levels_re4, weights = w,
+  family = Gamma(link = "log"), method = "ML", select = TRUE
+)
+
+AIC(m_tw_shan, m_gam_shan)
+gratia::appraise(m_tw_shan); 
+gratia::appraise(m_cs_shan)
+
+p <- ggpredict(m_cs_shan)
+
+plot(p, one_plot = TRUE )
+
+p <- predict_response(m_lin_shan, terms = c("shannon_sp [all]" , "level [all]"
+                                           ))
+
+p
+plot(p, one_plot = TRUE)
+ggplot(p, aes(x, predicted)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.1)
+
+library(dplyr)
+library(ggeffects)
+library(ggplot2)
+
+# anchors for conditioning
+mh <- median(both_levels_re4$mean_hgt, na.rm = TRUE)
+md <- median(both_levels_re4$dens_m2,  na.rm = TRUE)
+
+# 1) Observed weights of legacy within each scale (subplot/plot)
+w_legacy <- both_levels_re4 %>%
+  count(level, legacy_class, name = "n") %>%
+  group_by(level) %>%
+  mutate(w = n / sum(n)) %>%
+  ungroup()
+# w_legacy has columns: level, legacy_class, w
+
+# 2) Get predictions for all level×legacy combos across Shannon
+p_all <- ggpredict(
+  m_tw_shan2,
+  terms = c(
+    "shannon_sp [all]",
+    "lev_legacy [subplot.absent,subplot.present,plot.absent,plot.present]"
+  ),
+  condition      = list(mean_hgt = mh, dens_m2 = md),
+  type           = "fixed",
+  back.transform = TRUE
+) %>% 
+  as.data.frame() %>%
+  mutate(
+    level  = ifelse(grepl("^subplot", group), "subplot", "plot"),
+    legacy = ifelse(grepl("present$", group), "present", "absent"),
+    se     = (conf.high - conf.low) / (2 * 1.96)
+  ) %>%
+  left_join(w_legacy, by = c("level" = "level", "legacy" = "legacy_class"))
+
+# 3) Legacy-averaged (marginal) curves per scale
+p_marg <- p_all %>%
+  group_by(level, x) %>%
+  summarise(
+    predicted = sum(w * predicted, na.rm = TRUE),
+    # simple pooled SE under independence
+    se        = sqrt(sum((w * se)^2, na.rm = TRUE)),
+    .groups   = "drop"
+  ) %>%
+  mutate(
+    conf.low  = predicted - 1.96 * se,
+    conf.high = predicted + 1.96 * se
+  )
+
+# 4) Plot: two lines (subplot vs plot), legacy averaged
+ggplot(p_marg, aes(x, predicted, color = level, fill = level)) +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.18, color = NA) +
+  geom_line(size = 1.1) +
+  labs(
+    x = "Species Shannon (subplot/plot scale-consistent)",
+    y = "Predicted CV of tree height",
+    title = "CV ~ Shannon, legacy-marginalized",
+    subtitle = sprintf("Density fixed at %.2f per m²; mean height fixed at %.2f m", md, mh)
+  ) +
+  theme_bw(base_size = 10)
 
 
 
