@@ -160,7 +160,7 @@ cvx_stem_density <- cvx_df %>%
   dplyr::reframe(
     n_trees = n(),
     area_m2 = mean(area_m2, na.rm  = T),  # keep are here instead of grouping
-    density_ha = n_trees / area_m2 * 10000
+    pre_dist_dens_ha = n_trees / area_m2 * 10000
   )
 
 cxv_stem_density_species <- cvx_df %>%
@@ -327,14 +327,6 @@ dat23_subplot_recode %>%
 # no mature trees!!
 
 
-
-
-
-
-
-#hist(dat23_subplot_recode$clear)
-
-
 ### Get context information: management intensity at plot level ----------------------------
 # --- 1) Columns to use & NA -> 0 
 management_types_v <- c("clear", "grndwrk", "logging_trail", "planting", "anti_browsing")
@@ -378,7 +370,7 @@ mng_plot_intensity <- mng_subplot_scores %>%
     management_intensity = pmin(pmax(management_intensity, 0), 1)
   )
 
-###  Get Regeneration stem density based on height group: small, advanced, mature ------------- 
+###  Get Subplot Regeneration stem density based on height group: small, advanced, mature ------------- 
 # need to get plot level average! 
 subplot_group_density_wide <- dat23_subplot_recode %>%
   dplyr::filter(vegtype %in% c("small", "advanced")) %>%
@@ -601,6 +593,7 @@ legacy_plot <- legacy_plot %>%
 # ---- 2) Join onto your modelling frame (both_levels_re2 already has plot_id) ----
 both_levels_re4 <- both_levels_re2 %>%
   left_join(legacy_plot, by = c("plot_id" = "plot")) %>%
+  left_join(cvx_stem_density, by = c("plot_id" = "plot")) %>% # year 2025 is automatically filtered
   mutate(
     legacy_class = as.character(legacy_class),
     legacy_class = ifelse(is.na(legacy_class), "none", legacy_class),
@@ -648,6 +641,28 @@ library(gratia)
 appraise(m_cv_legacy)
 plot.gam(m_cv_legacy, page = 1)
 
+# test pre-disturbance trees:
+both_levels_re4 %>% 
+  ggplot(aes(x = pre_dist_dens_ha   ,
+             y = dens_m2            )) +
+  geom_point() + 
+  geom_smooth()
+
+
+both_levels_re4 %>% 
+  ggplot(aes(x = pre_dist_dens_ha   ,
+             y = cv_hgt            )) +
+  geom_point() + 
+  geom_smooth()
+
+
+both_levels_re4 %>% 
+  ggplot(aes(x = pre_dist_dens_ha   ,
+             y = shannon_sp            )) +
+  geom_point() + 
+  geom_smooth()
+
+
 
 m_tw_ML <- mgcv::gam(
   cv_hgt ~ level + legacy_class +
@@ -661,6 +676,47 @@ m_tw_ML <- mgcv::gam(
 
 fin.m <- m_tw_ML
 plot.gam(fin.m, page = 1, shade = T)
+
+
+# addd pre disturbance conditison:
+both_levels_re4 <- both_levels_re4 %>%
+  mutate(
+    pre_dens_m2 = pre_dist_dens_ha / 1e4,                   # trees / m^2
+    pre_sc      = as.numeric(scale(log1p(pre_dens_m2)))     # stable, centered
+  )
+
+
+m_tw_pre1 <- gam(
+  cv_hgt ~ level + #legacy_class +
+    s(dens_m2, by = interaction(level, legacy_class), k = 5) + #, bs = "cs"
+    s(mean_hgt, k = 5, bs = "cs") +
+    s(pre_sc,  by = level, k = 4, bs = "cs") +       # <-- history term
+    s(plot_id, bs = "re"),
+  data = both_levels_re4,
+  weights = w,
+  family = mgcv::tw(link = "log"),
+  method = "ML", select = TRUE
+)
+
+AIC(m_tw_pre1, m_tw_ML)
+
+plot.gam(m_tw_pre1, page = 1)
+
+mh <- median(both_levels_re4$mean_hgt, na.rm = TRUE)
+pd <- median(both_levels_re4$pre_sc,   na.rm = TRUE)
+
+
+g_dens <- ggpredict(
+  m_tw_pre1,
+  terms     = c("pre_sc  [all]"),
+  condition = list(mean_hgt = mh, pre_sc = pd),
+  type      = "fixed"
+)
+plot(g_dens, one_plot = TRUE)
+
+
+
+
 
 
 # anchors for conditioning
