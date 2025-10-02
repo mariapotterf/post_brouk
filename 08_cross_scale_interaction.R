@@ -687,7 +687,7 @@ both_levels_re4 <- both_levels_re4 %>%
 
 
 m_tw_pre1 <- gam(
-  cv_hgt ~ level + #legacy_class +
+  cv_hgt ~ level + legacy_class +
     s(dens_m2, by = interaction(level, legacy_class), k = 5) + #, bs = "cs"
     s(mean_hgt, k = 5, bs = "cs") +
     s(pre_sc,  by = level, k = 4, bs = "cs") +       # <-- history term
@@ -706,15 +706,12 @@ mh <- median(both_levels_re4$mean_hgt, na.rm = TRUE)
 pd <- median(both_levels_re4$pre_sc,   na.rm = TRUE)
 
 
-g_dens <- ggpredict(
-  m_tw_pre1,
-  terms     = c("pre_sc  [all]"),
-  condition = list(mean_hgt = mh, pre_sc = pd),
-  type      = "fixed"
-)
-plot(g_dens, one_plot = TRUE)
 
+p <- predict_response(m_tw_pre1, terms = c("dens_m2 [all]"))
 
+plot(p, one_plot = TRUE)
+
+# Continue from HERE!!!!!! 10022025
 
 
 
