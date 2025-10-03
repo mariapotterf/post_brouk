@@ -64,11 +64,8 @@ dat25_sf_min <- dat25_sf %>%
 #pre_dist_history <- data.table::fread("outTable/pre_disturb_history_raster_ALL_buffers.csv")
 
 # --- Tree-based history (vector layers)
-convex_hull      <- terra::vect("raw/pre-disturb_history_trees/cvx_hull_completed_3035_cluster_name.gpkg")
+convex_hull      <- terra::vect("raw/pre-disturb_history_trees/cvx_hull_completed_3035.gpkg")
 pre_trees        <- terra::vect("raw/pre-disturb_history_trees/pre-disturbance_trees_3035.gpkg")
-
-# remove data outside of C4 (Dresden)
-convex_hull <- convex_hull[ !is.na(convex_hull$status), ]
 
 
 # --- Buffer polygons for study sites 
@@ -108,7 +105,7 @@ pre_trees_df <- as.data.frame(pre_trees) %>%
       species == "s" ~ "piab",
       TRUE ~ species
     ),
-    status = case_when(
+    state = case_when(
       original_species == "s" ~ "dry",
       TRUE ~ "living"
     )) %>%
@@ -135,17 +132,13 @@ cvx_clean <- convex_hull %>%
     disturbance_length = disturbance_year - forest_year
   ) %>% 
   #rename(plot = cluster) %>% 
-  dplyr::select(-rok_les,-rok_disturbancia, -area, -perimeter,
-                - disturbance_note,
-                -layer, - path)
+  dplyr::select(-rok_les,-rok_disturbancia, 
+                - disturbance_note
+                )
 
 # Write cleaned attributes back to the terra object
-convex_hull_3035_clean  <-convex_hull[, c("cluster")]
+convex_hull_3035_clean  <-convex_hull[, c("cluster_2023","cluster_2025")]
 values(convex_hull_3035_clean)  <- cvx_clean
-
-# add cluster id to convex hull - the pre-disturbances tree were mapped before the field work was done: 
-# so some cluster names might not match. make 
-
 
 # Add subplot (square)/plot (convex hull) info to each tree  (spatial join)
 pre_trees_cvx_joined <- terra::intersect(pre_trees_3035_clean, convex_hull_3035_clean)
@@ -154,13 +147,22 @@ pre_trees_cvx_joined <- terra::intersect(pre_trees_3035_clean, convex_hull_3035_
 #pre_trees_sq_joined  <- terra::intersect(pre_trees_3035_clean, buff_square_3035)
 
 ### Get stem density per Run once for convex hulls, once for squares  -------------------
-cvx_df <- as.data.frame(pre_trees_cvx_joined) 
+cvx_df <- as.data.frame(pre_trees_cvx_joined)
+names(cvx_df) <- make.unique(names(cvx_df))
+
+# simplify shared name between clusters for pre-disturbance history
+cvx_df <- 
+  as.data.frame(cvx_df) %>% 
+    mutate(cluster_2025 = as.character(cluster_2025)) %>% 
+  mutate(plot_common = paste(cluster_2023, cluster_2025,sep =  "_")) %>% 
+  dplyr::select(-common_cluster_ID)
+
 #sq_df  <- as.data.frame(pre_trees_sq_joined) 
 
 ####  Plot = CVX: stem density ------------------------------
 cvx_stem_density <- cvx_df %>%
 #  ungroup(.) %>% 
-  group_by(plot) %>%  #, area_m2
+  group_by(plot_common) %>%  #, area_m2
   dplyr::reframe(
     n_trees = n(),
     area_m2 = mean(area_m2, na.rm  = T),  # keep are here instead of grouping
@@ -168,7 +170,7 @@ cvx_stem_density <- cvx_df %>%
   )
 
 cxv_stem_density_species <- cvx_df %>%
-  group_by(plot, species) %>%
+  group_by(plot_common, species) %>%
   dplyr::reframe(
     n_trees = n(),
     area_m2 = mean(area_m2, na.rm  = T),  # keep are here instead of grouping
@@ -176,7 +178,7 @@ cxv_stem_density_species <- cvx_df %>%
   )
 
 cvx_stem_density_status <- cvx_df %>%
-  group_by(plot, species, status) %>%
+  group_by(plot_common, species, status) %>%
   summarise(
     n_trees = n(),
     area_m2 = mean(area_m2, na.rm  = T),  # keep are here instead of grouping
