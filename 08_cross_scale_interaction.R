@@ -58,14 +58,18 @@ dat25_sf_min <- dat25_sf %>%
 
 
 # --- Drone CHM data 
-drone_cv         <- data.table::fread("outTable/chm_buff_raw.csv")            # pixel-level values
+#drone_cv         <- data.table::fread("outTable/chm_buff_raw.csv")            # pixel-level values
 
 # --- Pre-disturbance history - Raster-based history
 #pre_dist_history <- data.table::fread("outTable/pre_disturb_history_raster_ALL_buffers.csv")
 
 # --- Tree-based history (vector layers)
-convex_hull      <- terra::vect("raw/pre-disturb_history_trees/cvx_hull_completed_3035.gpkg")
+convex_hull      <- terra::vect("raw/pre-disturb_history_trees/cvx_hull_completed_3035_cluster_name.gpkg")
 pre_trees        <- terra::vect("raw/pre-disturb_history_trees/pre-disturbance_trees_3035.gpkg")
+
+# remove data outside of C4 (Dresden)
+convex_hull <- convex_hull[ !is.na(convex_hull$status), ]
+
 
 # --- Buffer polygons for study sites 
 #buff_square      <- terra::vect("outData/square_buffers_2m_all.gpkg")
@@ -73,11 +77,11 @@ pre_trees        <- terra::vect("raw/pre-disturb_history_trees/pre-disturbance_t
 ## Data clean up -------------------------------------------------
 
 # rename to 'subplots'
-drone_cv <- drone_cv %>% 
-  rename(subplot = plot_ID) %>% 
-  mutate(plot = str_replace(subplot, "^[^_]+_([^_]+_[^_]+)_.*$", "\\1"),
-         pixel_value = pmax(pixel_value, 0)   # clamp negatives to 0)
-  )
+# drone_cv <- drone_cv %>% 
+#   rename(subplot = plot_ID) %>% 
+#   mutate(plot = str_replace(subplot, "^[^_]+_([^_]+_[^_]+)_.*$", "\\1"),
+#          pixel_value = pmax(pixel_value, 0)   # clamp negatives to 0)
+#   )
 
 
 ### pre-disturbance cluster: tree density, % share of spruce, Reproject to EPSG:3035 (ETRS89-LAEA)
@@ -130,7 +134,7 @@ cvx_clean <- convex_hull %>%
     forest_year = suppressWarnings(as.integer(rok_les)),
     disturbance_length = disturbance_year - forest_year
   ) %>% 
-  rename(plot = cluster) %>% 
+  #rename(plot = cluster) %>% 
   dplyr::select(-rok_les,-rok_disturbancia, -area, -perimeter,
                 - disturbance_note,
                 -layer, - path)
