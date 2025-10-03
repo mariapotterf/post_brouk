@@ -68,25 +68,68 @@ centroids_2023 <- dat23_sf %>%
   group_by(cluster) %>%
   summarise(do_union = TRUE) %>%
   st_centroid() %>%
-  rename(cluster_2023 = cluster)
+  rename(cluster_2023 = cluster) #%>% 
+  #mutate(year = 2023)
 
 centroids_2025 <- dat25_sf %>%
   group_by(cluster) %>%
   summarise(do_union = TRUE) %>%
   st_centroid() %>%
-  rename(cluster_2025 = cluster)
+  rename(cluster_2025 = cluster) #%>% 
+  #mutate(year = 2025)
 
 
 # Match CRS
 centroids_2023 <- st_transform(centroids_2023, st_crs(centroids_2025))
 
-# Find clusters within 50 m
+# Find clusters within 25 m
 overlaps <- st_join(centroids_2025, centroids_2023, join = st_is_within_distance, dist = 25) %>%
   dplyr::filter(!is.na(cluster_2023)) %>%
   mutate(common_cluster_ID = paste0("c_", cluster_2023, "_", cluster_2025))
 
 overlaps
 
+
+# merge all points:
+# 1) BOTH — use the geometry carried by `overlaps` (it came from 2025 side of st_join)
+both_sf <- 
+  overlaps %>%
+  distinct(cluster_2023, cluster_2025, .keep_all = TRUE) %>%  # if many-to-one, keep first
+  mutate(
+    status = "both",
+    common_cluster_ID = paste0("c_", cluster_2023, "_", cluster_2025)
+  ) %>%
+  select(status, common_cluster_ID, cluster_2023, cluster_2025, geom)
+
+# 2) ONLY_2023 — start from 2023 centroids so we keep their geometry
+only23_sf <- centroids_2023 %>%
+  anti_join(st_drop_geometry(overlaps) %>% select(cluster_2023), by = "cluster_2023") %>%
+  mutate(
+    status = "only_2023",
+    common_cluster_ID = paste0("o23_", cluster_2023),
+    cluster_2025 = NA_integer_
+  ) %>%
+  select(status, common_cluster_ID, cluster_2023, cluster_2025, geom)
+
+# 3) ONLY_2025 — start from 2025 centroids (their geometry)
+only25_sf <- centroids_2025 %>%
+  anti_join(st_drop_geometry(overlaps) %>% select(cluster_2025), by = "cluster_2025") %>%
+  mutate(
+    status = "only_2025",
+    common_cluster_ID = paste0("o25_", cluster_2025),
+    cluster_2023 = NA_character_
+  ) %>%
+  select(status, common_cluster_ID, cluster_2023, cluster_2025, geom)
+
+# 4) MERGE into a single sf (same column order + same CRS)
+presence_sf <- rbind(both_sf, only23_sf, only25_sf)
+
+ggplot(presence_sf) +
+  geom_sf(aes(shape = status,color = status)) +
+  scale_shape_manual(values = c(both = 16, only_2023 = 1, only_2025 = 17)) +
+  theme_minimal()
+
+table(presence$status)
 # export overlaps -----------------------------------
 
 # Save spatial subplot data with cluster IDs
@@ -96,3 +139,5 @@ st_write(overlaps, "outData/google_my_map/overlaps.kml", driver = "KML", delete_
 # Save spatial subplot data with cluster IDs
 st_write(centroids_2025, "outData/centroids_2025.gpkg", delete_layer = TRUE)
 st_write(centroids_2023, "outData/centroids_2023.gpkg", delete_layer = TRUE)
+
+st_write(presence_sf, "outData/centroids_combined.gpkg", delete_layer = TRUE)
