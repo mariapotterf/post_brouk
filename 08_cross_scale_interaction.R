@@ -773,7 +773,91 @@ both_levels_re2 <- bind_rows(sub_df, plot_df) %>%
     level   = factor(level, levels = c("subplot","plot")),
     plot_id = factor(plot_id),
     w       = pmin(pmax(w, 1), 50)   # cap weights so a few dense plots don't dominate
-  )
+  ) %>% 
+  mutate(dens_ha = dens_m2*10000)
+
+
+#df_violin %>% 
+p.dens <- both_levels_re2 %>% 
+  #dplyr::filter()
+  ggplot(aes(x = year, y = dens_ha , fill = level, color = level)
+             ) +
+  geom_violin(alpha = 0.5, trim = TRUE, width = 0.8,
+              position = position_dodge(0.9)) +
+  geom_boxplot(outlier.shape = NA, color = 'black', alpha = 0.5, width=0.1,position = position_dodge(0.9)) +
+  coord_cartesian(y = c(0,35000))
+
+  #
+
+#df_violin %>% 
+p.height<- both_levels_re2 %>% 
+  #dplyr::filter()
+  ggplot(aes(x = year, y = mean_hgt , fill = level, color = level)
+  ) +
+  geom_violin(alpha = 0.5, trim = TRUE, width = 0.8,
+              position = position_dodge(0.9)) +
+  geom_boxplot(outlier.shape = NA, color = 'black', alpha = 0.5, width=0.1,position = position_dodge(0.9))+
+  coord_cartesian(y = c(0,6))
+  
+p.cv<- both_levels_re2 %>% 
+  #dplyr::filter()
+  ggplot(aes(x = year, y = cv_hgt , fill = level, color = level)
+  ) +
+  geom_violin(alpha = 0.5, trim = TRUE, width = 0.8,
+              position = position_dodge(0.9)) +
+  geom_boxplot(outlier.shape = NA, color = 'black', alpha = 0.5, width=0.1,position = position_dodge(0.9))  #ylim(0,7)
+p.cv
+
+p.shannon <- both_levels_re2 %>% 
+  #dplyr::filter()
+  ggplot(aes(x = year, y = shannon_sp   , fill = level, color = level)
+  ) +
+  geom_violin(alpha = 0.5, trim = TRUE, width = 0.8,
+              position = position_dodge(0.9)) +
+  geom_boxplot(outlier.shape = NA, color = 'black', alpha = 0.5, width=0.1,position = position_dodge(0.9))#ylim(0,7)
+
+p.richness <- both_levels_re2 %>% 
+  #dplyr::filter()
+  ggplot(aes(x = year, y = sp_richness, fill = level, color = level)
+  ) +
+  geom_violin(alpha = 0.5, trim = TRUE, width = 0.8,
+              position = position_dodge(0.9)) +
+  geom_boxplot(outlier.shape = NA, color = 'black', alpha = 0.5, width=0.1,position = position_dodge(0.9))# +
+
+p.richness
+
+ggarrange(p.dens, p.height, p.cv, p.shannon, p.richness, common.legend = TRUE )
+
+
+# get summary statistics
+out_summary_tbl <- both_levels_re2 %>%
+  ungroup() %>%
+  select(year, level, mean_hgt, cv_hgt, shannon_sp, sp_richness) %>%
+  pivot_longer(-c(year, level), names_to = "metric", values_to = "value") %>%
+  # keep mean_hgt > 0, others as-is
+  filter(!(metric == "mean_hgt" & (is.na(value) | value <= 0))) %>%
+  group_by(metric, year, level) %>%
+  summarise(
+    n_total  = n(),
+    n_non_na = sum(!is.na(value)),
+    n_na     = sum(is.na(value)),
+    mean     = mean(value, na.rm = TRUE),
+    sd       = sd(value, na.rm = TRUE),
+    se       = sd/sqrt(n_non_na),
+    median   = median(value, na.rm = TRUE),
+    p25      = quantile(value, 0.25, na.rm = TRUE),
+    p75      = quantile(value, 0.75, na.rm = TRUE),
+    .groups  = "drop"
+  ) %>%
+  arrange(metric, year)
+
+out_summary_tbl
+
+
+
+
+
+
 
 
 # Make a threshold for legacy effects: > 4 m
