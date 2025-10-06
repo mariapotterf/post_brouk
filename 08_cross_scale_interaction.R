@@ -372,18 +372,11 @@ dat_subplot_recode <- dat_subplots %>%
     ba_total_cm2   = basal_area_cm2 * n,
     ba_total_m2    = ba_total_cm2 / 10000,
     #ba_ha_m2       = ba_total_m2 * scaling_factor
-  ) #%>% 
-#  mutate(n = ifelse(is.na(n), 0L, n),
- #        stem_density = ifelse(is.na(stem_density), 0L, stem_density))
+  ) 
 
-
-
-
-
-  
 
 # define recovery type: based on species that are likely planted/pioneer
-dat23_subplot_recode <- dat23_subplot_recode %>%
+dat_subplot_recode <- dat_subplot_recode %>%
   mutate(recovery_type = case_when(
     # --- Planted / late-successional / non-native ---
     species %in% c("piab","pisy","abal","lade","psme","taba",
@@ -399,107 +392,121 @@ dat23_subplot_recode <- dat23_subplot_recode %>%
     TRUE ~ "other"
   ))
 
-# get stem density by vertical class
-plot_density <- dat23_subplot_recode %>%
-  group_by(plot, vegtype) %>%
-  summarise(stem_density_sum = sum(stem_density, na.rm = TRUE), 
-            .groups = "drop") %>% 
-  pivot_wider(
-    names_from = vegtype,
-    values_from = stem_density_sum,
-    values_fill = 0
-  ) %>% 
-  mutate(stem_regeneration = advanced + small,
-         sum_density = advanced + small + mature)
+# get master table, having all unique plots and subplots
+dat_master_subplot <- dat_subplot_recode %>% 
+  dplyr::select(plot, subplot, year) %>% 
+  distinct()
 
+table(dat_master_subplot$year)  
 
-# get stem density by vertical class
-subplot_density <- dat23_subplot_recode %>%
-  group_by(subplot, vegtype) %>%
-  summarise(stem_density_sum = sum(stem_density, na.rm = TRUE), 
-            .groups = "drop") %>% 
-  pivot_wider(
-    names_from = vegtype,
-    values_from = stem_density_sum,
-    values_fill = 0
-  ) %>% 
-  mutate(stem_regeneration = advanced + small,
-         sum_density = advanced + small + mature)
+# 2023 2025 
+# 670  997 
+
+length(unique(dat_master_subplot$plot))     # 334
+length(unique(dat_master_subplot$subplot))  # 1667
+
+# get stem counts by vertical class - remove teh empty plots! 
+# plot_density <- dat_subplot_recode %>%
+#   dplyr::filter(n>0) %>% 
+#   group_by(plot, vegtype, year) %>%
+#   summarise(counts_sum = sum(n, na.rm = TRUE), 
+#             .groups = "drop") %>% 
+#   pivot_wider(
+#     names_from = vegtype,
+#     values_from = counts_sum,
+#     values_fill = 0
+#   ) %>% 
+#   mutate(counts_regeneration = advanced + small,
+#          sum_counts = advanced + small + mature)
+# 
+# 
+# # get stem density by vertical class
+# subplot_density <- dat_subplot_recode %>%
+#   group_by(subplot, vegtype, year) %>%
+#   summarise(counts_sum = sum(n, na.rm = TRUE), 
+#             .groups = "drop") %>% 
+#   pivot_wider(
+#     names_from = vegtype,
+#     values_from = counts_sum,
+#     values_fill = 0
+#   ) %>% 
+#   mutate(counts_regeneration = advanced + small,
+#          sum_counts = advanced + small + mature)
 
 
 
 # histogram of stem denisty per vertcal class:
-dat23_subplot_recode %>% 
-  dplyr::filter(stem_density > 0) %>% 
-  ggplot(aes(stem_density )) +
+dat_subplot_recode %>% 
+  dplyr::filter(n > 0) %>% 
+  ggplot(aes(n )) +
   geom_histogram() + 
-  facet_grid(~vegtype, scales = 'free')
+  facet_grid(year~vegtype, scales = 'free')
 
 # no mature trees!!
 
 
 ### Get context information: management intensity at plot level ----------------------------
 # --- 1) Columns to use & NA -> 0 
-management_types_v <- c("clear", "grndwrk", "logging_trail", "planting", "anti_browsing")
-
-dat23_subplot_recode <- dat23_subplot_recode %>%
-  mutate(across(all_of(management_types_v), ~ ifelse(is.na(.), 0, .))) 
-
-# --- 2) Subplot-level scores (use max within subplot to avoid duplicates)
-mng_subplot_scores <- dat23_subplot_recode %>%
-  group_by(plot, subplot) %>%
-  summarise(
-    clear          = max(clear),
-    grndwrk        = max(grndwrk),
-    logging_trail  = max(logging_trail),
-    planting       = max(planting),
-    anti_browsing  = max(anti_browsing),
-    .groups = "drop"
-  ) %>%
-  mutate(
-    salvage_sub    = clear + grndwrk + logging_trail,          # 0..3
-    protection_sub = planting + anti_browsing,                  # 0..2
-    management_sub = salvage_sub + protection_sub               # 0..5
-  )
-
-# --- 3) Plot-level intensities (scaled 0–1) 
-mng_plot_intensity <- mng_subplot_scores %>%
-  group_by(plot) %>%
-  summarise(
-    n_subplots          = n_distinct(subplot),
-    salvage_sum         = sum(salvage_sub),
-    protection_sum      = sum(protection_sub),
-    management_sum      = sum(management_sub),
-    salvage_intensity   = salvage_sum    / (3 * n_subplots),
-    protection_intensity= protection_sum / (2 * n_subplots),
-    management_intensity= management_sum / (5 * n_subplots),
-    .groups = "drop"
-  ) %>%
-  mutate(
-    salvage_intensity    = pmin(pmax(salvage_intensity, 0), 1),
-    protection_intensity = pmin(pmax(protection_intensity, 0), 1),
-    management_intensity = pmin(pmax(management_intensity, 0), 1)
-  )
-
-###  Get Subplot Regeneration stem density based on height group: small, advanced, mature ------------- 
-# need to get plot level average! 
-subplot_group_density_wide <- dat23_subplot_recode %>%
-  dplyr::filter(vegtype %in% c("small", "advanced")) %>%
-  group_by(subplot, plot, recovery_type, vegtype) %>%
-  summarise(reg_density_sum = sum(stem_density, na.rm = TRUE),
-            .groups = "drop") %>%
-  unite("group_veg", recovery_type, vegtype) %>%   # combine recovery_type + vegtype
-  pivot_wider(
-    names_from = group_veg,
-    values_from = reg_density_sum,
-    values_fill = 0
-  ) %>%
-  mutate(
-    pioneer_total = coalesce(pioneer_small, 0) + coalesce(pioneer_advanced, 0),
-    planted_total = coalesce(planted_small, 0) + coalesce(planted_advanced, 0)
-  )
-#head(subplot_group_density_wide)
-#View(subplot_group_density_wide)
+# management_types_v <- c("clear", "grndwrk", "logging_trail", "planting", "anti_browsing")
+# 
+# dat23_subplot_recode <- dat23_subplot_recode %>%
+#   mutate(across(all_of(management_types_v), ~ ifelse(is.na(.), 0, .))) 
+# 
+# # --- 2) Subplot-level scores (use max within subplot to avoid duplicates)
+# mng_subplot_scores <- dat23_subplot_recode %>%
+#   group_by(plot, subplot) %>%
+#   summarise(
+#     clear          = max(clear),
+#     grndwrk        = max(grndwrk),
+#     logging_trail  = max(logging_trail),
+#     planting       = max(planting),
+#     anti_browsing  = max(anti_browsing),
+#     .groups = "drop"
+#   ) %>%
+#   mutate(
+#     salvage_sub    = clear + grndwrk + logging_trail,          # 0..3
+#     protection_sub = planting + anti_browsing,                  # 0..2
+#     management_sub = salvage_sub + protection_sub               # 0..5
+#   )
+# 
+# # --- 3) Plot-level intensities (scaled 0–1) 
+# mng_plot_intensity <- mng_subplot_scores %>%
+#   group_by(plot) %>%
+#   summarise(
+#     n_subplots          = n_distinct(subplot),
+#     salvage_sum         = sum(salvage_sub),
+#     protection_sum      = sum(protection_sub),
+#     management_sum      = sum(management_sub),
+#     salvage_intensity   = salvage_sum    / (3 * n_subplots),
+#     protection_intensity= protection_sum / (2 * n_subplots),
+#     management_intensity= management_sum / (5 * n_subplots),
+#     .groups = "drop"
+#   ) %>%
+#   mutate(
+#     salvage_intensity    = pmin(pmax(salvage_intensity, 0), 1),
+#     protection_intensity = pmin(pmax(protection_intensity, 0), 1),
+#     management_intensity = pmin(pmax(management_intensity, 0), 1)
+#   )
+# 
+# ###  Get Subplot Regeneration stem density based on height group: small, advanced, mature ------------- 
+# # need to get plot level average! 
+# subplot_group_density_wide <- dat23_subplot_recode %>%
+#   dplyr::filter(vegtype %in% c("small", "advanced")) %>%
+#   group_by(subplot, plot, recovery_type, vegtype) %>%
+#   summarise(reg_density_sum = sum(stem_density, na.rm = TRUE),
+#             .groups = "drop") %>%
+#   unite("group_veg", recovery_type, vegtype) %>%   # combine recovery_type + vegtype
+#   pivot_wider(
+#     names_from = group_veg,
+#     values_from = reg_density_sum,
+#     values_fill = 0
+#   ) %>%
+#   mutate(
+#     pioneer_total = coalesce(pioneer_small, 0) + coalesce(pioneer_advanced, 0),
+#     planted_total = coalesce(planted_small, 0) + coalesce(planted_advanced, 0)
+#   )
+# #head(subplot_group_density_wide)
+# #View(subplot_group_density_wide)
 
 
 
@@ -544,8 +551,9 @@ drone_plot_summ <- drone_cv %>%
 
 
 # --- Field data: Subplot-level metrics 
-field_sub_summ <- dat23_subplot_recode %>%
-  group_by(plot, subplot) %>%
+field_sub_summ <- dat_subplot_recode %>%
+  mutate(year = as.factor(year)) %>% 
+  group_by(plot, subplot, year) %>%
   summarise(
     stems_total = sum(n, na.rm = TRUE),
     sp_richness = if (stems_total > 0) n_distinct(species[n > 0]) else 0,
@@ -567,12 +575,22 @@ field_sub_summ <- dat23_subplot_recode %>%
     },
     
     cv_hgt    = if (!is.na(var_hgt) && is.finite(mean_hgt) && mean_hgt > 0)
-      sqrt(var_hgt) / mean_hgt else NA_real_,
-    range_hgt = if (sum(n > 0) >= 2) diff(range(hgt_est[n > 0], na.rm = TRUE)) else NA_real_,
-    .groups = "drop"
+      sqrt(var_hgt) / mean_hgt else NA_real_
+    #,
+    #range_hgt = if (sum(n > 0) >= 2) diff(range(hgt_est[n > 0], na.rm = TRUE)) else NA_real_,
+    #.groups = "drop"
   ) #%>% 
  # mutate(cv_hgt = ifelse(is.na(cv_hgt), 0L, cv_hgt),
   #       mean_hgt = ifelse(is.na(mean_hgt), 0L, mean_hgt)) # replace NA by 0 if stems are missing
+
+
+# get changes over years
+
+field_sub_summ %>% 
+  dplyr::filter(mean_hgt>0) %>% 
+  ggplot(aes(x = as.factor(year),
+             y = mean_hgt)) +
+  geom_violin()
 
 
 
@@ -621,7 +639,7 @@ ggarrange(p1, p2)
 area_subplot_m2 <- 4      # 4 m²
 area_plot_m2    <- 5*4    # 20 m²
 
-# add avergate height as a covariate
+# add average height as a covariate
 
 # --- 1) Subplot table (has subplot mean_hgt and stems_total as weights)
 sub_df <- field_sub_summ %>%
