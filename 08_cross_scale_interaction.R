@@ -5,14 +5,13 @@
 
 
 # read data: 
-# - field data from 2023 (2025?)
-# - drone 2023&2024
+# - field data from 2023 & 2025
+# - get sites history - from tree density (manually mapped)
 
-# - get sites history - from tree density cover, dominant leaf type
-#                     - from tree density (manually mapped)
-
-# correlate: vertical structure and composition across scales: field vs drone
+# get summary statistics
+# merge data from 2023 & 2025 - compare mean heights, CVs, richness, shannon between years
 # cross scale interaction: 
+
 #  - vertical structure
 # effect of pre-disturbance condistions
 
@@ -37,7 +36,7 @@ library(ggeffects)
 
 
 
-# Read files: only field 2023!  --------------
+# Read files: --------------
 # --- Field data: 2023 
 dat23_subplot    <- data.table::fread("outData/subplot_full_2023.csv")   # subplot-level table
 dat23_sf         <- sf::st_read("outData/sf_context_2023.gpkg")          # subplot spatial data
@@ -54,9 +53,15 @@ dat25_sf         <- sf::st_read("outData/subplot_with_clusters_2025.gpkg")      
 dat25_sf_min <- dat25_sf %>%
   dplyr::select(plot_key, cluster,plot_id)
 
-# needed columns: 
-target_cols <- c("plot","subplot","species",
-                 "vegtype","hgt","n","dbh","year")
+# needed columns to merge field data from 2023&2025: 
+target_cols <- c("plot",
+                 "subplot",
+                 "species",
+                 "vegtype",
+                 "hgt",
+                 "n",
+                 "dbh",
+                 "year")
 
 
 
@@ -95,7 +100,7 @@ dat23_subplot_sub <- dat23_subplot %>%
     dbh     = as.character(dbh),
     subplot = as.character(subplot),
     plot    = as.character(plot),
-    year    = as.integer(year)
+    year    = as.factor(year)
   ) %>%
   # assure teh same order
   select(all_of(target_cols))
@@ -109,7 +114,7 @@ dat25_subplot_sub <- dat25_subplot_sub %>%
     dbh     = as.character(dbh),
     subplot = as.character(subplot),
     plot    = as.character(plot),
-    year    = as.integer(year)
+    year    = as.factor(year)
   ) %>%
   select(all_of(target_cols))
 
@@ -160,13 +165,8 @@ n_subplots <- dat_subplots %>%
 dat_subplots <- dat_subplots %>% 
   left_join(n_subplots)
 
-
-
 # --- Drone CHM data 
 #drone_cv         <- data.table::fread("outTable/chm_buff_raw.csv")            # pixel-level values
-
-# --- Pre-disturbance history - Raster-based history
-#pre_dist_history <- data.table::fread("outTable/pre_disturb_history_raster_ALL_buffers.csv")
 
 # --- Tree-based history (vector layers)
 convex_hull      <- terra::vect("raw/pre-disturb_history_trees/cvx_hull_completed_3035.gpkg")
@@ -548,11 +548,16 @@ drone_plot_summ <- drone_cv %>%
   ) %>%
   mutate(cv_hgt =  sd_hgt / mean_hgt)
 
+dd23 <- dat_subplot_recode %>% 
+  filter(year == 2023)
 
+dd25 <- dat_subplot_recode %>% 
+  filter(year == 2025)
 
 # --- Field data: Subplot-level metrics 
 field_sub_summ <- dat_subplot_recode %>%
-  mutate(year = as.factor(year)) %>% 
+  mutate(n = coalesce(n, 0L)) %>% 
+ # mutate(year = as.factor(year)) %>% 
   group_by(plot, subplot, year) %>%
   summarise(
     stems_total = sum(n, na.rm = TRUE),
@@ -562,36 +567,77 @@ field_sub_summ <- dat_subplot_recode %>%
     # weighted mean height using only present stems
     mean_hgt    = if (stems_total > 0) weighted.mean(hgt_est[n > 0], n[n > 0]) else NA_real_,
     
-    # weighted variance (Bessel corrected), only if we have ≥ 2 distinct heights
+    # compute weighted variance whenever we have ≥2 stems and any finite heights
     var_hgt = {
       if (stems_total > 1) {
-        h  <- hgt_est[n > 0]
-        ww <- n[n > 0]
-        if (length(unique(h[is.finite(h)])) >= 2) {
+        sel <- (n > 0) & is.finite(hgt_est)
+        h   <- hgt_est[sel]; ww <- n[sel]
+        if (length(h) >= 1 && sum(ww) > 1) {
           mu <- weighted.mean(h, ww)
-          sum(ww * (h - mu)^2) / (sum(ww) - 1)
+          v  <- sum(ww * (h - mu)^2) / (sum(ww) - 1)  # freq-weighted, Bessel corrected
+          if (is.nan(v)) NA_real_ else v              # will be 0 if all h are equal
         } else NA_real_
       } else NA_real_
     },
     
-    cv_hgt    = if (!is.na(var_hgt) && is.finite(mean_hgt) && mean_hgt > 0)
-      sqrt(var_hgt) / mean_hgt else NA_real_
-    #,
+    cv_hgt = if (is.finite(mean_hgt) && mean_hgt > 0 && !is.na(var_hgt))
+      sqrt(var_hgt) / mean_hgt else
+        if (stems_total > 1 && is.finite(mean_hgt) && mean_hgt > 0) 0 else NA_real_,
+    .groups = "drop"  #,
     #range_hgt = if (sum(n > 0) >= 2) diff(range(hgt_est[n > 0], na.rm = TRUE)) else NA_real_,
-    #.groups = "drop"
-  ) #%>% 
+   
+  ) #%>%
+  
  # mutate(cv_hgt = ifelse(is.na(cv_hgt), 0L, cv_hgt),
   #       mean_hgt = ifelse(is.na(mean_hgt), 0L, mean_hgt)) # replace NA by 0 if stems are missing
 
 
-# get changes over years
+field_sub_summ %>%
+  #ungroup() %>%
+  select(year, mean_hgt, cv_hgt, shannon_sp, sp_richness) %>%
+  pivot_longer(-year, names_to = "metric", values_to = "value") %>%
+  # keep mean_hgt > 0, leave others as-is
+  filter(!(metric == "mean_hgt" & (is.na(value) | value <= 0))) %>%
+  filter(!is.na(value)) %>%
+  mutate(metric = recode(metric,
+                         mean_hgt    = "Mean height (m)",
+                         cv_hgt      = "CV of height",
+                         shannon_sp  = "Shannon (H')",
+                         sp_richness = "Species richness"
+  )) %>%
+  ggplot(aes(x = year, y = value)) +
+ # geom_violin(fill = 'grey90') +
+  stat_summary(fun.data = mean_sd, geom = "errorbar", width = 0.1, size = 0.2, col = 'red') +
+  stat_summary(fun = \(y) mean(y, na.rm = TRUE), geom = "point", size = 2, col = 'red') +
+  facet_wrap(~ metric, scales = "free_y", ncol = 2) +
+  labs(x = NULL, y = NULL) +
+  theme_classic2()
 
-field_sub_summ %>% 
-  dplyr::filter(mean_hgt>0) %>% 
-  ggplot(aes(x = as.factor(year),
-             y = mean_hgt)) +
-  geom_violin()
+library(dplyr)
+library(tidyr)
 
+subplot_summary_tbl <- field_sub_summ %>%
+  ungroup() %>%
+  select(year, mean_hgt, cv_hgt, shannon_sp, sp_richness) %>%
+  pivot_longer(-year, names_to = "metric", values_to = "value") %>%
+  # keep mean_hgt > 0, others as-is
+  filter(!(metric == "mean_hgt" & (is.na(value) | value <= 0))) %>%
+  group_by(metric, year) %>%
+  summarise(
+    n_total  = n(),
+    n_non_na = sum(!is.na(value)),
+    n_na     = sum(is.na(value)),
+    mean     = mean(value, na.rm = TRUE),
+    sd       = sd(value, na.rm = TRUE),
+    se       = sd/sqrt(n_non_na),
+    median   = median(value, na.rm = TRUE),
+    p25      = quantile(value, 0.25, na.rm = TRUE),
+    p75      = quantile(value, 0.75, na.rm = TRUE),
+    .groups  = "drop"
+  ) %>%
+  arrange(metric, year)
+
+subplot_summary_tbl
 
 
 # summarize subplot information 
@@ -604,11 +650,12 @@ sum(field_sub_summ$cv_hgt > 1, na.rm = T)     # 11
 field_sub_summ_filt <- field_sub_summ %>%
   filter(stems_total > 0 & cv_hgt > 0)
 
-p1 <- ggplot(field_sub_summ_filt, aes(x = stems_total, y = cv_hgt)) +
-  geom_point(alpha = 0.4, size = 2, color = "grey40") +
-  geom_smooth(method = "loess", se = TRUE, color = "red") +
+p1 <- ggplot(field_sub_summ_filt, aes(x = stems_total, y = cv_hgt, color = year,
+                                      fill = year)) +
+  geom_point(alpha = 0.4, size = 2 ) +
+ # geom_smooth(method = "loess", se = TRUE, color = "red") +
   geom_smooth(method = "gam", formula = y ~ s(x, k = 3),
-              se = TRUE, color = "blue", linetype = "dashed") +
+              se = TRUE,  linetype = "dashed") +
   labs(
     x = "Stem count per subplot",
     y = "CV of tree height",
@@ -618,11 +665,12 @@ p1 <- ggplot(field_sub_summ_filt, aes(x = stems_total, y = cv_hgt)) +
   theme_classic2(base_size = 8)
 
 
-p2 <- ggplot(field_sub_summ_filt, aes(x = shannon_sp, y = cv_hgt)) +
-  geom_point(alpha = 0.4, size = 2, color = "grey40") +
-  geom_smooth(method = "loess", se = TRUE, color = "red") +
+p2 <- ggplot(field_sub_summ_filt, aes(x = shannon_sp, y = cv_hgt, color = year,
+                                      fill = year)) +
+  geom_point(alpha = 0.4, size = 2) +
+ # geom_smooth(method = "loess", se = TRUE, color = "red") +
   geom_smooth(method = "gam", formula = y ~ s(x, k = 3),
-              se = TRUE, color = "blue", linetype = "dashed") +
+              se = TRUE, linetype = "dashed") +
   labs(
     x = "Shannon per subplot",
     y = "CV of tree height",
@@ -639,7 +687,53 @@ ggarrange(p1, p2)
 area_subplot_m2 <- 4      # 4 m²
 area_plot_m2    <- 5*4    # 20 m²
 
-# add average height as a covariate
+
+
+# --- Plot-level metrics (aggregate over subplots) ---
+plot_metrics_mean <- field_sub_summ %>%
+  group_by(plot, year) %>%
+  summarise(
+    mean_sp_richness = mean(sp_richness, na.rm = TRUE),
+    #var_sp_richness  = var(sp_richness,  na.rm = TRUE),
+    mean_shannon_sp  = mean(shannon_sp,  na.rm = TRUE),
+    mean_evenness_sp = mean(evenness_sp, na.rm = TRUE),
+    mean_mean_hgt    = mean(mean_hgt,    na.rm = TRUE),
+    mean_cv_hgt      = mean(cv_hgt,      na.rm = TRUE),
+    #var_cv_hgt       = var(cv_hgt,       na.rm = TRUE),
+    #mean_range_hgt   = mean(range_hgt,   na.rm = TRUE),
+    .groups = "drop"
+  )
+
+
+# --- pooled CV directly from dat23_subplot_recode ---
+plot_metrics_pooled  <- dat_subplot_recode %>%
+  mutate(n = coalesce(n, 0L)) %>%                # no NA counts
+  group_by(plot, year) %>%
+  summarise(
+    stems_total = sum(n, na.rm = TRUE),
+    sp_richness = if (stems_total > 0) n_distinct(species[n > 0]) else 0,
+    shannon_sp  = if (stems_total > 0) vegan::diversity(n, index = "shannon") else 0,
+    evenness_sp = if (sp_richness > 1) shannon_sp / log(sp_richness) else 0,
+    mean_hgt    = if (stems_total > 0) weighted.mean(hgt_est, n, na.rm = TRUE) else NA_real_,
+    # compute weighted variance whenever we have ≥2 stems and any finite heights
+    var_hgt = {
+      if (stems_total > 1) {
+        sel <- (n > 0) & is.finite(hgt_est)
+        h   <- hgt_est[sel]; ww <- n[sel]
+        if (length(h) >= 1 && sum(ww) > 1) {
+          mu <- weighted.mean(h, ww)
+          v  <- sum(ww * (h - mu)^2) / (sum(ww) - 1)  # freq-weighted, Bessel corrected
+          if (is.nan(v)) NA_real_ else v              # will be 0 if all h are equal
+        } else NA_real_
+      } else NA_real_
+    },
+    
+    cv_hgt = if (is.finite(mean_hgt) && mean_hgt > 0 && !is.na(var_hgt))
+      sqrt(var_hgt) / mean_hgt else
+        if (stems_total > 1 && is.finite(mean_hgt) && mean_hgt > 0) 0 else NA_real_,
+    .groups = "drop" 
+  ) #%>% 
+#mutate(cv_hgt = ifelse(is.na(cv_hgt), 0L, cv_hgt)) # replace NA by 0 if stems are missing
 
 # --- 1) Subplot table (has subplot mean_hgt and stems_total as weights)
 sub_df <- field_sub_summ %>%
@@ -647,6 +741,7 @@ sub_df <- field_sub_summ %>%
   transmute(
     ID       = subplot,
     plot_id  = str_replace(subplot, "^[^_]+_([^_]+_[^_]+)_.*$", "\\1"),
+    year     = year,
     level    = "subplot",
     dens_m2  = stems_total / area_subplot_m2,     # 4 m² subplot
     cv_hgt   = cv_hgt,
@@ -661,6 +756,7 @@ plot_df <- plot_metrics_pooled %>%
   transmute(
     ID       = plot,
     plot_id  = plot,
+    year     = year,
     level    = "plot",
     dens_m2  = stems_total / area_plot_m2,    # 5×4 m² = 20 m²
     cv_hgt   = cv_hgt,
@@ -1579,42 +1675,6 @@ field_sub_summ %>%
 # 2. as pooled all values (no subplots boundaries)
 
 
-# --- Plot-level metrics (aggregate over subplots) ---
-plot_metrics_mean <- field_sub_summ %>%
-  group_by(plot) %>%
-  summarise(
-    mean_sp_richness = mean(sp_richness, na.rm = TRUE),
-    #var_sp_richness  = var(sp_richness,  na.rm = TRUE),
-    mean_shannon_sp  = mean(shannon_sp,  na.rm = TRUE),
-    mean_evenness_sp = mean(evenness_sp, na.rm = TRUE),
-    mean_mean_hgt    = mean(mean_hgt,    na.rm = TRUE),
-    mean_cv_hgt      = mean(cv_hgt,      na.rm = TRUE),
-    #var_cv_hgt       = var(cv_hgt,       na.rm = TRUE),
-    mean_range_hgt   = mean(range_hgt,   na.rm = TRUE),
-    .groups = "drop"
-  )
-
-
-# --- pooled CV directly from dat23_subplot_recode ---
-plot_metrics_pooled  <- dat23_subplot_recode %>%
-  group_by(plot) %>%
-  summarise(
-    stems_total = sum(n, na.rm = TRUE),
-    sp_richness = if (stems_total > 0) n_distinct(species[n > 0]) else 0,
-    shannon_sp  = if (stems_total > 0) vegan::diversity(n, index = "shannon") else 0,
-    evenness_sp = if (sp_richness > 1) shannon_sp / log(sp_richness) else 0,
-    mean_hgt    = if (stems_total > 0) weighted.mean(hgt_est, n, na.rm = TRUE) else NA_real_,
-    cv_hgt      = if (stems_total > 0 && mean(hgt_est, na.rm = TRUE) > 0)
-      sd(hgt_est, na.rm = TRUE) / mean(hgt_est, na.rm = TRUE) else NA_real_,
-    range_hgt   = if (stems_total > 0 && !all(is.na(hgt_est)))
-      max(hgt_est, na.rm = TRUE) - min(hgt_est, na.rm = TRUE) else NA_real_,
-    .groups = "drop"
-  ) %>% 
-  mutate(cv_hgt = ifelse(is.na(cv_hgt), 0L, cv_hgt)) # replace NA by 0 if stems are missing
-
-
-
-
 # merge plot versions: mean vs pool -----------------
 
 plot_compare <- plot_metrics_mean %>%
@@ -1626,8 +1686,9 @@ plot_compare <- plot_metrics_mean %>%
                      pooled_shannon_sp  = shannon_sp,
                      pooled_evenness_sp = evenness_sp,
                      pooled_mean_hgt    = mean_hgt,
-                     pooled_cv_hgt      = cv_hgt,
-                     pooled_range_hgt   = range_hgt),
+                     pooled_cv_hgt      = cv_hgt#,
+                     #pooled_range_hgt   = range_hgt
+                     ),
             by = c("plot"))
 
 
