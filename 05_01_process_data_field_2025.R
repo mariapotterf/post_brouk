@@ -21,7 +21,7 @@
 
 # plot_key = surrender for plot_id - note, that they can be duplicated!!! need to figure this out
 
-# read throught photos - copy them all iin a single 'damage_photo' folder
+# read throught photos - copy them all in a single 'damage_photo' folder
 gc()
 
 library(terra)
@@ -151,8 +151,7 @@ subplot_all$cluster <- ifelse(db$cluster == 0, NA, db$cluster)
 cluster_lookup <- subplot_all |> 
   st_drop_geometry() |> 
   dplyr::select(plot_id, source_folder, cluster, plot_key) |>
-  dplyr::distinct()  # how to filter dusplicated values????
-# need to figure it out!!
+  dplyr::distinct()  # keep the latest version to avoid duplicated records
 #  mutate(plot_key = paste(plot_id, source_folder, sep = "__"))
 
 
@@ -297,6 +296,38 @@ combined_vegetation_data2 <- combined_vegetation_data %>%
 combined_vegetation_data_recode <- 
   combined_vegetation_data2 %>%
   mutate(
+    # Height labels (used only when VegType is small/advanced)
+    height = case_when(
+      VegType == "small" ~ recode(as.character(height),
+                                  "1" = "0.2–0.4",
+                                  "2" = "0.4–0.6",
+                                  "3" = "0.6–0.8",
+                                  "4" = "0.8–1.0",
+                                  "5" = "1.0–1.3",
+                                  "6" = "1.3–2.0",
+                                  .default = NA_character_
+      ),
+      VegType == "advanced" ~ recode(as.character(height),
+                                     "1" = "2–4",
+                                     "2" = ">4",
+                                     .default = NA_character_
+      ),
+      TRUE ~ NA_character_
+    ),
+    
+    # DBH labels (used only when VegType is mature)
+    dbh = if_else(VegType == "mature",
+                        recode(as.character(dbh),
+                               "1" = "10–20cm",
+                               "2" = "20–40cm",
+                               "3" = "40–60cm",
+                               "4" = ">60cm",
+                               .default = NA_character_
+                        ),
+                        NA_character_
+    )
+  ) %>% 
+  mutate(
     dmg_terminal = recode(
       dmg_terminal,
       "1" = "zivy",
@@ -317,11 +348,11 @@ combined_vegetation_data_recode <-
     .cols = contains("_cause"),  # for cause of damage
     .fns = ~ dplyr::recode(
       .,
-      `1` = "zver",
-      `2` = "mechanizace",
-      `3` = "mysovite",
-      `4` = "ine bioticke",
-      `5` = "nejasna"
+      "1" = "zver",
+      "2" = "mechanizace",
+      "3" = "mysovite",
+      "4" = "ine bioticke",
+      "5" = "nejasna"
     )
   )) %>% 
     mutate(
