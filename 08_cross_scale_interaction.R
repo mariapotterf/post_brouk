@@ -54,6 +54,111 @@ dat25_sf         <- sf::st_read("outData/subplot_with_clusters_2025.gpkg")      
 dat25_sf_min <- dat25_sf %>%
   dplyr::select(plot_key, cluster,plot_id)
 
+# needed columns: 
+target_cols <- c("plot","subplot","species",
+                 "vegtype","hgt","n","dbh","year")
+
+
+
+# filter only relevant columns: 
+dat25_subplot_sub <- dat25_subplot %>% 
+  dplyr::filter(naruseni == TRUE & nzchar(trimws(photo_e))) %>% 
+  dplyr::select(acc, VegType, height, count, dbh, plot_key, cluster) %>% 
+  rename(
+    subplot = plot_key,
+    plot = cluster,
+    vegtype = VegType,
+    hgt = height,
+    n = count,
+    species = acc
+         ) %>% 
+  mutate(year = 2025) %>% 
+  # target column order for the bind
+  dplyr::select(all_of(target_cols))
+
+nrow(dat25_subplot_sub)
+#length(unique(dat25_subplot_sub$species))
+# 375_T2_AH_20250827
+
+
+### Field data 2023: subplot level --------------------------------------
+dat23_subplot_sub <- dat23_subplot %>% 
+  dplyr::select(vegtype, species, ID, cluster,n, hgt, dbh) %>% 
+  rename(subplot = ID,
+         plot = cluster) %>% 
+  mutate(year = 2023) %>% 
+  transmute(
+    species = as.character(species),
+    vegtype = as.character(vegtype),
+    hgt     = as.character(hgt),
+    n       = as.integer(n),
+    dbh     = as.character(dbh),
+    subplot = as.character(subplot),
+    plot    = as.character(plot),
+    year    = as.integer(year)
+  ) %>%
+  # assure teh same order
+  select(all_of(target_cols))
+
+dat25_subplot_sub <- dat25_subplot_sub %>%
+  transmute(
+    species = as.character(species),
+    vegtype = as.character(vegtype),
+    hgt     = as.character(hgt),
+    n       = as.integer(n),
+    dbh     = as.character(dbh),
+    subplot = as.character(subplot),
+    plot    = as.character(plot),
+    year    = as.integer(year)
+  ) %>%
+  select(all_of(target_cols))
+
+# bind field data from both years:
+dat_subplots <- bind_rows(dat23_subplot_sub, dat25_subplot_sub)
+
+#  remove the erroneous subplots, if i have 6 subplots in cluster: 
+
+# plots to check :
+  # 15_102 ???  - kept 6
+  # 15_124
+  # 15_145
+  # 184
+  # 26_101
+  # 26_142
+  # 48
+  
+# subplots: 
+# 424_T4_TP_20250827 - to remove, empty
+# 539_T4_TP_20250827 - removed, empty
+# 375_T2_AH_20250827 - to remove, empty
+# 744_T4_TP_20250827
+# 13_15_102_5
+# 13_15_124_2
+# 13_15_145_4
+# 13_26_101_2
+# 13_26_142_1
+
+
+bad_subplots <- c("424_T4_TP_20250827","539_T4_TP_20250827","375_T2_AH_20250827",
+                  "744_T4_TP_20250827","13_15_102_5","13_15_124_2",
+                  "13_15_145_4","13_26_101_2","13_26_142_1")
+
+dat_subplots <- dat_subplots[!(subplot %in% bad_subplots)]
+
+# remove whole plots (robust to numeric/character mix)
+bad_plots <- c("15_104", "143", "26_134")
+
+dat_subplots <- dat_subplots %>%
+  dplyr::filter(!as.character(plot) %in% bad_plots)
+
+n_subplots <- dat_subplots %>%
+  filter(!is.na(plot), !is.na(subplot)) %>%
+  distinct(plot, subplot) %>%       # drop species/vegtype duplicates
+  count(plot, name = "n_subplots") #%>%
+#arrange(plot)
+
+dat_subplots <- dat_subplots %>% 
+  left_join(n_subplots)
 
 
 
@@ -224,11 +329,9 @@ cvx_stem_density_status <- cvx_df %>%
 # head(cxv_stem_density_species)
 # 
 
-### Field data 2023: subplot level --------------------------------------
 
 # guestimate dbh and ba per individual based on height distribution 
-dat23_subplot_recode <- dat23_subplot %>% 
-  dplyr::select(-country) %>% 
+dat_subplot_recode <- dat_subplots %>% 
   mutate(
     # Create a numeric height estimate (keep original height class string)
     hgt_est = case_when(
@@ -268,18 +371,11 @@ dat23_subplot_recode <- dat23_subplot %>%
     basal_area_cm2 = pi * (dbh_est / 2)^2,
     ba_total_cm2   = basal_area_cm2 * n,
     ba_total_m2    = ba_total_cm2 / 10000,
-    ba_ha_m2       = ba_total_m2 * scaling_factor
-  ) %>% 
-  rename(plot = cluster, 
-         subplot = ID) %>% 
-  mutate(n = ifelse(is.na(n), 0L, n),
-         stem_density = ifelse(is.na(stem_density), 0L, stem_density))
+    #ba_ha_m2       = ba_total_m2 * scaling_factor
+  ) #%>% 
+#  mutate(n = ifelse(is.na(n), 0L, n),
+ #        stem_density = ifelse(is.na(stem_density), 0L, stem_density))
 
-
-# Clean up 2025 data 
-
-dat25_subplot_sub <- dat25_subplot %>% 
-  dplyr::select()
 
 
 
