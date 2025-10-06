@@ -134,7 +134,10 @@ cvx_clean <- convex_hull %>%
   #rename(plot = cluster) %>% 
   dplyr::select(-rok_les,-rok_disturbancia, 
                 - disturbance_note
-                )
+                ) %>% 
+  mutate(plot_comb = dplyr::coalesce(as.character(cluster_2023),
+                                     as.character(cluster_2025)))
+
 
 # Write cleaned attributes back to the terra object
 convex_hull_3035_clean  <-convex_hull[, c("cluster_2023","cluster_2025")]
@@ -146,23 +149,19 @@ pre_trees_cvx_joined <- terra::intersect(pre_trees_3035_clean, convex_hull_3035_
 #buff_squared_joined  <- terra::intersect(buff_square_3035, convex_hull_3035_clean)
 #pre_trees_sq_joined  <- terra::intersect(pre_trees_3035_clean, buff_square_3035)
 
+
+
 ### Get stem density per Run once for convex hulls, once for squares  -------------------
 cvx_df <- as.data.frame(pre_trees_cvx_joined)
-names(cvx_df) <- make.unique(names(cvx_df))
+#names(cvx_df) <- make.unique(names(cvx_df))
 
-# simplify shared name between clusters for pre-disturbance history
-cvx_df <- 
-  as.data.frame(cvx_df) %>% 
-    mutate(cluster_2025 = as.character(cluster_2025)) %>% 
-  mutate(plot_common = paste(cluster_2023, cluster_2025,sep =  "_")) %>% 
-  dplyr::select(-common_cluster_ID)
 
 #sq_df  <- as.data.frame(pre_trees_sq_joined) 
 
 ####  Plot = CVX: stem density ------------------------------
 cvx_stem_density <- cvx_df %>%
 #  ungroup(.) %>% 
-  group_by(plot_common) %>%  #, area_m2
+  group_by(plot_comb ) %>%  #, area_m2
   dplyr::reframe(
     n_trees = n(),
     area_m2 = mean(area_m2, na.rm  = T),  # keep are here instead of grouping
@@ -170,7 +169,7 @@ cvx_stem_density <- cvx_df %>%
   )
 
 cxv_stem_density_species <- cvx_df %>%
-  group_by(plot_common, species) %>%
+  group_by(plot_comb , species) %>%
   dplyr::reframe(
     n_trees = n(),
     area_m2 = mean(area_m2, na.rm  = T),  # keep are here instead of grouping
@@ -178,7 +177,7 @@ cxv_stem_density_species <- cvx_df %>%
   )
 
 cvx_stem_density_status <- cvx_df %>%
-  group_by(plot_common, species, status) %>%
+  group_by(plot_comb , species, status) %>%
   summarise(
     n_trees = n(),
     area_m2 = mean(area_m2, na.rm  = T),  # keep are here instead of grouping
@@ -225,7 +224,7 @@ cvx_stem_density_status <- cvx_df %>%
 # head(cxv_stem_density_species)
 # 
 
-### Field data: subplot level --------------------------------------
+### Field data 2023: subplot level --------------------------------------
 
 # guestimate dbh and ba per individual based on height distribution 
 dat23_subplot_recode <- dat23_subplot %>% 
@@ -252,6 +251,7 @@ dat23_subplot_recode <- dat23_subplot %>%
       vegtype == "mature" & dbh == "10–20cm" ~ 15.0,
       vegtype == "mature" & dbh == "20–40cm" ~ 30.0,
       vegtype == "mature" & dbh == "40–60cm" ~ 50.0,
+      vegtype == "mature" & dbh == ">60cm"   ~ 70.0,
       hgt == "0.2–0.4"                       ~ 0.3,
       hgt == "0.4–0.6"                       ~ 0.5,
       hgt == "0.6–0.8"                       ~ 0.7,
@@ -274,6 +274,15 @@ dat23_subplot_recode <- dat23_subplot %>%
          subplot = ID) %>% 
   mutate(n = ifelse(is.na(n), 0L, n),
          stem_density = ifelse(is.na(stem_density), 0L, stem_density))
+
+
+# Clean up 2025 data 
+
+dat25_subplot_sub <- dat25_subplot %>% 
+  dplyr::select()
+
+
+
 
   
 
