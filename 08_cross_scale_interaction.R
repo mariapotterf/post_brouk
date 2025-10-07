@@ -146,7 +146,8 @@ dat_subplots <- bind_rows(dat23_subplot_sub, dat25_subplot_sub)
 
 bad_subplots <- c("424_T4_TP_20250827","539_T4_TP_20250827","375_T2_AH_20250827",
                   "744_T4_TP_20250827","13_15_102_5","13_15_124_2",
-                  "13_15_145_4","13_26_101_2","13_26_142_1")
+                  "13_15_145_4","13_26_101_2","13_26_142_1",
+                  "506_T4_TP_20250827") # has missing tree species
 
 dat_subplots <- dat_subplots[!(subplot %in% bad_subplots)]
 
@@ -163,7 +164,8 @@ n_subplots <- dat_subplots %>%
 #arrange(plot)
 
 dat_subplots <- dat_subplots %>% 
-  left_join(n_subplots)
+  left_join(n_subplots) %>% 
+  dplyr::filter(n_subplots == 5)
 
 # --- Drone CHM data 
 #drone_cv         <- data.table::fread("outTable/chm_buff_raw.csv")            # pixel-level values
@@ -400,49 +402,21 @@ dat_master_subplot <- dat_subplot_recode %>%
 table(dat_master_subplot$year)  
 
 # 2023 2025 
-# 670  997 
+# 670  990 
 
-length(unique(dat_master_subplot$plot))     # 334
-length(unique(dat_master_subplot$subplot))  # 1667
+length(unique(dat_master_subplot$plot))     # 332
+length(unique(dat_master_subplot$subplot))  # 1660
 
-# get stem counts by vertical class - remove teh empty plots! 
-# plot_density <- dat_subplot_recode %>%
-#   dplyr::filter(n>0) %>% 
-#   group_by(plot, vegtype, year) %>%
-#   summarise(counts_sum = sum(n, na.rm = TRUE), 
-#             .groups = "drop") %>% 
-#   pivot_wider(
-#     names_from = vegtype,
-#     values_from = counts_sum,
-#     values_fill = 0
-#   ) %>% 
-#   mutate(counts_regeneration = advanced + small,
-#          sum_counts = advanced + small + mature)
-# 
-# 
-# # get stem density by vertical class
-# subplot_density <- dat_subplot_recode %>%
-#   group_by(subplot, vegtype, year) %>%
-#   summarise(counts_sum = sum(n, na.rm = TRUE), 
-#             .groups = "drop") %>% 
-#   pivot_wider(
-#     names_from = vegtype,
-#     values_from = counts_sum,
-#     values_fill = 0
-#   ) %>% 
-#   mutate(counts_regeneration = advanced + small,
-#          sum_counts = advanced + small + mature)
 
 
 
 # histogram of stem denisty per vertcal class:
 dat_subplot_recode %>% 
   dplyr::filter(n > 0) %>% 
-  ggplot(aes(n )) +
+  ggplot(aes(n , fill = year)) +
   geom_histogram() + 
   facet_grid(year~vegtype, scales = 'free')
 
-# no mature trees!!
 
 
 ### Get context information: management intensity at plot level ----------------------------
@@ -510,49 +484,6 @@ dat_subplot_recode %>%
 
 
 
-## Correlation: field vs drone on subplot level ---------------------------
-# drone
-# field data
-
-
-drone_cv_sub <- drone_cv %>% 
-  dplyr::filter(subplot == '13_26_105_5')
-
-#my_mean = mean(drone_cv_sub$pixel_value)
-#my_sd = sd(drone_cv_sub$pixel_value)
-
-# Drone: subplot vs plot level 
-
-# Per-subplot
-drone_sub_summ <- drone_cv %>%
-  mutate(pixel_value = pixel_value +0.001) %>% # add a small values to allow CV calculation
-  group_by(plot, subplot, drone) %>%
-  summarise(
-    n_pix      = sum(!is.na(pixel_value)),
-    mean_hgt   = mean(pixel_value, na.rm = TRUE),
-    median_hgt = median(pixel_value, na.rm = TRUE),
-    sd_hgt     = sd(pixel_value, na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
-  mutate(cv_hgt = sd_hgt / mean_hgt)
-
-# Plot-level
-drone_plot_summ <- drone_cv %>%
-  group_by(plot) %>%
-  summarise(
-    n_pix      = sum(!is.na(pixel_value)),
-    mean_hgt   = mean(pixel_value, na.rm = TRUE),
-    median_hgt = median(pixel_value, na.rm = TRUE),
-    sd_hgt     = sd(pixel_value, na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
-  mutate(cv_hgt =  sd_hgt / mean_hgt)
-
-dd23 <- dat_subplot_recode %>% 
-  filter(year == 2023)
-
-dd25 <- dat_subplot_recode %>% 
-  filter(year == 2025)
 
 # --- Field data: Subplot-level metrics 
 field_sub_summ <- dat_subplot_recode %>%
@@ -614,9 +545,6 @@ field_sub_summ %>%
   labs(x = NULL, y = NULL) +
   theme_classic2()
 
-library(dplyr)
-library(tidyr)
-
 subplot_summary_tbl <- field_sub_summ %>%
   ungroup() %>%
   select(year, mean_hgt, cv_hgt, shannon_sp, sp_richness) %>%
@@ -643,9 +571,10 @@ subplot_summary_tbl
 
 # summarize subplot information 
 # how many trees?
-sum(field_sub_summ$stems_total)  # 2125 stems/7816 stems/ha
-sum(field_sub_summ$stems_total == 0) # 147 
-sum(field_sub_summ$cv_hgt > 1, na.rm = T)     # 11
+sum(field_sub_summ$stems_total)            # 5083 stems
+length(unique(field_sub_summ$subplot))     # 1660
+sum(field_sub_summ$stems_total == 0)       # 330 
+sum(field_sub_summ$cv_hgt > 1, na.rm = T)  # 11
 
 
 field_sub_summ_filt <- field_sub_summ %>%
@@ -682,7 +611,54 @@ p2 <- ggplot(field_sub_summ_filt, aes(x = shannon_sp, y = cv_hgt, color = year,
 
 ggarrange(p1, p2)
 # ssame analysis on both scales? 
-# START
+
+# get summary acroos all trees and study sites --------------------------
+# !!!!
+# 0) Safe counts (treat NA counts as 0)
+df <- dat_subplot_recode %>%
+  mutate(n = coalesce(n, 0L)) %>%
+  filter(!is.na(species) & species != "")
+
+# 1) Totals
+overall_totals <- df %>%
+  summarise(total_trees = sum(n),
+            n_plots = n_distinct(plot),
+            n_subplots = n_distinct(subplot))
+
+by_year_totals <- df %>%
+  group_by(year) %>%
+  summarise(total_trees = sum(n),
+            n_plots = n_distinct(plot),
+            n_subplots = n_distinct(subplot),
+            .groups = "drop")
+
+# 2) Species × year counts and presence
+#species_year <- 
+  df %>%
+  group_by(year, species) %>%
+  summarise(
+    stems = sum(n),                                   # number of trees
+    plots_present = n_distinct(plot[n > 0]),          # plots where species occurs
+    .groups = "drop"
+  ) %>% 
+  tidyr::pivot_wider(
+    names_from  = year,
+    values_from = c(stems, plots_present),
+    names_glue  = "{.value}_{year}",
+    values_fill = list(stems = 0L, plots_present = 0L)
+  ) %>%
+  dplyr::arrange(species) %>% 
+  mutate(trees23 = sum(stems_2023, na.rm = T),
+         trees25 = sum(stems_2025, na.rm = T),
+         plots23 = sum(plots_present_2023, na.rm = T),
+         plots25 = sum(plots_present_2025, na.rm = T))
+         
+
+
+
+
+
+
 
 # --- 1) Make COMPARABLE x-axis: stem density per m² --------------------
 area_subplot_m2 <- 4      # 4 m²
