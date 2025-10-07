@@ -334,6 +334,16 @@ cvx_stem_density_status <- cvx_df %>%
 
 # guestimate dbh and ba per individual based on height distribution 
 dat_subplot_recode <- dat_subplots %>% 
+  # adjust tree species naming
+  dplyr::mutate(
+    species = str_trim(species),
+    species = dplyr::case_when(
+      species == "abal" ~ "absp",
+      species %in% c("quro", "quru") ~ "qusp",
+      TRUE ~ species
+    )
+  ) %>% 
+  
   mutate(
     # Create a numeric height estimate (keep original height class string)
     hgt_est = case_when(
@@ -381,8 +391,8 @@ dat_subplot_recode <- dat_subplots %>%
 dat_subplot_recode <- dat_subplot_recode %>%
   mutate(recovery_type = case_when(
     # --- Planted / late-successional / non-native ---
-    species %in% c("piab","pisy","abal","lade","psme","taba",
-                   "fasy","quro","acca","acpl","acps","frex",
+    species %in% c("piab","pisy","absp","lade","psme","taba",
+                   "fasy","qusp","acca","acpl","acps","frex",
                    "casa","aehi","saca","rops") ~ "planted",
     
     # --- Pioneer / early successional ---
@@ -404,10 +414,8 @@ table(dat_master_subplot$year)
 # 2023 2025 
 # 670  990 
 
-length(unique(dat_master_subplot$plot))     # 332
-length(unique(dat_master_subplot$subplot))  # 1660
-
-
+n_plots_total <- length(unique(dat_master_subplot$plot))     # 332
+n_subplots_total <-length(unique(dat_master_subplot$subplot))  # 1660
 
 
 # histogram of stem denisty per vertcal class:
@@ -628,35 +636,64 @@ overall_totals <- df %>%
 by_year_totals <- df %>%
   group_by(year) %>%
   summarise(total_trees = sum(n),
-            n_plots = n_distinct(plot),
-            n_subplots = n_distinct(subplot),
+            #n_plots = n_distinct(plot),
+           # n_subplots = n_distinct(subplot),
             .groups = "drop")
 
+n_trees23 <- by_year_totals %>% 
+  filter(year == 2023) %>% 
+  pull()
+
+n_trees25 <- by_year_totals %>% 
+  filter(year == 2025) %>% 
+  pull()
+
 # 2) Species × year counts and presence
-#species_year <- 
+species_year <- 
   df %>%
   group_by(year, species) %>%
   summarise(
     stems = sum(n),                                   # number of trees
-    plots_present = n_distinct(plot[n > 0]),          # plots where species occurs
+    #plots_present = n_distinct(plot[n > 0]),          # plots where species occurs
     .groups = "drop"
   ) %>% 
   tidyr::pivot_wider(
     names_from  = year,
-    values_from = c(stems, plots_present),
+    values_from = c(stems),
     names_glue  = "{.value}_{year}",
-    values_fill = list(stems = 0L, plots_present = 0L)
+    values_fill = list(stems = 0L)
   ) %>%
   dplyr::arrange(species) %>% 
-  mutate(trees23 = sum(stems_2023, na.rm = T),
-         trees25 = sum(stems_2025, na.rm = T),
-         plots23 = sum(plots_present_2023, na.rm = T),
-         plots25 = sum(plots_present_2025, na.rm = T))
+  mutate(trees23 = n_trees23,
+         trees25 = n_trees25,
+         share23 = round(stems_2023/trees23*100,2),
+         share25 = round(stems_2025/trees25*100,2)) 
          
+top10_by_year <- species_year %>%
+  dplyr::select(species, share23, share25) %>%
+  tidyr::pivot_longer(
+    dplyr::starts_with("share"),
+    names_to = "year",
+    names_prefix = "share",
+    values_to = "share"
+  ) %>%
+  dplyr::mutate(year = factor(paste0("20", year), levels = c("2023", "2025"))) %>%
+  dplyr::group_by(year) %>%
+  dplyr::slice_max(order_by = share, n = 10, with_ties = FALSE) %>%
+  dplyr::ungroup()
 
+top10_2023 <- top10_by_year %>% dplyr::filter(year == "2023") %>% dplyr::pull(species)
+top10_2025 <- top10_by_year %>% dplyr::filter(year == "2025") %>% dplyr::pull(species)
 
+length(union(top10_2023, top10_2025))      # 11 (your result)
+length(intersect(top10_2023, top10_2025))  # 9  (overlap size)
 
+setdiff(top10_2025, top10_2023)  # species only in 2025's top10
+setdiff(top10_2023, top10_2025)  # species only in 2023's top10
 
+unique(top10_by_year$species)
+
+top_species_v <- head(unique(top10_by_year$species), 10)
 
 
 
