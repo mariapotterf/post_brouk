@@ -564,6 +564,7 @@ field_sub_summ <- dat_subplot_recode %>%
     sp_richness = if (stems_total > 0) n_distinct(species[n > 0]) else 0,
     shannon_sp  = if (stems_total > 0) vegan::diversity(n, index = "shannon") else 0,
     evenness_sp = if (sp_richness > 1) shannon_sp / log(sp_richness) else 0,
+    effective_numbers = ifelse(stems_total > 0, exp(shannon_sp), NA_real_),
     # weighted mean height using only present stems
     mean_hgt    = if (stems_total > 0) weighted.mean(hgt_est[n > 0], n[n > 0]) else NA_real_,
     
@@ -699,6 +700,7 @@ plot_metrics_mean <- field_sub_summ %>%
     mean_evenness_sp = mean(evenness_sp, na.rm = TRUE),
     mean_mean_hgt    = mean(mean_hgt,    na.rm = TRUE),
     mean_cv_hgt      = mean(cv_hgt,      na.rm = TRUE),
+    mean_eff_numb    = mean(effective_numbers, na.rm = TRUE),    
     #var_cv_hgt       = var(cv_hgt,       na.rm = TRUE),
     #mean_range_hgt   = mean(range_hgt,   na.rm = TRUE),
     .groups = "drop"
@@ -715,6 +717,7 @@ plot_metrics_pooled  <- dat_subplot_recode %>%
     shannon_sp  = if (stems_total > 0) vegan::diversity(n, index = "shannon") else 0,
     evenness_sp = if (sp_richness > 1) shannon_sp / log(sp_richness) else 0,
     mean_hgt    = if (stems_total > 0) weighted.mean(hgt_est, n, na.rm = TRUE) else NA_real_,
+    effective_numbers = ifelse(stems_total > 0, exp(shannon_sp), NA_real_),
     # compute weighted variance whenever we have ≥2 stems and any finite heights
     var_hgt = {
       if (stems_total > 1) {
@@ -748,6 +751,8 @@ sub_df <- field_sub_summ %>%
     mean_hgt = mean_hgt,
     sp_richness = sp_richness,
     shannon_sp  = shannon_sp ,
+    evenness_sp = evenness_sp ,
+    effective_numbers = effective_numbers,
     w        = stems_total
   )
 
@@ -763,6 +768,8 @@ plot_df <- plot_metrics_pooled %>%
     mean_hgt = mean_hgt,
     sp_richness = sp_richness,
     shannon_sp  = shannon_sp ,
+    evenness_sp = evenness_sp ,
+    effective_numbers = effective_numbers,
     w        = stems_total
   ) %>%
   filter(!is.na(cv_hgt), cv_hgt > 0)
@@ -777,62 +784,68 @@ both_levels_re2 <- bind_rows(sub_df, plot_df) %>%
   mutate(dens_ha = dens_m2*10000)
 
 
-#df_violin %>% 
-p.dens <- both_levels_re2 %>% 
-  #dplyr::filter()
-  ggplot(aes(x = year, y = dens_ha , fill = level, color = level)
-             ) +
-  geom_violin(alpha = 0.5, trim = TRUE, width = 0.8,
-              position = position_dodge(0.9)) +
-  geom_boxplot(outlier.shape = NA, color = 'black', alpha = 0.5, width=0.1,position = position_dodge(0.9)) +
-  coord_cartesian(y = c(0,35000))
-
-  #
-
-#df_violin %>% 
-p.height<- both_levels_re2 %>% 
-  #dplyr::filter()
-  ggplot(aes(x = year, y = mean_hgt , fill = level, color = level)
-  ) +
-  geom_violin(alpha = 0.5, trim = TRUE, width = 0.8,
-              position = position_dodge(0.9)) +
-  geom_boxplot(outlier.shape = NA, color = 'black', alpha = 0.5, width=0.1,position = position_dodge(0.9))+
-  coord_cartesian(y = c(0,6))
+make_violin_per_group <- function(df, y, ylim = NULL, drop_zeros = FALSE) {
+  pd <- position_dodge(0.9)
   
-p.cv<- both_levels_re2 %>% 
-  #dplyr::filter()
-  ggplot(aes(x = year, y = cv_hgt , fill = level, color = level)
-  ) +
-  geom_violin(alpha = 0.5, trim = TRUE, width = 0.8,
-              position = position_dodge(0.9)) +
-  geom_boxplot(outlier.shape = NA, color = 'black', alpha = 0.5, width=0.1,position = position_dodge(0.9))  #ylim(0,7)
-p.cv
+  d <- df %>% filter(!is.na({{y}}))
+  if (drop_zeros) d <- d %>% filter({{y}} > 0)
+  
+  p <- ggplot(d, aes(x = year, y = {{y}}, fill = level, color = level)) +
+    geom_violin(alpha = 0.5, trim = TRUE, width = 0.8, position = pd) +
+    geom_boxplot(outlier.shape = NA, color = "black", alpha = 0.5, #fill = 'white',
+                 width = 0.2, position = pd) + 
+    theme_grey()
+  if (!is.null(ylim)) p <- p + coord_cartesian(ylim = ylim)
+  p
+}
 
-p.shannon <- both_levels_re2 %>% 
-  #dplyr::filter()
-  ggplot(aes(x = year, y = shannon_sp   , fill = level, color = level)
-  ) +
-  geom_violin(alpha = 0.5, trim = TRUE, width = 0.8,
-              position = position_dodge(0.9)) +
-  geom_boxplot(outlier.shape = NA, color = 'black', alpha = 0.5, width=0.1,position = position_dodge(0.9))#ylim(0,7)
+p.dens     <- make_violin_per_group(both_levels_re2, dens_ha,   ylim = c(0, 35000))
+p.height   <- make_violin_per_group(both_levels_re2, mean_hgt,  ylim = c(0, 6), drop_zeros = TRUE)
+p.cv       <- make_violin_per_group(both_levels_re2, cv_hgt)
+p.shannon  <- make_violin_per_group(both_levels_re2, shannon_sp)
+p.richness <- make_violin_per_group(both_levels_re2, sp_richness)
+p.eveness  <- make_violin_per_group(both_levels_re2, evenness_sp)
+p.eff      <- make_violin_per_group(both_levels_re2, effective_numbers, ylim = c(0, 10))
 
-p.richness <- both_levels_re2 %>% 
-  #dplyr::filter()
-  ggplot(aes(x = year, y = sp_richness, fill = level, color = level)
-  ) +
-  geom_violin(alpha = 0.5, trim = TRUE, width = 0.8,
-              position = position_dodge(0.9)) +
-  geom_boxplot(outlier.shape = NA, color = 'black', alpha = 0.5, width=0.1,position = position_dodge(0.9))# +
+# Arrange with a shared legend
+ggarrange(p.dens, p.height, p.cv, p.shannon, p.richness,p.eveness,p.eff,
+          common.legend = TRUE, legend = "bottom")
 
-p.richness
 
-ggarrange(p.dens, p.height, p.cv, p.shannon, p.richness, common.legend = TRUE )
+make_violin_per_year <- function(df, y, ylim = NULL, drop_zeros = FALSE) {
+  pd <- position_dodge(0.9)
+  
+  d <- df %>% filter(!is.na({{y}}))
+  if (drop_zeros) d <- d %>% filter({{y}} > 0)
+  
+  p <- ggplot(d, aes(x = year, y = {{y}}, fill = year, color = year)) +
+    geom_violin(alpha = 0.5, trim = TRUE, width = 0.8, position = pd) +
+    geom_boxplot(outlier.shape = NA, color = "black", alpha = 0.5, #fill = 'white',
+                 width = 0.2, position = pd) + 
+    theme_grey()
+  if (!is.null(ylim)) p <- p + coord_cartesian(ylim = ylim)
+  p
+}
+
+p.dens     <- make_violin_per_year(both_levels_re2, dens_ha,   ylim = c(0, 35000))
+p.height   <- make_violin_per_year(both_levels_re2, mean_hgt,  ylim = c(0, 6), drop_zeros = TRUE)
+p.cv       <- make_violin_per_year(both_levels_re2, cv_hgt)
+p.shannon  <- make_violin_per_year(both_levels_re2, shannon_sp)
+p.richness <- make_violin_per_year(both_levels_re2, sp_richness)
+p.eveness  <- make_violin_per_year(both_levels_re2, evenness_sp)
+p.eff      <- make_violin_per_year(both_levels_re2, effective_numbers, ylim = c(0, 10))
+
+# Arrange with a shared legend
+ggarrange(p.dens, p.height, p.cv, p.shannon, p.richness,p.eveness,p.eff,
+          common.legend = TRUE, legend = "bottom")
+
+
 
 
 # get summary statistics
-out_summary_tbl <- both_levels_re2 %>%
+out_summary_full <- both_levels_re2 %>%
   ungroup() %>%
-  select(year, level, mean_hgt, cv_hgt, shannon_sp, sp_richness) %>%
+  select(year, level, mean_hgt, cv_hgt, shannon_sp, sp_richness, evenness_sp,effective_numbers) %>%
   pivot_longer(-c(year, level), names_to = "metric", values_to = "value") %>%
   # keep mean_hgt > 0, others as-is
   filter(!(metric == "mean_hgt" & (is.na(value) | value <= 0))) %>%
@@ -848,14 +861,31 @@ out_summary_tbl <- both_levels_re2 %>%
     p25      = quantile(value, 0.25, na.rm = TRUE),
     p75      = quantile(value, 0.75, na.rm = TRUE),
     .groups  = "drop"
-  ) %>%
-  arrange(metric, year)
+  ) 
 
-out_summary_tbl
+out_summary_full
 
+out_summary_years <- both_levels_re2 %>%
+  ungroup() %>%
+  select(year,  mean_hgt, cv_hgt, shannon_sp, sp_richness, evenness_sp,effective_numbers) %>%
+  pivot_longer(-c(year), names_to = "metric", values_to = "value") %>%
+  # keep mean_hgt > 0, others as-is
+  filter(!(metric == "mean_hgt" & (is.na(value) | value <= 0))) %>%
+  group_by(metric, year) %>%
+  summarise(
+    n_total  = n(),
+    n_non_na = sum(!is.na(value)),
+    n_na     = sum(is.na(value)),
+    mean     = mean(value, na.rm = TRUE),
+    sd       = sd(value, na.rm = TRUE),
+    se       = sd/sqrt(n_non_na),
+    median   = median(value, na.rm = TRUE),
+    p25      = quantile(value, 0.25, na.rm = TRUE),
+    p75      = quantile(value, 0.75, na.rm = TRUE),
+    .groups  = "drop"
+  ) 
 
-
-
+out_summary_years
 
 
 
