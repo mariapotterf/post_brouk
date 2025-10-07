@@ -783,6 +783,53 @@ both_levels_re2 <- bind_rows(sub_df, plot_df) %>%
   ) %>% 
   mutate(dens_ha = dens_m2*10000)
 
+# make violin across scales -----
+
+make_violin_per_scale <- function(df, y,
+                                 ylim = NULL,
+                                 drop_zeros = FALSE,
+                                 # p_y = NULL,           # e.g., p_y = 5  (data units)
+                                 p_y_npc = 0.9,       # or p_y_npc = 0.9 (90% up)
+                                 p_size = 3,
+                                 p_method = "wilcox.test") {
+  
+  pd <- position_dodge(0.9)
+  
+  d <- df %>% filter(!is.na({{y}}))
+  if (drop_zeros) d <- d %>% filter({{y}} > 0)
+  
+  p <- ggplot(d, aes(x = level, y = {{y}}, fill = level, color = level)) +
+    geom_violin(alpha = 0.5, trim = TRUE, width = 0.8, position = pd) +
+    geom_boxplot(outlier.shape = NA, color = "black", alpha = 0.5,
+                 width = 0.2, position = pd) +
+    theme_grey(base_size = 8)
+  
+  if (!is.null(ylim)) p <- p + coord_cartesian(ylim = ylim)
+  
+  p + ggpubr::stat_compare_means(method = p_method, label = "p.format",
+                                 size = p_size,
+                                 #label.y = p_y,       # use either…
+                                 label.y.npc = p_y_npc)  # …or this (0–1)
+}
+
+p.dens     <- make_violin_per_scale(both_levels_re2, dens_ha,   ylim = c(0, 35000), p_y_npc = 0.3)
+p.height   <- make_violin_per_scale(both_levels_re2, mean_hgt,  ylim = c(0, 6), drop_zeros = TRUE, p_y_npc = 0.2)
+p.cv       <- make_violin_per_scale(both_levels_re2, cv_hgt)
+p.shannon  <- make_violin_per_scale(both_levels_re2, shannon_sp)
+p.richness <- make_violin_per_scale(both_levels_re2, sp_richness)
+p.eveness  <- make_violin_per_scale(both_levels_re2, evenness_sp)
+p.eff      <- make_violin_per_scale(both_levels_re2, effective_numbers, ylim = c(0, 10))
+
+# Arrange with a shared legend
+out_plot <- ggarrange(p.dens, p.height, p.cv, p.shannon, p.richness,p.eveness,p.eff,
+          common.legend = TRUE, legend = "bottom")
+
+annotate_figure(out_plot, top = text_grob("Per scale", 
+                                          color = "black", face = "bold", size = 14))
+
+
+
+
 
 make_violin_per_group <- function(df, y, ylim = NULL, drop_zeros = FALSE) {
   pd <- position_dodge(0.9)
@@ -808,11 +855,24 @@ p.eveness  <- make_violin_per_group(both_levels_re2, evenness_sp)
 p.eff      <- make_violin_per_group(both_levels_re2, effective_numbers, ylim = c(0, 10))
 
 # Arrange with a shared legend
-ggarrange(p.dens, p.height, p.cv, p.shannon, p.richness,p.eveness,p.eff,
+out_plot <- ggarrange(p.dens, p.height, p.cv, p.shannon, p.richness,p.eveness,p.eff,
           common.legend = TRUE, legend = "bottom")
 
+annotate_figure(out_plot, top = text_grob("Per group", 
+                                          color = "black", face = "bold", size = 14))
 
-make_violin_per_year <- function(df, y, ylim = NULL, drop_zeros = FALSE) {
+
+
+# add comparison between years at plot and subplot levels
+
+make_violin_per_year <- function(df, y,
+                                 ylim = NULL,
+                                 drop_zeros = FALSE,
+                                # p_y = NULL,           # e.g., p_y = 5  (data units)
+                                 p_y_npc = 0.9,       # or p_y_npc = 0.9 (90% up)
+                                 p_size = 3,
+                                 p_method = "wilcox.test") {
+  
   pd <- position_dodge(0.9)
   
   d <- df %>% filter(!is.na({{y}}))
@@ -820,24 +880,52 @@ make_violin_per_year <- function(df, y, ylim = NULL, drop_zeros = FALSE) {
   
   p <- ggplot(d, aes(x = year, y = {{y}}, fill = year, color = year)) +
     geom_violin(alpha = 0.5, trim = TRUE, width = 0.8, position = pd) +
-    geom_boxplot(outlier.shape = NA, color = "black", alpha = 0.5, #fill = 'white',
-                 width = 0.2, position = pd) + 
-    theme_grey()
+    geom_boxplot(outlier.shape = NA, color = "black", alpha = 0.5,
+                 width = 0.2, position = pd) +
+    theme_grey(base_size = 8)
+  
   if (!is.null(ylim)) p <- p + coord_cartesian(ylim = ylim)
-  p
+  
+  p + ggpubr::stat_compare_means(method = p_method, label = "p.format",
+                                 size = p_size,
+                                 #label.y = p_y,       # use either…
+                                 label.y.npc = p_y_npc)  # …or this (0–1)
 }
 
-p.dens     <- make_violin_per_year(both_levels_re2, dens_ha,   ylim = c(0, 35000))
-p.height   <- make_violin_per_year(both_levels_re2, mean_hgt,  ylim = c(0, 6), drop_zeros = TRUE)
-p.cv       <- make_violin_per_year(both_levels_re2, cv_hgt)
-p.shannon  <- make_violin_per_year(both_levels_re2, shannon_sp)
-p.richness <- make_violin_per_year(both_levels_re2, sp_richness)
-p.eveness  <- make_violin_per_year(both_levels_re2, evenness_sp)
-p.eff      <- make_violin_per_year(both_levels_re2, effective_numbers, ylim = c(0, 10))
+
+# porovnanie cez subplot
+p.dens     <- make_violin_per_year(dplyr::filter(both_levels_re2, level=="subplot"), dens_ha, ylim = c(0, 45000), p_y_npc = 0.35) #,   
+p.dens
+p.height   <- make_violin_per_year(dplyr::filter(both_levels_re2, level=="subplot"), mean_hgt, drop_zeros = TRUE, ylim = c(0, 6), p_y_npc = 0.2) #,  
+p.cv       <- make_violin_per_year(dplyr::filter(both_levels_re2, level=="subplot"), cv_hgt)
+p.shannon  <- make_violin_per_year(dplyr::filter(both_levels_re2, level=="subplot"), shannon_sp)
+p.richness <- make_violin_per_year(dplyr::filter(both_levels_re2, level=="subplot"), sp_richness)
+p.eveness  <- make_violin_per_year(dplyr::filter(both_levels_re2, level=="subplot"), evenness_sp)
+p.eff      <- make_violin_per_year(dplyr::filter(both_levels_re2, level=="subplot"), effective_numbers) #, ylim = c(0, 10)
 
 # Arrange with a shared legend
-ggarrange(p.dens, p.height, p.cv, p.shannon, p.richness,p.eveness,p.eff,
+out_plot <- ggarrange(p.dens, p.height, p.cv, p.shannon, p.richness,p.eveness,p.eff,
           common.legend = TRUE, legend = "bottom")
+
+annotate_figure(out_plot, top = text_grob("Subplot level", 
+                                      color = "black", face = "bold", size = 14))
+
+# porovnanie cez plot
+
+p.dens     <- make_violin_per_year(dplyr::filter(both_levels_re2, level=="plot"), dens_ha, ylim = c(0, 45000), p_y_npc = 0.35) #,   ylim = c(0, 35000)
+p.height   <- make_violin_per_year(dplyr::filter(both_levels_re2, level=="plot"), mean_hgt,drop_zeros = TRUE, ylim = c(0, 6), p_y_npc = 0.2) #,  ylim = c(0, 6),
+p.cv       <- make_violin_per_year(dplyr::filter(both_levels_re2, level=="plot"), cv_hgt)
+p.shannon  <- make_violin_per_year(dplyr::filter(both_levels_re2, level=="plot"), shannon_sp)
+p.richness <- make_violin_per_year(dplyr::filter(both_levels_re2, level=="plot"), sp_richness)
+p.eveness  <- make_violin_per_year(dplyr::filter(both_levels_re2, level=="plot"), evenness_sp)
+p.eff      <- make_violin_per_year(dplyr::filter(both_levels_re2, level=="plot"), effective_numbers) #, ylim = c(0, 10)
+
+# Arrange with a shared legend
+out_plot <- ggarrange(p.dens, p.height, p.cv, p.shannon, p.richness,p.eveness,p.eff,
+                      common.legend = TRUE, legend = "bottom")
+
+annotate_figure(out_plot, top = text_grob("Plot level", 
+                                          color = "black", face = "bold", size = 14))
 
 
 
