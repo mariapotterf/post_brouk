@@ -740,8 +740,6 @@ df_stem_dens_species_year <- df_stem_dens_species %>%
 # Half-violin plot -------------
 
 # packages
-library(dplyr)
-library(ggplot2)
 library(gghalves)   # install.packages("gghalves") if needed
 
 # clean + ordering
