@@ -154,14 +154,105 @@ year_bands <- summary_monthly |>
   ) |>
   dplyr::filter(is_even)
 
-p_monthly <- ggplot(summary_monthly, aes(x = date, y = mean, color = scene, fill = scene, group = scene)) +
-  geom_rect(
-    data = year_bands,
-    aes(xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf),
-    inherit.aes = FALSE, fill = "grey85", alpha = 0.25
-  ) +
+# ---- PLOTS ------------------------------------------------------------------
+# Monthly: mean ± SD over time, faceted by SPEI window
+year_bands <- summary_monthly |>
+  dplyr::distinct(year) |>
+  dplyr::transmute(
+    year, xmin = as.Date(sprintf("%04d-01-01", year)),
+    xmax = as.Date(sprintf("%04d-12-31", year)),
+    is_even = (year %% 2) == 0
+  ) |>
+  dplyr::filter(is_even)
+ 
+p_monthly <- summary_monthly %>% 
+  dplyr::filter(grepl("(?i)harg\\s*?1([^0-9]|$)", scene, perl = TRUE)) %>% 
+  ggplot(aes(x = date, y = mean,  group = scene)) +
+  # geom_rect(
+  #   data = year_bands,
+  #   aes(xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf),
+  #   inherit.aes = FALSE, fill = "grey85", alpha = 0.25
+  # ) +
   geom_errorbar(aes(ymin = mean - sd, ymax = mean + sd), width = 0.2, alpha = 0.7) +
   geom_line() +
   geom_point(size = 1.05) +
-  geom_hline(yinterce_
-             
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+  facet_wrap(~ spei, ncol = 1, scales = "free_y") +
+  labs(x = "Date", y = "SPEI (monthly mean ± SD)",# color = "Scene", fill = "Scene",
+       title = "Monthly SPEI by scene") +
+  theme_bw(base_size = 9)
+
+p_monthly
+
+
+p_monthly_cols <- summary_monthly %>% 
+  dplyr::filter(grepl("(?i)harg\\s*?1([^0-9]|$)", scene, perl = TRUE)) %>% 
+  dplyr::mutate(sign = ifelse(mean > 0, "Positive (> 0)", "Negative (< 0)")) %>%
+  ggplot(aes(x = date, y = mean, group = scene, color = sign)) +
+  geom_errorbar(aes(ymin = mean - sd, ymax = mean + sd), width = 0.2, alpha = 0.7) +
+  geom_line() +
+  geom_point(size = 1.05) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+  facet_wrap(~ spei, ncol = 1, scales = "free_y") +
+  scale_color_manual(values = c("Negative (< 0)" = "red", "Positive (> 0)" = "blue")) +
+  labs(
+    x = "Date",
+    y = "SPEI (monthly mean ± SD)",
+    title = "Monthly SPEI by scene",
+    color = NULL
+  ) +
+  theme_bw(base_size = 9)
+
+p_monthly_cols
+
+
+p_monthly_cols_sub <- summary_monthly %>% 
+  dplyr::filter(grepl("(?i)harg\\s*?1([^0-9]|$)", scene, perl = TRUE)) %>% 
+  dplyr::filter(year > 1999) %>% 
+  
+  dplyr::mutate(sign = ifelse(mean > 0, "Positive (> 0)", "Negative (< 0)")) %>%
+  ggplot(aes(x = date, y = mean, group = scene, color = sign)) +
+  geom_rect(
+    data = filter(year_bands,year>1999),
+    aes(xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf),
+    inherit.aes = FALSE, fill = "grey85", alpha = 0.25
+  ) +
+  
+  
+  geom_errorbar(aes(ymin = mean - sd, ymax = mean + sd), width = 0.2, alpha = 0.7) +
+  geom_line() +
+  geom_point(size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+  facet_wrap(~ spei, ncol = 1, scales = "free_y") +
+  scale_color_manual(values = c("Negative (< 0)" = "red", 
+                                "Positive (> 0)" = "blue")) +
+  labs(
+    x = "Date",
+    y = "SPEI (monthly mean ± SD)",
+    title = "Monthly SPEI by scene",
+    color = NULL
+  ) +
+  theme_bw(base_size = 9)
+
+p_monthly_cols_sub
+
+
+
+
+# Yearly: mean ± SD per year, faceted by SPEI window
+p_yearly <- summary_monthly %>% 
+  dplyr::filter(grepl("(?i)harg\\s*?1([^0-9]|$)", scene, perl = TRUE)) %>%  
+  ggplot(aes(x = year, y = mean, color = scene, fill = scene, group = scene)) +
+  geom_errorbar(aes(ymin = mean - sd, ymax = mean + sd), width = 0.25, alpha = 0.7) +
+  geom_line() +
+  geom_point(size = 1.2) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+  scale_x_continuous(breaks = pretty_breaks()) +
+  facet_wrap(~ spei, ncol = 1, scales = "free_y") +
+  labs(x = "Year", y = "SPEI (annual mean ± SD)", color = "Scene", fill = "Scene",
+       title = "Annual SPEI by scene", subtitle = "Facets are SPEI windows") +
+  theme_bw(base_size = 9) +
+  theme(legend.position = "bottom")
+
+p_monthly
+p_yearly
