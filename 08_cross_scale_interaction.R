@@ -274,47 +274,7 @@ cvx_stem_density <- cvx_df %>%
   )
 
 
-
-
-
-#### Density per square ------------------------------
-
-# Plot = CVX: stem density
-# sq_stem_density <- sq_df %>%
-#   #  ungroup(.) %>% 
-#   group_by(plot_ID) %>%  #, area_m2
-#   dplyr::reframe(
-#     n_trees = n(),
-#     area_m2 = mean(area_m2, na.rm  = T),  # keep are here instead of grouping
-#     density_ha = n_trees / area_m2 * 10000
-#   ) %>% 
-#   rename(subplot = plot_ID)
-# 
-# sq_stem_density_species <- sq_df %>%
-#   group_by(plot_ID, species) %>%
-#   dplyr::reframe(
-#     n_trees = n(),
-#     area_m2 = mean(area_m2, na.rm  = T),  # keep are here instead of grouping
-#     density_ha = n_trees / area_m2 * 10000
-#   ) %>% 
-#   rename(subplot = plot_ID)
-# 
-# sq_stem_density_status <- sq_df %>%
-#   group_by(plot_ID, species, status) %>%
-#   summarise(
-#     n_trees = n(),
-#     area_m2 = mean(area_m2, na.rm  = T),  # keep are here instead of grouping
-#     density_sp_status = n_trees / area_m2 * 10000,
-#     .groups = "drop"
-#   ) %>% 
-#   rename(subplot = plot_ID)
-# 
-# 
-# head(sq_stem_density_species)
-# head(cxv_stem_density_species)
-# 
-
-
+### Clean up field data -----------------------------------
 # guestimate dbh and ba per individual based on height distribution 
 dat_subplot_recode <- dat_subplots %>% 
   # adjust tree species naming
@@ -707,51 +667,28 @@ df_stem_dens_species_year <- df_stem_dens_species %>%
 
 
 
-# Half-violin plot -------------
-# !!!! not working yeat!!
-# packages
-#library(gghalves)   # install.packages("gghalves") if needed
-
-# clean + ordering
+# Boxplot for stem density -------------
 df_stem_dens_species_year2 <- df_stem_dens_species_year %>%
-  dplyr::filter(!is.na(log_sum_stem_density), year %in% c("2023","2025")) %>%
-  dplyr::mutate(
-    year    = factor(year, levels = c("2023","2025")),
-    species = droplevels(species)  # keep only present species
-  )
+  dplyr::filter(!is.na(log_sum_stem_density) & sum_n > 0) %>%
+  dplyr::mutate(year = factor(year, levels = c("2023","2025")),
+                # order by mean log density (ascending → highest ends up at the TOP after coord_flip)
+                species = forcats::fct_reorder(species, log_sum_stem_density, .fun = mean, na.rm = TRUE))
 
-ggplot(df_stem_dens_species_year2, aes(x = log_sum_stem_density, y = species)) +
-  # left half: 2023
-  gghalves::geom_half_violin(
-    data  = dplyr::filter(plot_df, year == "2023"),
-    aes(fill = year),
-    side  = "l",
-    trim  = FALSE,
-    color = NA,
-    alpha = 0.9
-  ) +
-  # right half: 2025
-  gghalves::geom_half_violin(
-    data  = dplyr::filter(plot_df, year == "2025"),
-    aes(fill = year),
-    side  = "r",
-    trim  = FALSE,
-    color = NA,
-    alpha = 0.9
-  ) +
-  scale_fill_manual(values = c("2023" = "#1f78b4", "2025" = "#33a02c"), name = "Year") +
+p_density<-df_stem_dens_species_year2 %>% 
+  filter(!is.na(species)) %>% 
+  ggplot(aes(x = species, y = log_sum_stem_density, fill = year)) +
+  geom_boxplot(position = position_dodge2(width = 0.75, preserve = "single"),
+               outlier.shape =  NA) +
+  coord_flip() +
   labs(
-    x = "log(sum stem density)",
-    y = "Species",
-    title = "Half-violin densities of stem density by species and year"
+    x = "Species",
+    y = "log(sum stem density)", 
+    fill = "Year"#,
+    #title = "Stem density by species (boxplots split by year)"
   ) +
-  theme_minimal(base_size = 12)
-# If you have a named vector 'species_labels' (code -> Latin), add:
-# + scale_y_discrete(labels = species_labels)
+  theme_classic(base_size = 10)
 
-
-
-
+ggarrange( p_bar, p_density,common.legend = T)
 
 ## Density plot of stem density  ----------------------------------
 
@@ -891,14 +828,18 @@ p_bar <- ggplot(top12_by_year, aes(x = share, y = species, fill = year)) +
   geom_col(position = position_dodge(width = 0.7), width = 0.6) +
   # if 'share' is 0–100 already, just add a % suffix:
   scale_x_continuous(labels = label_number(accuracy = 0.1, suffix = "%")) +
-  scale_y_discrete(labels = species_labels)+
+  scale_y_discrete(
+    limits = rev(names(species_labels)),
+    labels = species_labels,
+    drop = FALSE
+  ) +
   # if you prefer proportions (0–1), use:
   # scale_x_continuous(labels = label_percent()) 
   labs(
     x = "Share of stems",
     y = "Species",
-    fill = "Year",
-    title = "Top 12 species by share, by year"
+    fill = "Year"#,
+    #title = "Top 12 species by share, by year"
   ) +
   theme_classic2(base_size = 10) +
   theme(axis.text.y = element_text(size = 10))
