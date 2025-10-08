@@ -185,26 +185,9 @@ pre_trees        <- terra::vect("raw/pre-disturb_history_trees/pre-disturbance_t
 
 ## Data clean up -------------------------------------------------
 
-# rename to 'subplots'
-# drone_cv <- drone_cv %>% 
-#   rename(subplot = plot_ID) %>% 
-#   mutate(plot = str_replace(subplot, "^[^_]+_([^_]+_[^_]+)_.*$", "\\1"),
-#          pixel_value = pmax(pixel_value, 0)   # clamp negatives to 0)
-#   )
-
-
-### pre-disturbance cluster: tree density, % share of spruce, Reproject to EPSG:3035 (ETRS89-LAEA)
-#convex_hull_3035 <- project(convex_hull, "EPSG:3035")
-#pre_trees_3035   <- project(pre_trees, "EPSG:3035")
-#buff_square_3035 <- project(buff_square, "EPSG:3035")
-
 # Get polygon area (in m²) & perimeter - this is convex hull + buffer around it to avoid edge effects
 convex_hull$area_m2     <- expanse(convex_hull, unit = "m")
 convex_hull$perimeter_m <- perim(convex_hull)
-
-#buff_square_3035$area_m2      <- expanse(buff_square_3035, unit = "m")
-#buff_square_3035$perimeter_m  <- perim(buff_square_3035)
-
 
 # clean up tree characteristics: get species, ..
 pre_trees_df <- as.data.frame(pre_trees) %>%
@@ -255,13 +238,18 @@ cvx_clean <- convex_hull %>%
 convex_hull_3035_clean  <-convex_hull[, c("cluster_2023","cluster_2025")]
 values(convex_hull_3035_clean)  <- cvx_clean
 
+
+# split the dataset to isolate only shared plots between 2 years
+# make oone table for year 2023
+# one table for year 2025
+# one for shared
+
+
 # kolko ploch mame? 
 table(convex_hull_3035_clean$status)
 
 # both only_2023 only_2025 
 # 130         9        74 
-
-
 
 # Add subplot (square)/plot (convex hull) info to each tree  (spatial join)
 pre_trees_cvx_joined <- terra::intersect(pre_trees_3035_clean, convex_hull_3035_clean)
@@ -271,12 +259,9 @@ pre_trees_cvx_joined <- terra::intersect(pre_trees_3035_clean, convex_hull_3035_
 
 
 
-### Get stem density per Run once for convex hulls, once for squares  -------------------
+### Get stem density per plot -------------------
 cvx_df <- as.data.frame(pre_trees_cvx_joined)
 #names(cvx_df) <- make.unique(names(cvx_df))
-
-
-#sq_df  <- as.data.frame(pre_trees_sq_joined) 
 
 ####  Plot = CVX: stem density ------------------------------
 cvx_stem_density <- cvx_df %>%
@@ -288,22 +273,7 @@ cvx_stem_density <- cvx_df %>%
     pre_dist_dens_ha = n_trees / area_m2 * 10000
   )
 
-cxv_stem_density_species <- cvx_df %>%
-  group_by(plot_comb , species) %>%
-  dplyr::reframe(
-    n_trees = n(),
-    area_m2 = mean(area_m2, na.rm  = T),  # keep are here instead of grouping
-    density_ha = n_trees / area_m2 * 10000
-  )
 
-cvx_stem_density_status <- cvx_df %>%
-  group_by(plot_comb , species, status) %>%
-  summarise(
-    n_trees = n(),
-    area_m2 = mean(area_m2, na.rm  = T),  # keep are here instead of grouping
-    density_sp_status = n_trees / area_m2 * 10000,
-    .groups = "drop"
-  )
 
 
 
@@ -738,19 +708,19 @@ df_stem_dens_species_year <- df_stem_dens_species %>%
 
 
 # Half-violin plot -------------
-
+# !!!! not working yeat!!
 # packages
-library(gghalves)   # install.packages("gghalves") if needed
+#library(gghalves)   # install.packages("gghalves") if needed
 
 # clean + ordering
-plot_df <- df_stem_dens_species_year %>%
+df_stem_dens_species_year2 <- df_stem_dens_species_year %>%
   dplyr::filter(!is.na(log_sum_stem_density), year %in% c("2023","2025")) %>%
   dplyr::mutate(
     year    = factor(year, levels = c("2023","2025")),
     species = droplevels(species)  # keep only present species
   )
 
-ggplot(plot_df, aes(x = log_sum_stem_density, y = species)) +
+ggplot(df_stem_dens_species_year2, aes(x = log_sum_stem_density, y = species)) +
   # left half: 2023
   gghalves::geom_half_violin(
     data  = dplyr::filter(plot_df, year == "2023"),
