@@ -241,6 +241,14 @@ values(convex_hull_3035_clean)  <- cvx_clean
 
 # split the dataset to isolate only shared plots between 2 years
 # make oone table for year 2023
+cvx_both = cvx_clean %>% 
+  dplyr::filter(status == "both")
+
+# isolate only ID for 2025 to merge with stem data
+cvx_both25 <-  cvx_both %>%
+  rename(plot = cluster_2025)
+# CONTINUE!!!!
+
 # one table for year 2025
 # one for shared
 
