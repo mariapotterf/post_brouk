@@ -34,6 +34,11 @@ library(vegan) # for diversity indices
 library(mgcv)
 library(ggeffects)
 
+library(RColorBrewer)
+
+library(ggridges)
+library(scales)
+
 
 
 # Read files: --------------
@@ -249,6 +254,14 @@ cvx_clean <- convex_hull %>%
 # Write cleaned attributes back to the terra object
 convex_hull_3035_clean  <-convex_hull[, c("cluster_2023","cluster_2025")]
 values(convex_hull_3035_clean)  <- cvx_clean
+
+# kolko ploch mame? 
+table(convex_hull_3035_clean$status)
+
+# both only_2023 only_2025 
+# 130         9        74 
+
+
 
 # Add subplot (square)/plot (convex hull) info to each tree  (spatial join)
 pre_trees_cvx_joined <- terra::intersect(pre_trees_3035_clean, convex_hull_3035_clean)
@@ -621,7 +634,7 @@ ggarrange(p1, p2)
 # ssame analysis on both scales? 
 
 # get summary acroos all trees and study sites --------------------------
-# !!!!
+# find species with the highest share of stems overall
 # 0) Safe counts (treat NA counts as 0)
 df <- dat_subplot_recode %>%
   mutate(n = coalesce(n, 0L)) %>%
@@ -667,9 +680,20 @@ species_year <-
   mutate(trees23 = n_trees23,
          trees25 = n_trees25,
          share23 = round(stems_2023/trees23*100,2),
-         share25 = round(stems_2025/trees25*100,2)) 
-         
-top10_by_year <- species_year %>%
+         share25 = round(stems_2025/trees25*100,2),
+         total_stems = stems_2023 + stems_2025,
+         total_trees = n_trees23 + n_trees25,
+         total_share = round(total_stems/total_trees * 100,2)) 
+
+# merge counst across 2 years:     
+top12_overall <- 
+  species_year %>%
+  dplyr::select(species, total_stems, total_share) %>%
+  dplyr::slice_max(order_by = total_share, n = 12, with_ties = FALSE) %>%
+  dplyr::ungroup() 
+
+# get top 10 per each year (the order changes a bit)
+top12_by_year <- species_year %>%
   dplyr::select(species, share23, share25) %>%
   tidyr::pivot_longer(
     dplyr::starts_with("share"),
@@ -679,21 +703,249 @@ top10_by_year <- species_year %>%
   ) %>%
   dplyr::mutate(year = factor(paste0("20", year), levels = c("2023", "2025"))) %>%
   dplyr::group_by(year) %>%
-  dplyr::slice_max(order_by = share, n = 10, with_ties = FALSE) %>%
+  dplyr::slice_max(order_by = share, n = 13, with_ties = FALSE) %>%
   dplyr::ungroup()
 
-top10_2023 <- top10_by_year %>% dplyr::filter(year == "2023") %>% dplyr::pull(species)
-top10_2025 <- top10_by_year %>% dplyr::filter(year == "2025") %>% dplyr::pull(species)
+top_2023 <- top12_by_year %>% dplyr::filter(year == "2023") %>% dplyr::pull(species)
+top_2025 <- top12_by_year %>% dplyr::filter(year == "2025") %>% dplyr::pull(species)
 
-length(union(top10_2023, top10_2025))      # 11 (your result)
-length(intersect(top10_2023, top10_2025))  # 9  (overlap size)
+length(union(top_2023, top12_2025))      # 11 (your result)
+length(intersect(top_2023, top12_2025))  # 9  (overlap size)
 
-setdiff(top10_2025, top10_2023)  # species only in 2025's top10
-setdiff(top10_2023, top10_2025)  # species only in 2023's top10
+setdiff(top_2025, top_2023)  # species only in 2025's top10
+setdiff(top_2023, top_2025)  # species only in 2023's top10
 
 unique(top10_by_year$species)
 
-top_species_v <- head(unique(top10_by_year$species), 10)
+v_top12_species_overall <- top12_overall %>% pull(species)
+
+
+# get stem density per species per top 10 species
+df_stem_dens_species <- df %>% 
+  group_by(plot, species, year, n_subplots ) %>%
+  summarize(sum_n = sum(n)) %>% 
+  mutate(scaling_factor = 10000/(n_subplots * 4),
+         stem_dens = sum_n*scaling_factor) %>% 
+  mutate(log_sum_stem_density = log10(stem_dens + 1))# %>%  # Adding 1 to avoid log(0)
+
+
+df_stem_dens_species_year <- df_stem_dens_species %>% 
+  dplyr::group_by(species, year) %>%
+  dplyr::mutate(median_stem_density = median(stem_dens, na.rm = TRUE)) %>% 
+  dplyr::ungroup() %>%
+  mutate(species = factor(species, levels = rev(v_top12_species_overall))) # Set custom order
+
+
+
+# Half-violin plot -------------
+
+# packages
+library(dplyr)
+library(ggplot2)
+library(gghalves)   # install.packages("gghalves") if needed
+
+# clean + ordering
+plot_df <- df_stem_dens_species_year %>%
+  dplyr::filter(!is.na(log_sum_stem_density), year %in% c("2023","2025")) %>%
+  dplyr::mutate(
+    year    = factor(year, levels = c("2023","2025")),
+    species = droplevels(species)  # keep only present species
+  )
+
+ggplot(plot_df, aes(x = log_sum_stem_density, y = species)) +
+  # left half: 2023
+  gghalves::geom_half_violin(
+    data  = dplyr::filter(plot_df, year == "2023"),
+    aes(fill = year),
+    side  = "l",
+    trim  = FALSE,
+    color = NA,
+    alpha = 0.9
+  ) +
+  # right half: 2025
+  gghalves::geom_half_violin(
+    data  = dplyr::filter(plot_df, year == "2025"),
+    aes(fill = year),
+    side  = "r",
+    trim  = FALSE,
+    color = NA,
+    alpha = 0.9
+  ) +
+  scale_fill_manual(values = c("2023" = "#1f78b4", "2025" = "#33a02c"), name = "Year") +
+  labs(
+    x = "log(sum stem density)",
+    y = "Species",
+    title = "Half-violin densities of stem density by species and year"
+  ) +
+  theme_minimal(base_size = 12)
+# If you have a named vector 'species_labels' (code -> Latin), add:
+# + scale_y_discrete(labels = species_labels)
+
+
+
+
+
+## Density plot of stem density  ----------------------------------
+
+# Reverse the color palette and map to the species in the desired order
+n_colors  <- 12  # Number of species
+my_colors <- colorRampPalette(brewer.pal(11, "RdYlGn"))(n_colors)  # Generate colors
+# make / use a palette of exactly the needed length
+pal <- colorRampPalette(brewer.pal(11, "RdYlGn"))(length(v_top12_species_overall))
+pal <- rev(pal)  # start with dark green
+
+# map colors to species automatically
+species_colors <- setNames(pal, v_top12_species_overall)
+species_colors
+#
+
+# species_colors
+# piab      besp      pisy      qusp      fasy      lade      saca      soau      acps      potr      absp      sasp 
+# "#006837" "#17934D" "#58B65F" "#94D168" "#C6E77F" "#EDF7A7" "#FEF0A7" "#FDCD7B" "#FA9C58" "#EE613D" "#D22B26" "#A50026" 
+
+
+# Print the color assignments for confirmation
+print(species_colors)
+
+
+# update species labels
+species_labels <- c(
+  piab = "Picea abies",
+  besp = "Betula sp.",
+  pisy = "Pinus sylvestris",
+  qusp = "Quercus sp.",
+  fasy = "Fagus sylvatica",
+  lade = "Larix decidua",
+  saca = "Salix caprea",
+  soau = "Sorbus aucuparia",
+  acps = "Acer pseudoplatanus",
+  potr = "Populus tremula",
+  absp = "Abies sp.",
+  sasp = "Salix sp."
+)
+
+
+# Calculate median for each species and reorder the factor levels
+df_stem_sp_sum_ordered <- df_stem_dens_species %>%
+  dplyr::filter(sum_n >0) %>% 
+  dplyr::filter(species %in% v_top12_species_overall ) %>%  #top_species_overall
+  dplyr::group_by(species) %>%
+  dplyr::mutate(median_stem_density = median(stem_dens, na.rm = TRUE)) %>% 
+  dplyr::ungroup() %>%
+  mutate(species = factor(species, levels = rev(v_top12_species_overall))) # Set custom order
+# dplyr::mutate(Species = reorder(Species, median_stem_density))  # Reorder species by median stem density
+
+my_species_levels <-  levels(df_stem_sp_sum_ordered$species)
+
+# Add a log-transformed column for sum_stem_density
+df_stem_sp_sum_ordered <- df_stem_sp_sum_ordered %>%
+  mutate(log_sum_stem_density = log10(stem_dens + 1))  # Adding 1 to avoid log(0)
+
+
+p_stem_density_species <- df_stem_sp_sum_ordered %>%
+  ggplot(aes(x = log_sum_stem_density, y = species, group = species)) +
+  geom_density_ridges(
+    aes(fill = species), 
+    alpha = 1, 
+    color = 'NA', 
+    scale = 0.9 # Adjust the vertical scale of the ridges
+  ) +
+  scale_fill_manual(values = species_colors) +
+  stat_summary(
+    aes(x = log_sum_stem_density, fill = species),  # Add fill aesthetic for inner color
+    fun = median, 
+    fun.min = function(x) quantile(x, 0.25),  # 25th percentile (Q1)
+    fun.max = function(x) quantile(x, 0.75),  # 75th percentile (Q3)
+    geom = "pointrange", 
+    color = 'black'      ,  # Black outline for points
+    shape = 21,  # Shape 21 is a circle with a fill and border
+    size = 0.5,
+    linewidth = 0.2,
+    stroke = 0.2,
+    position = position_nudge(y = 0.2)  # No vertical nudge for alignment
+  ) +
+  theme_classic() +
+  labs(
+    title = "",
+    x = expression("\nStem density (log"[10]*") [n ha"^-1*"]"),
+    # x = "\nStem density (log10) [#/ha]",
+    y = ""
+  ) +
+  scale_x_continuous(
+    labels = math_format(10^.x)  # Format x-axis labels as 10^3, 10^4, etc.
+  ) +
+  scale_y_discrete(expand = expansion(add = c(0.2, 0.2))) + # Adjust y-axis padding
+  theme_classic(base_size = 8) +
+  theme(
+    axis.text = element_text(size = 8),    # Axis tick labels
+    axis.title = element_text(size = 8),   # Axis titles
+    panel.grid.minor = element_blank(),    # Remove minor grid lines
+    legend.position = 'none'    ,           # Hide the legend
+    axis.text.y = element_text(face = "italic", size = 8)
+    
+  )
+
+p_stem_density_species + scale_y_discrete(labels = species_labels) #+ # Replace y-axis labels with full Latin names
+
+# barplot of change over years
+
+# Order species by their maximum share across years (nice stable ordering)
+order_levels <- top12_by_year %>%
+  group_by(species) %>%
+  summarise(max_share = max(share, na.rm = TRUE), .groups = "drop") %>%
+  arrange(desc(max_share)) %>%
+  pull(species)
+
+top12_by_year <- top12_by_year %>%
+  mutate(
+    species = factor(species, levels = order_levels),
+    year    = factor(year, levels = c("2023","2025"))
+  )
+
+# master mapping: code -> Latin name
+species_labels_all <- c(
+  piab = "Picea abies",
+  besp = "Betula sp.",
+  pisy = "Pinus sylvestris",
+  qusp = "Quercus sp.",
+  fasy = "Fagus sylvatica",
+  saca = "Salix caprea",
+  lade = "Larix decidua",
+  soau = "Sorbus aucuparia",
+  acps = "Acer pseudoplatanus",
+  potr = "Populus tremula",
+  absp = "Abies sp.",
+  sasp = "Salix sp.",
+  cabe = "Carpinus betulus"
+)
+
+p_bar <- ggplot(top12_by_year, aes(x = share, y = species, fill = year)) +
+  geom_col(position = position_dodge(width = 0.7), width = 0.6) +
+  # if 'share' is 0–100 already, just add a % suffix:
+  scale_x_continuous(labels = label_number(accuracy = 0.1, suffix = "%")) +
+  scale_y_discrete(labels = species_labels)+
+  # if you prefer proportions (0–1), use:
+  # scale_x_continuous(labels = label_percent()) 
+  labs(
+    x = "Share of stems",
+    y = "Species",
+    fill = "Year",
+    title = "Top 12 species by share, by year"
+  ) +
+  theme_classic2(base_size = 10) +
+  theme(axis.text.y = element_text(size = 10))
+
+p_bar
+
+
+
+
+
+
+
+
+
+
 
 
 
