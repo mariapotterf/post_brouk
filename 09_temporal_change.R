@@ -241,7 +241,7 @@ cvx_clean <- convex_hull %>%
   mutate(
     # rok_disturbancia like "2019-…", or "nie"
     disturbance_year = case_when(
-      rok_disturbancia == "nie" ~ 2024L,
+      rok_disturbancia == "nie" ~ 2023L,
       TRUE ~ suppressWarnings(as.integer(str_extract(rok_disturbancia, "^\\d{4}")))
     ),
     disturbance_note = case_when(
@@ -285,11 +285,12 @@ cvx_df <- as.data.frame(pre_trees_cvx_joined)
 ####  Plot = CVX: stem density ------------------------------
 cvx_stem_density <- cvx_df %>%
 #  ungroup(.) %>% 
-  group_by(common_cluster_ID, plot_comb, status, cluster_2023, cluster_2025) %>%  #, area_m2
+  group_by(common_cluster_ID, plot_comb, status, cluster_2023, cluster_2025,
+           disturbance_year, forest_year, disturbance_length) %>%  #, area_m2
   dplyr::reframe(
-    n_trees = n(),
+    pre_dist_trees_n = n(),
     area_m2 = mean(area_m2, na.rm  = T),  # keep are here instead of grouping
-    pre_dist_dens_ha = n_trees / area_m2 * 10000
+    pre_dist_dens_ha = pre_dist_trees_n / area_m2 * 10000
   )
 
 # filter pre-disturbnace trees per year
@@ -304,21 +305,30 @@ cvx_stem_density25 <- cvx_stem_density %>%
 dat_subplots23 <- dat_subplots %>% 
   filter(year == "2023") %>% 
   left_join(cvx_stem_density23, by = c("plot" = "cluster_2023" )) %>% 
-  select(-cluster_2025, -common_cluster_ID, -plot_comb ) 
+  dplyr::select(-cluster_2025, -common_cluster_ID, -plot_comb ) %>% 
+  mutate(time_snc_full_disturbance = 2023 - disturbance_year,
+         time_snc_part_disturbance = 2023 - forest_year + 1)
 
-dat_subplots25 <- dat_subplots %>% 
+dat_subplots25 <- 
+  dat_subplots %>% 
   filter(year == "2025") %>% 
   left_join(cvx_stem_density25, by = c("plot" = "cluster_2025" )) %>% 
   select(-plot, -cluster_2023, -common_cluster_ID ) %>% 
   rename(plot = plot_comb) %>% 
-  select(plot, subplot, species,  vegtype,    hgt,     n,     dbh,   year, n_subplots,status, n_trees,  area_m2, pre_dist_dens_ha)
+  dplyr::select(plot, subplot, species,  vegtype,    hgt,     n,   
+         dbh,   year, 
+         n_subplots,status, disturbance_year, 
+         forest_year, disturbance_length,
+         pre_dist_trees_n,  
+         area_m2, pre_dist_dens_ha
+         ) %>% 
+  mutate(time_snc_full_disturbance = 2025 - disturbance_year,
+         time_snc_part_disturbance = 2025 - forest_year + 1)
 
 # merge data with cleaned up naming
 dat_subplots_merged <- rbind(dat_subplots23, dat_subplots25) %>% 
   mutate(plot    = as.factor(plot),
          subplot = as.factor(subplot))
-
-tail(dat_subplots_merged)
 
 ### Clean up field data -----------------------------------
 # guestimate dbh and ba per individual based on height distribution 
@@ -383,12 +393,12 @@ dat_subplot_recode <- dat_subplot_recode %>%
     # --- Planted / late-successional / non-native ---
     species %in% c("piab","pisy","absp","lade","psme","taba",
                    "fasy","qusp","acca","acpl","acps","frex",
-                   "casa","aehi","saca","rops") ~ "planted",
+                   "casa","aehi","saca","rops") ~ "late",
     
     # --- Pioneer / early successional ---
     species %in% c("besp","alin","algl","alvi","potr","posp","prav",
                    "tisp","soau","soto","soar","cabe","ulsp","aial",
-                   "fror","juni","jure","qusp","sasp","osca") ~ "pioneer",
+                   "fror","juni","jure","qusp","sasp","osca") ~ "early",
     
     # --- Everything else / not clearly one of the two ---
     TRUE ~ "other"
@@ -425,13 +435,32 @@ dat_overlap %>%
   facet_grid(year~vegtype, scales = 'free')
 
 
+# get disturbance characteristics
+
+
+plot_disturb_chars <- dat_overlap %>% 
+  dplyr::select(plot, year, disturbance_year, forest_year, disturbance_length, time_snc_full_disturbance, time_snc_part_disturbance) %>% 
+  distinct()
+
+
+plot_disturb_chars %>% 
+  ggplot(aes(time_snc_full_disturbance)) + 
+  geom_histogram() + 
+  facet_grid(.~year)
+
+# these are doibles because i have records for 2023 and 2025
+table(plot_disturb_chars$disturbance_year)
+table(plot_disturb_chars$time_snc_full_disturbance)
+table(plot_disturb_chars$time_snc_part_disturbance)
+table(plot_disturb_chars$disturbance_length)
+
 
 ### Get context information: management intensity at plot level ----------------------------
-# --- 1) Columns to use & NA -> 0 
+# #--- 1) Columns to use & NA -> 0
 # management_types_v <- c("clear", "grndwrk", "logging_trail", "planting", "anti_browsing")
 # 
-# dat23_subplot_recode <- dat23_subplot_recode %>%
-#   mutate(across(all_of(management_types_v), ~ ifelse(is.na(.), 0, .))) 
+# dat_subplot_recode <- dat_subplot_recode %>%
+#   mutate(across(all_of(management_types_v), ~ ifelse(is.na(.), 0, .)))
 # 
 # # --- 2) Subplot-level scores (use max within subplot to avoid duplicates)
 # mng_subplot_scores <- dat23_subplot_recode %>%
@@ -450,7 +479,7 @@ dat_overlap %>%
 #     management_sub = salvage_sub + protection_sub               # 0..5
 #   )
 # 
-# # --- 3) Plot-level intensities (scaled 0–1) 
+# # --- 3) Plot-level intensities (scaled 0–1)
 # mng_plot_intensity <- mng_subplot_scores %>%
 #   group_by(plot) %>%
 #   summarise(
@@ -468,14 +497,72 @@ dat_overlap %>%
 #     protection_intensity = pmin(pmax(protection_intensity, 0), 1),
 #     management_intensity = pmin(pmax(management_intensity, 0), 1)
 #   )
-# 
+
+# !!!! get share between pioneers vs planted on landscape level 
+# Summarize total number of trees per year and recovery type
+total_per_year <- dat_overlap %>%
+  group_by(year) %>%
+  summarise(
+    total_trees = sum(n, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+tree_summary <- dat_overlap %>%
+  group_by(year, recovery_type) %>%
+  summarise(
+    n_trees_recovery = sum(n, na.rm = TRUE),
+    .groups = "drop"
+  ) %>% 
+  left_join(total_per_year) %>% 
+  mutate(share = n_trees_recovery /total_trees * 100)
+
+print(tree_summary)
+
+# Stacked barplot
+ggplot(tree_summary, aes(x = year, y = share, fill = recovery_type)) +
+  geom_bar(stat = "identity", color = "black") +
+  labs(
+    title = "Tree Counts by Recovery Type per Year",
+    x = "Year",
+    y = "Share [%]",
+    fill = "Recovery Type"
+  ) +
+  scale_fill_manual(values = c("early" = "#66c2a5", "late" = "#fc8d62")) +
+  theme_classic2(base_size = 8)
+
+
+# avegare height and variation per successional stage
+# what are 'other species'?
+dat_overlap %>%
+  filter(recovery_type == 'other') %>% 
+  
+
+
+
+dat_overlap %>% 
+  ggplot(aes(x = recovery_type, y = hgt_est, fill = year)) +
+  geom_boxplot()
+
+
+
+dat_sum_recovery <- dat_overlap %>%
+  mutate(n = coalesce(n, 0L)) %>% 
+  # mutate(year = as.factor(year)) %>% 
+  group_by(recovery_type, year) %>%
+  summarise(
+    stems_total = sum(n, na.rm = TRUE))
+
+dat_sum_recovery
+
+
+
 
 
 # --- Field data: Subplot-level metrics 
 field_sub_summ <- dat_overlap %>%
   mutate(n = coalesce(n, 0L)) %>% 
  # mutate(year = as.factor(year)) %>% 
-  group_by(plot, subplot, year) %>%
+  group_by(plot, subplot, year, time_snc_full_disturbance, time_snc_part_disturbance,disturbance_year, forest_year, disturbance_length  ) %>%
   summarise(
     stems_total = sum(n, na.rm = TRUE),
     sp_richness = if (stems_total > 0) n_distinct(species[n > 0]) else 0,
@@ -512,8 +599,11 @@ field_sub_summ <- dat_overlap %>%
 
 field_sub_summ %>%
   #ungroup() %>%
-  select(year, mean_hgt, cv_hgt, shannon_sp, sp_richness) %>%
-  pivot_longer(-year, names_to = "metric", values_to = "value") %>%
+  select(year, time_snc_full_disturbance, time_snc_part_disturbance, mean_hgt, cv_hgt, shannon_sp, sp_richness) %>%
+  pivot_longer(c(-year, 
+                 - time_snc_full_disturbance, 
+                 - time_snc_part_disturbance),
+               names_to = "metric", values_to = "value") %>%
   # keep mean_hgt > 0, leave others as-is
   filter(!(metric == "mean_hgt" & (is.na(value) | value <= 0))) %>%
   filter(!is.na(value)) %>%
@@ -524,11 +614,52 @@ field_sub_summ %>%
                          sp_richness = "Species richness"
   )) %>%
   ggplot(aes(x = year, y = value)) +
-  stat_summary(fun.data = mean_sd, geom = "errorbar", width = 0.1, size = 0.2, col = 'red') +
+  stat_summary(fun.data = mean_sd, geom = "errorbar", width = 0.1, linewidth = 0.2, col = 'red') +
   stat_summary(fun = \(y) mean(y, na.rm = TRUE), geom = "point", size = 2, col = 'red') +
   facet_wrap(~ metric, scales = "free_y", ncol = 2) +
   labs(x = NULL, y = NULL) +
   theme_classic2()
+
+
+
+# see CV with time since disturbnace 
+field_sub_summ %>%
+  #ungroup() %>%
+  select(year, time_snc_full_disturbance, time_snc_part_disturbance, mean_hgt, cv_hgt, shannon_sp, sp_richness) %>%
+  pivot_longer(c(-year, 
+                 - time_snc_full_disturbance, 
+                 - time_snc_part_disturbance),
+               names_to = "metric", values_to = "value") %>%
+  # keep mean_hgt > 0, leave others as-is
+  filter(!(metric == "mean_hgt" & (is.na(value) | value <= 0))) %>%
+  filter(!is.na(value)) %>%
+  ggplot(aes(x = time_snc_part_disturbance, y = value)) +
+  stat_summary(fun.data = mean_sd, geom = "errorbar", width = 0.1, linewidth = 0.2, col = 'red') +
+  stat_summary(fun = \(y) mean(y, na.rm = TRUE), geom = "point", size = 2, col = 'red') +
+  facet_wrap(~ metric, scales = "free_y", ncol = 2) +
+  labs(x = NULL, y = NULL) +
+  theme_classic2()
+
+field_sub_summ %>%
+  #ungroup() %>%
+  select(year, time_snc_full_disturbance, time_snc_part_disturbance, mean_hgt, cv_hgt, shannon_sp, sp_richness) %>%
+  pivot_longer(c(-year, 
+                 - time_snc_full_disturbance, 
+                 - time_snc_part_disturbance),
+               names_to = "metric", values_to = "value") %>%
+  # keep mean_hgt > 0, leave others as-is
+  filter(!(metric == "mean_hgt" & (is.na(value) | value <= 0))) %>%
+  filter(!is.na(value)) %>%
+  ggplot(aes(x = time_snc_full_disturbance, y = value)) +
+  geom_boxplot(aes(group = time_snc_full_disturbance ), outlier.shape = NA) +
+  stat_summary(fun.data = mean_sd, geom = "errorbar", width = 0.1, linewidth = 0.2, col = 'red') +
+  stat_summary(fun = \(y) mean(y, na.rm = TRUE), geom = "point", size = 2, col = 'red') +
+  facet_wrap(. ~ metric, scales = "free_y", ncol = 2) +
+  labs(x = NULL, y = NULL) +
+  theme_classic2()
+
+
+
 
 subplot_summary_tbl <- field_sub_summ %>%
   ungroup() %>%
@@ -1164,7 +1295,7 @@ ggplot(plot_wide, aes(x = delta_hgt, y = delta_div)) +
 ggplot(plot_wide, aes(x = delta_hgt, y = delta_cv)) +
   geom_point() +
   geom_smooth(method = "gam", se = TRUE) +
-  labs(x = "Δ Mean Height", y = "Δ Shannon Diversity") +
+  labs(x = "Δ Mean CV", y = "Δ Shannon Diversity") +
   theme_classic()
 
 
