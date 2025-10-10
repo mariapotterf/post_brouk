@@ -472,7 +472,7 @@ dat_overlap %>%
 
 
 # --- Field data: Subplot-level metrics 
-field_sub_summ <- dat_subplot_recode %>%
+field_sub_summ <- dat_overlap %>%
   mutate(n = coalesce(n, 0L)) %>% 
  # mutate(year = as.factor(year)) %>% 
   group_by(plot, subplot, year) %>%
@@ -524,7 +524,6 @@ field_sub_summ %>%
                          sp_richness = "Species richness"
   )) %>%
   ggplot(aes(x = year, y = value)) +
- # geom_violin(fill = 'grey90') +
   stat_summary(fun.data = mean_sd, geom = "errorbar", width = 0.1, size = 0.2, col = 'red') +
   stat_summary(fun = \(y) mean(y, na.rm = TRUE), geom = "point", size = 2, col = 'red') +
   facet_wrap(~ metric, scales = "free_y", ncol = 2) +
@@ -557,10 +556,10 @@ subplot_summary_tbl
 
 # summarize subplot information 
 # how many trees?
-sum(field_sub_summ$stems_total)            # 5083 stems
-length(unique(field_sub_summ$subplot))     # 1660
-sum(field_sub_summ$stems_total == 0)       # 330 
-sum(field_sub_summ$cv_hgt > 1, na.rm = T)  # 11
+sum(field_sub_summ$stems_total)            # 3658 stems
+length(unique(field_sub_summ$subplot))     # 1250
+sum(field_sub_summ$stems_total == 0)       # 271 
+sum(field_sub_summ$cv_hgt > 1, na.rm = T)  # 20
 
 
 field_sub_summ_filt <- field_sub_summ %>%
@@ -598,10 +597,10 @@ p2 <- ggplot(field_sub_summ_filt, aes(x = shannon_sp, y = cv_hgt, color = year,
 ggarrange(p1, p2)
 # ssame analysis on both scales? 
 
-# get summary acroos all trees and study sites --------------------------
+## get summary acroos all trees and study sites --------------------------
 # find species with the highest share of stems overall
 # 0) Safe counts (treat NA counts as 0)
-df <- dat_subplot_recode %>%
+df <- dat_overlap %>%
   mutate(n = coalesce(n, 0L)) %>%
   filter(!is.na(species) & species != "")
 
@@ -627,7 +626,7 @@ n_trees25 <- by_year_totals %>%
   pull()
 
 # 2) Species × year counts and presence
-species_year <- 
+species_stem_share_year <- 
   df %>%
   group_by(year, species) %>%
   summarise(
@@ -651,14 +650,14 @@ species_year <-
          total_share = round(total_stems/total_trees * 100,2)) 
 
 # merge counst across 2 years:     
-top12_overall <- 
-  species_year %>%
+top_overall_stem_share <- 
+  species_stem_share_year %>%
   dplyr::select(species, total_stems, total_share) %>%
-  dplyr::slice_max(order_by = total_share, n = 12, with_ties = FALSE) %>%
+  dplyr::slice_max(order_by = total_share, n = 10, with_ties = FALSE) %>%
   dplyr::ungroup() 
 
 # get top 10 per each year (the order changes a bit)
-top12_by_year <- species_year %>%
+top_stems_by_year <- species_stem_share_year %>%
   dplyr::select(species, share23, share25) %>%
   tidyr::pivot_longer(
     dplyr::starts_with("share"),
@@ -668,74 +667,32 @@ top12_by_year <- species_year %>%
   ) %>%
   dplyr::mutate(year = factor(paste0("20", year), levels = c("2023", "2025"))) %>%
   dplyr::group_by(year) %>%
-  dplyr::slice_max(order_by = share, n = 13, with_ties = FALSE) %>%
+  dplyr::slice_max(order_by = share, n = 10, with_ties = FALSE) %>%
   dplyr::ungroup()
 
-top_2023 <- top12_by_year %>% dplyr::filter(year == "2023") %>% dplyr::pull(species)
-top_2025 <- top12_by_year %>% dplyr::filter(year == "2025") %>% dplyr::pull(species)
+top_2023 <- top_stems_by_year %>% dplyr::filter(year == "2023") %>% dplyr::pull(species)
+top_2025 <- top_stems_by_year %>% dplyr::filter(year == "2025") %>% dplyr::pull(species)
 
-length(union(top_2023, top12_2025))      # 11 (your result)
-length(intersect(top_2023, top12_2025))  # 9  (overlap size)
+length(union(top_2023, top_2025))      # 11 (your result)
+length(intersect(top_2023, top_2025))  # 9  (overlap size)
 
 setdiff(top_2025, top_2023)  # species only in 2025's top10
 setdiff(top_2023, top_2025)  # species only in 2023's top10
 
-unique(top10_by_year$species)
+unique(top_stems_by_year$species)
 
-v_top12_species_overall <- top12_overall %>% pull(species)
+v_top_species_overall <- top_overall_stem_share %>% pull(species)
 
-
-# get stem density per species per top 10 species
-df_stem_dens_species <- df %>% 
-  group_by(plot, species, year, n_subplots ) %>%
-  summarize(sum_n = sum(n)) %>% 
-  mutate(scaling_factor = 10000/(n_subplots * 4),
-         stem_dens = sum_n*scaling_factor) %>% 
-  mutate(log_sum_stem_density = log10(stem_dens + 1))# %>%  # Adding 1 to avoid log(0)
-
-
-df_stem_dens_species_year <- df_stem_dens_species %>% 
-  dplyr::group_by(species, year) %>%
-  dplyr::mutate(median_stem_density = median(stem_dens, na.rm = TRUE)) %>% 
-  dplyr::ungroup() %>%
-  mutate(species = factor(species, levels = rev(v_top12_species_overall))) # Set custom order
-
-
-
-# Boxplot for stem density -------------
-df_stem_dens_species_year2 <- df_stem_dens_species_year %>%
-  dplyr::filter(!is.na(log_sum_stem_density) & sum_n > 0) %>%
-  dplyr::mutate(year = factor(year, levels = c("2023","2025")),
-                # order by mean log density (ascending → highest ends up at the TOP after coord_flip)
-                species = forcats::fct_reorder(species, log_sum_stem_density, .fun = mean, na.rm = TRUE))
-
-p_density<-df_stem_dens_species_year2 %>% 
-  filter(!is.na(species)) %>% 
-  ggplot(aes(x = species, y = log_sum_stem_density, fill = year)) +
-  geom_boxplot(position = position_dodge2(width = 0.75, preserve = "single"),
-               outlier.shape =  NA) +
-  coord_flip() +
-  labs(
-    x = "Species",
-    y = "log(sum stem density)", 
-    fill = "Year"#,
-    #title = "Stem density by species (boxplots split by year)"
-  ) +
-  theme_classic(base_size = 10)
-
-ggarrange( p_bar, p_density,common.legend = T)
-
-## Density plot of stem density  ----------------------------------
 
 # Reverse the color palette and map to the species in the desired order
-n_colors  <- 12  # Number of species
+n_colors  <- length(v_top_species_overall)  # Number of species
 my_colors <- colorRampPalette(brewer.pal(11, "RdYlGn"))(n_colors)  # Generate colors
 # make / use a palette of exactly the needed length
-pal <- colorRampPalette(brewer.pal(11, "RdYlGn"))(length(v_top12_species_overall))
+pal <- colorRampPalette(brewer.pal(11, "RdYlGn"))(length(v_top_species_overall))
 pal <- rev(pal)  # start with dark green
 
 # map colors to species automatically
-species_colors <- setNames(pal, v_top12_species_overall)
+species_colors <- setNames(pal, v_top_species_overall)
 species_colors
 #
 
@@ -765,78 +722,104 @@ species_labels <- c(
 )
 
 
-# Calculate median for each species and reorder the factor levels
-df_stem_sp_sum_ordered <- df_stem_dens_species %>%
-  dplyr::filter(sum_n >0) %>% 
-  dplyr::filter(species %in% v_top12_species_overall ) %>%  #top_species_overall
-  dplyr::group_by(species) %>%
+# Identify plots without any stems present ---------------------------------------------------------------------------------
+
+# Step 1: Summarise total stems per plot and year
+plot_year_summ <- df %>%
+  group_by(plot, year) %>%
+  summarise(total_stems = sum(n, na.rm = TRUE), .groups = "drop")
+
+# Step 2: Reshape to wide format
+plot_year_wide <- plot_year_summ %>%
+  tidyr::pivot_wider(names_from = year, values_from = total_stems, values_fill = 0)
+
+# Step 3: Filter based on presence in each year
+plots_empty23    <- plot_year_wide %>% filter(`2023` == 0) %>% pull(plot) # 6 ~ 4.7%
+plots_empty25    <- plot_year_wide %>% filter(`2025` == 0) %>% pull(plot) # 2 ~ 1.5%
+plots_empty_both <- plot_year_wide %>% filter(`2023` == 0 & `2025` == 0)  # zero
+
+
+
+## get average stem density per species per top 10 species --------------------------------
+df_stem_dens_species <- df %>% 
+  group_by(plot, species, year, n_subplots ) %>%
+  summarize(sum_n = sum(n, na.rm =T)) %>% 
+  mutate(scaling_factor = 10000/(n_subplots * 4),
+         stem_dens = sum_n*scaling_factor) %>% 
+  mutate(log_sum_stem_density = log10(stem_dens + 1)) #%>%  # Adding 1 to avoid log(0)
+  #ungroup()
+
+# get total sum and calculate as average value over all sites 
+df_stem_dens_species_sum <- 
+  df_stem_dens_species %>% 
+  group_by(species, year) %>% 
+  summarise(stem_dens = sum(stem_dens, na.rm = T),
+            log_sum_stem_density = sum(log_sum_stem_density, na.rm = T)) %>%
+    mutate(stem_dens_avg = stem_dens/n_plots_total,
+           log_sum_stem_density_avg = log_sum_stem_density/n_plots_total)
+  
+
+df_stem_dens_species_year <- df_stem_dens_species %>% 
+  ungroup(.) %>% 
+  filter(sum_n >0) %>% 
+  filter(species %in% v_top_species_overall) %>% 
+  dplyr::group_by(species, year) %>%
   dplyr::mutate(median_stem_density = median(stem_dens, na.rm = TRUE)) %>% 
-  dplyr::ungroup() %>%
-  mutate(species = factor(species, levels = rev(v_top12_species_overall))) # Set custom order
-# dplyr::mutate(Species = reorder(Species, median_stem_density))  # Reorder species by median stem density
-
-my_species_levels <-  levels(df_stem_sp_sum_ordered$species)
-
-# Add a log-transformed column for sum_stem_density
-df_stem_sp_sum_ordered <- df_stem_sp_sum_ordered %>%
-  mutate(log_sum_stem_density = log10(stem_dens + 1))  # Adding 1 to avoid log(0)
+  dplyr::ungroup(.) %>%
+  mutate(species = factor(species, levels = rev(v_top_species_overall))) # Set custom order
 
 
-p_stem_density_species <- df_stem_sp_sum_ordered %>%
-  ggplot(aes(x = log_sum_stem_density, y = species, group = species)) +
-  geom_density_ridges(
-    aes(fill = species), 
-    alpha = 1, 
-    color = 'NA', 
-    scale = 0.9 # Adjust the vertical scale of the ridges
+
+# Boxplot for stem density -------------
+df_stem_dens_species_year2 <- df_stem_dens_species_year %>%
+  dplyr::filter(!is.na(log_sum_stem_density) & sum_n > 0) %>%
+  dplyr::mutate(year = factor(year, levels = c("2023","2025")),
+                # order by mean log density (ascending → highest ends up at the TOP after coord_flip)
+                species = forcats::fct_reorder(species, log_sum_stem_density, .fun = mean, na.rm = TRUE))
+
+# 
+p_density<-df_stem_dens_species_year2 %>% 
+  filter(!is.na(species)) %>% 
+  ggplot(aes(x = log_sum_stem_density, y = species,
+             fill = year)) +
+  geom_boxplot(
+    #aes(group = interaction(species, year), 
+     #   alpha = factor(year)),
+    position = position_dodge(width = 0.6),
+    outlier.shape = NA,
+    width = 0.45#,
+   # color = "black"
   ) +
-  scale_fill_manual(values = species_colors) +
-  stat_summary(
-    aes(x = log_sum_stem_density, fill = species),  # Add fill aesthetic for inner color
-    fun = median, 
-    fun.min = function(x) quantile(x, 0.25),  # 25th percentile (Q1)
-    fun.max = function(x) quantile(x, 0.75),  # 75th percentile (Q3)
-    geom = "pointrange", 
-    color = 'black'      ,  # Black outline for points
-    shape = 21,  # Shape 21 is a circle with a fill and border
-    size = 0.5,
-    linewidth = 0.2,
-    stroke = 0.2,
-    position = position_nudge(y = 0.2)  # No vertical nudge for alignment
-  ) +
-  theme_classic() +
+  
+ # coord_flip() +
   labs(
-    title = "",
-    x = expression("\nStem density (log"[10]*") [n ha"^-1*"]"),
-    # x = "\nStem density (log10) [#/ha]",
-    y = ""
+    x = "log(sum stem density)",
+    y = "",  
+    fill = "Year"
   ) +
-  scale_x_continuous(
-    labels = math_format(10^.x)  # Format x-axis labels as 10^3, 10^4, etc.
-  ) +
-  scale_y_discrete(expand = expansion(add = c(0.2, 0.2))) + # Adjust y-axis padding
-  theme_classic(base_size = 8) +
-  theme(
-    axis.text = element_text(size = 8),    # Axis tick labels
-    axis.title = element_text(size = 8),   # Axis titles
-    panel.grid.minor = element_blank(),    # Remove minor grid lines
-    legend.position = 'none'    ,           # Hide the legend
-    axis.text.y = element_text(face = "italic", size = 8)
-    
-  )
+  # scale_fill_manual(values= species_colors) +
+  # scale_alpha_manual(
+  #   values = c("2023" = 0.5, "2025" = 1)#,  # 2023 = lighter
+  #   #guide = "none"  # hides alpha legend
+  # ) +
+  theme_classic(base_size = 10) +
+  scale_y_discrete(labels = species_labels) +
+  theme(axis.text.y = element_text(face = "italic", size = 8))
 
-p_stem_density_species + scale_y_discrete(labels = species_labels) #+ # Replace y-axis labels with full Latin names
+
+p_density
+
 
 # barplot of change over years
 
 # Order species by their maximum share across years (nice stable ordering)
-order_levels <- top12_by_year %>%
+order_levels <- top_stems_by_year %>%
   group_by(species) %>%
   summarise(max_share = max(share, na.rm = TRUE), .groups = "drop") %>%
   arrange(desc(max_share)) %>%
   pull(species)
 
-top12_by_year <- top12_by_year %>%
+top_stems_by_year <- top_stems_by_year %>%
   mutate(
     species = factor(species, levels = order_levels),
     year    = factor(year, levels = c("2023","2025"))
@@ -859,15 +842,22 @@ species_labels_all <- c(
   cabe = "Carpinus betulus"
 )
 
-p_bar <- ggplot(top12_by_year, aes(x = share, y = species, fill = year)) +
-  geom_col(position = position_dodge(width = 0.7), width = 0.6) +
+p_bar <- ggplot(top_stems_by_year, aes(x = share, y = species, fill = year)) +
+  geom_col(aes(#group = interaction(species, year)#,
+               #alpha = factor(year)
+               ), 
+           position = position_dodge(width = 0.7), width = 0.6) +
   # if 'share' is 0–100 already, just add a % suffix:
-  scale_x_continuous(labels = label_number(accuracy = 0.1, suffix = "%")) +
+  scale_x_continuous(labels = label_number(accuracy = 0.1, suffix = "")) +
   scale_y_discrete(
     limits = rev(names(species_labels)),
     labels = species_labels,
     drop = FALSE
   ) +
+  # scale_alpha_manual(
+  #   values = c("2023" = 0.5, "2025" = 1.0)#,  # 2023 = lighter
+  #   #guide = "none"  # hides alpha legend
+  # ) +
   # if you prefer proportions (0–1), use:
   # scale_x_continuous(labels = label_percent()) 
   labs(
@@ -876,24 +866,69 @@ p_bar <- ggplot(top12_by_year, aes(x = share, y = species, fill = year)) +
     fill = "Year"#,
     #title = "Top 12 species by share, by year"
   ) +
+ # scale_fill_manual(values = species_colors) +
   theme_classic2(base_size = 10) +
-  theme(axis.text.y = element_text(size = 10))
+  theme(axis.text.y = element_text(size = 10, face = "italic"))
 
 p_bar
 
+# Get species occurence from total number of plots 
+# Total number of unique plots
+total_plots <- df_stem_dens_species %>%
+  pull(plot) %>%
+  n_distinct()
+
+# Share of plots per species (where species has non-zero stems)
+species_occurence <- 
+  df_stem_dens_species %>%
+  ungroup(.) %>% 
+  dplyr::filter(sum_n > 0) %>%                 # Only where species occurred
+  distinct(year, species, plot) %>%           # Unique species × plot combos
+  count(year, species, name = "n_plots") %>%  # Count number of plots per species
+  mutate(share_of_plots = n_plots / total_plots*100) %>% 
+  arrange()
+
+species_occurence
+
+# Optional: order species by max share across years
+species_order <- species_occurence %>%
+  group_by(species) %>%
+  summarise(max_share = max(share_of_plots)) %>%
+  arrange(desc(max_share)) %>%
+  pull(species)
+
+species_plot_share <- species_plot_share %>%
+  mutate(species = factor(species, levels = rev(species_order)))
+
+# Plot
+p_occurence <- species_plot_share %>% 
+  filter(species %in% v_top_species_overall ) %>% 
+  ggplot(aes(x = share_of_plots, y = species, fill = year)) +
+  geom_col(position = position_dodge(width = 0.7), width = 0.6) +
+  scale_x_continuous(labels = scales::label_number(accuracy = 1), expand = expansion(mult = c(0, 0.05))) +
+  labs(
+    x = "Species occurence over plots (%)",
+    y = "Species",
+    fill = "Year"
+  ) +
+  theme_classic(base_size = 11) +
+  theme(
+    axis.text.y = element_text(face = "italic", size = 9),
+    legend.position = "right"
+  )
+
+p_occurence
+
+
+
+ggarrange(p_bar, p_density, p_occurence)
 
 
 
 
 
 
-
-
-
-
-
-
-# --- 1) Make COMPARABLE x-axis: stem density per m² --------------------
+# Summary stats on plot level stem density per m² --------------------
 area_subplot_m2 <- 4      # 4 m²
 area_plot_m2    <- 5*4    # 20 m²
 
@@ -917,7 +952,7 @@ plot_metrics_mean <- field_sub_summ %>%
 
 
 # --- pooled CV directly from dat23_subplot_recode ---
-plot_metrics_pooled  <- dat_subplot_recode %>%
+plot_metrics_pooled  <- dat_overlap %>%
   mutate(n = coalesce(n, 0L)) %>%                # no NA counts
   group_by(plot, year) %>%
   summarise(
@@ -963,7 +998,8 @@ sub_df <- field_sub_summ %>%
     evenness_sp = evenness_sp ,
     effective_numbers = effective_numbers,
     w        = stems_total
-  )
+  ) %>% 
+  mutate(dens_ha = dens_m2*10000)
 
 # --- 2) Plot table (pooled metrics already computed)
 plot_df <- plot_metrics_pooled %>%
@@ -981,7 +1017,9 @@ plot_df <- plot_metrics_pooled %>%
     effective_numbers = effective_numbers,
     w        = stems_total
   ) %>%
-  filter(!is.na(cv_hgt), cv_hgt > 0)
+  #filter(!is.na(cv_hgt), cv_hgt > 0) %>% 
+  mutate(dens_ha = dens_m2*10000,
+         mean_hgt = replace_na(mean_hgt, 0))        # Replace NA with 0)
 
 # --- 3) Bind & clean
 both_levels_re2 <- bind_rows(sub_df, plot_df) %>%
@@ -989,88 +1027,7 @@ both_levels_re2 <- bind_rows(sub_df, plot_df) %>%
     level   = factor(level, levels = c("subplot","plot")),
     plot_id = factor(plot_id),
     w       = pmin(pmax(w, 1), 50)   # cap weights so a few dense plots don't dominate
-  ) %>% 
-  mutate(dens_ha = dens_m2*10000)
-
-# make violin across scales -----
-
-make_violin_per_scale <- function(df, y,
-                                 ylim = NULL,
-                                 drop_zeros = FALSE,
-                                 # p_y = NULL,           # e.g., p_y = 5  (data units)
-                                 p_y_npc = 0.9,       # or p_y_npc = 0.9 (90% up)
-                                 p_size = 3,
-                                 p_method = "wilcox.test") {
-  
-  pd <- position_dodge(0.9)
-  
-  d <- df %>% filter(!is.na({{y}}))
-  if (drop_zeros) d <- d %>% filter({{y}} > 0)
-  
-  p <- ggplot(d, aes(x = level, y = {{y}}, fill = level, color = level)) +
-    geom_violin(alpha = 0.5, trim = TRUE, width = 0.8, position = pd) +
-    geom_boxplot(outlier.shape = NA, color = "black", alpha = 0.5,
-                 width = 0.2, position = pd) +
-    theme_grey(base_size = 8)
-  
-  if (!is.null(ylim)) p <- p + coord_cartesian(ylim = ylim)
-  
-  p + ggpubr::stat_compare_means(method = p_method, label = "p.format",
-                                 size = p_size,
-                                 #label.y = p_y,       # use either…
-                                 label.y.npc = p_y_npc)  # …or this (0–1)
-}
-
-p.dens     <- make_violin_per_scale(both_levels_re2, dens_ha,   ylim = c(0, 35000), p_y_npc = 0.3)
-p.height   <- make_violin_per_scale(both_levels_re2, mean_hgt,  ylim = c(0, 6), drop_zeros = TRUE, p_y_npc = 0.2)
-p.cv       <- make_violin_per_scale(both_levels_re2, cv_hgt)
-p.shannon  <- make_violin_per_scale(both_levels_re2, shannon_sp)
-p.richness <- make_violin_per_scale(both_levels_re2, sp_richness)
-p.eveness  <- make_violin_per_scale(both_levels_re2, evenness_sp)
-p.eff      <- make_violin_per_scale(both_levels_re2, effective_numbers, ylim = c(0, 10))
-
-# Arrange with a shared legend
-out_plot <- ggarrange(p.dens, p.height, p.cv, p.shannon, p.richness,p.eveness,p.eff,
-          common.legend = TRUE, legend = "bottom")
-
-annotate_figure(out_plot, top = text_grob("Per scale", 
-                                          color = "black", face = "bold", size = 14))
-
-
-
-
-
-make_violin_per_group <- function(df, y, ylim = NULL, drop_zeros = FALSE) {
-  pd <- position_dodge(0.9)
-  
-  d <- df %>% filter(!is.na({{y}}))
-  if (drop_zeros) d <- d %>% filter({{y}} > 0)
-  
-  p <- ggplot(d, aes(x = year, y = {{y}}, fill = level, color = level)) +
-    geom_violin(alpha = 0.5, trim = TRUE, width = 0.8, position = pd) +
-    geom_boxplot(outlier.shape = NA, color = "black", alpha = 0.5, #fill = 'white',
-                 width = 0.2, position = pd) + 
-    theme_grey()
-  if (!is.null(ylim)) p <- p + coord_cartesian(ylim = ylim)
-  p
-}
-
-p.dens     <- make_violin_per_group(both_levels_re2, dens_ha,   ylim = c(0, 35000))
-p.height   <- make_violin_per_group(both_levels_re2, mean_hgt,  ylim = c(0, 6), drop_zeros = TRUE)
-p.cv       <- make_violin_per_group(both_levels_re2, cv_hgt)
-p.shannon  <- make_violin_per_group(both_levels_re2, shannon_sp)
-p.richness <- make_violin_per_group(both_levels_re2, sp_richness)
-p.eveness  <- make_violin_per_group(both_levels_re2, evenness_sp)
-p.eff      <- make_violin_per_group(both_levels_re2, effective_numbers, ylim = c(0, 10))
-
-# Arrange with a shared legend
-out_plot <- ggarrange(p.dens, p.height, p.cv, p.shannon, p.richness,p.eveness,p.eff,
-          common.legend = TRUE, legend = "bottom")
-
-annotate_figure(out_plot, top = text_grob("Per group", 
-                                          color = "black", face = "bold", size = 14))
-
-
+  ) 
 
 # add comparison between years at plot and subplot levels
 
@@ -1103,44 +1060,25 @@ make_violin_per_year <- function(df, y,
 
 
 # porovnanie cez subplot
-p.dens     <- make_violin_per_year(dplyr::filter(both_levels_re2, level=="subplot"), dens_ha, ylim = c(0, 45000), p_y_npc = 0.35) #,   
+p.dens     <- make_violin_per_year(plot_df, dens_ha, ylim = c(0, 45000), p_y_npc = 0.35) #,   
 p.dens
-p.height   <- make_violin_per_year(dplyr::filter(both_levels_re2, level=="subplot"), mean_hgt, drop_zeros = TRUE, ylim = c(0, 6), p_y_npc = 0.2) #,  
-p.cv       <- make_violin_per_year(dplyr::filter(both_levels_re2, level=="subplot"), cv_hgt)
-p.shannon  <- make_violin_per_year(dplyr::filter(both_levels_re2, level=="subplot"), shannon_sp)
-p.richness <- make_violin_per_year(dplyr::filter(both_levels_re2, level=="subplot"), sp_richness)
-p.eveness  <- make_violin_per_year(dplyr::filter(both_levels_re2, level=="subplot"), evenness_sp)
-p.eff      <- make_violin_per_year(dplyr::filter(both_levels_re2, level=="subplot"), effective_numbers) #, ylim = c(0, 10)
+p.height   <- make_violin_per_year(plot_df, mean_hgt, drop_zeros = TRUE, ylim = c(0, 6), p_y_npc = 0.2) #,  
+p.cv       <- make_violin_per_year(plot_df, cv_hgt)
+p.shannon  <- make_violin_per_year(plot_df, shannon_sp)
+p.richness <- make_violin_per_year(plot_df, sp_richness)
+p.eveness  <- make_violin_per_year(plot_df, evenness_sp)
+p.eff      <- make_violin_per_year(plot_df, effective_numbers) #, ylim = c(0, 10)
 
 # Arrange with a shared legend
 out_plot <- ggarrange(p.dens, p.height, p.cv, p.shannon, p.richness,p.eveness,p.eff,
           common.legend = TRUE, legend = "bottom")
 
-annotate_figure(out_plot, top = text_grob("Subplot level", 
+annotate_figure(out_plot, top = text_grob("", 
                                       color = "black", face = "bold", size = 14))
-
-# porovnanie cez plot
-
-p.dens     <- make_violin_per_year(dplyr::filter(both_levels_re2, level=="plot"), dens_ha, ylim = c(0, 45000), p_y_npc = 0.35) #,   ylim = c(0, 35000)
-p.height   <- make_violin_per_year(dplyr::filter(both_levels_re2, level=="plot"), mean_hgt,drop_zeros = TRUE, ylim = c(0, 6), p_y_npc = 0.2) #,  ylim = c(0, 6),
-p.cv       <- make_violin_per_year(dplyr::filter(both_levels_re2, level=="plot"), cv_hgt)
-p.shannon  <- make_violin_per_year(dplyr::filter(both_levels_re2, level=="plot"), shannon_sp)
-p.richness <- make_violin_per_year(dplyr::filter(both_levels_re2, level=="plot"), sp_richness)
-p.eveness  <- make_violin_per_year(dplyr::filter(both_levels_re2, level=="plot"), evenness_sp)
-p.eff      <- make_violin_per_year(dplyr::filter(both_levels_re2, level=="plot"), effective_numbers) #, ylim = c(0, 10)
-
-# Arrange with a shared legend
-out_plot <- ggarrange(p.dens, p.height, p.cv, p.shannon, p.richness,p.eveness,p.eff,
-                      common.legend = TRUE, legend = "bottom")
-
-annotate_figure(out_plot, top = text_grob("Plot level", 
-                                          color = "black", face = "bold", size = 14))
-
-
 
 
 # get summary statistics
-out_summary_full <- both_levels_re2 %>%
+out_summary_full <- plot_df %>%
   ungroup() %>%
   select(year, level, mean_hgt, cv_hgt, shannon_sp, sp_richness, evenness_sp,effective_numbers) %>%
   pivot_longer(-c(year, level), names_to = "metric", values_to = "value") %>%
@@ -1185,6 +1123,49 @@ out_summary_years <- both_levels_re2 %>%
 out_summary_years
 
 
+# how does the diversity and composition changes over years?
+
+ggplot(plot_df, aes(x = mean_hgt, y = shannon_sp)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  facet_wrap(~year) 
+
+ggplot(plot_df, aes(x = cv_hgt, y = shannon_sp)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  facet_wrap(~year) 
+
+# change over time
+
+# Step 1: Reduce to one row per plot × year
+plot_wide <- plot_df %>%
+  select(plot_id, year, mean_hgt, shannon_sp, cv_hgt) %>%
+  distinct() %>%  # make sure it's one row per plot-year
+  pivot_wider(
+    names_from = year,
+    values_from = c(mean_hgt, shannon_sp,cv_hgt),
+    names_sep = "_"
+  ) %>%
+  mutate(
+    delta_hgt = mean_hgt_2025 - mean_hgt_2023,
+    delta_div = shannon_sp_2025 - shannon_sp_2023,
+    delta_cv = cv_hgt_2025 - cv_hgt_2023
+  )
+
+# View result
+head(plot_wide)
+
+ggplot(plot_wide, aes(x = delta_hgt, y = delta_div)) +
+  geom_point() +
+  geom_smooth(method = "loess", se = TRUE) +
+  labs(x = "Δ Mean Height", y = "Δ Shannon Diversity") +
+  theme_classic()
+
+ggplot(plot_wide, aes(x = delta_hgt, y = delta_cv)) +
+  geom_point() +
+  geom_smooth(method = "gam", se = TRUE) +
+  labs(x = "Δ Mean Height", y = "Δ Shannon Diversity") +
+  theme_classic()
 
 
 # Make a threshold for legacy effects: > 4 m
@@ -1192,10 +1173,10 @@ out_summary_years
 # ---- 1) Tall-stem legacy (change threshold to 4 for sensitivity) ----
 tall_thresh <- 3.5   # meters
 
-tall_sub <- dat23_subplot_recode %>%
+tall_sub <- dat_overlap %>%
   filter(!is.na(hgt_est), n > 0) %>%
   mutate(is_tall = hgt_est >= tall_thresh) %>%
-  group_by(plot, subplot) %>%
+  group_by(plot, subplot, year) %>%
   summarise(
     tall_n      = sum(n[is_tall], na.rm = TRUE),
     stems_total = sum(n, na.rm = TRUE),
@@ -1204,7 +1185,7 @@ tall_sub <- dat23_subplot_recode %>%
   mutate(tall_density_m2 = tall_n / 4)  # 4 m² subplot
 
 legacy_plot <- tall_sub %>%
-  group_by(plot) %>%
+  group_by(plot, year) %>%
   summarise(
     tall_presence        = as.integer(any(tall_n > 0)),
     tall_share_subplots  = mean(tall_n > 0),
