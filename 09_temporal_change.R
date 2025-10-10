@@ -58,6 +58,8 @@ dat25_sf         <- sf::st_read("outData/subplot_with_clusters_2025.gpkg")      
 dat25_sf_min <- dat25_sf %>%
   dplyr::select(plot_key, cluster,plot_id)
 
+length(unique(dat25_subplot$plot_key))  # 1009
+
 # needed columns to merge field data from 2023&2025: 
 target_cols <- c("plot",
                  "subplot",
@@ -72,7 +74,7 @@ target_cols <- c("plot",
 
 # filter only relevant columns: 
 dat25_subplot_sub <- dat25_subplot %>% 
-  dplyr::filter(naruseni == TRUE & nzchar(trimws(photo_e))) %>% 
+  dplyr::filter(naruseni == TRUE & nzchar(trimws(photo_e))) %>% # filter out the errorroneous records
   dplyr::select(acc, VegType, height, count, dbh, plot_key, cluster) %>% 
   rename(
     subplot = plot_key,
@@ -87,6 +89,37 @@ dat25_subplot_sub <- dat25_subplot %>%
   dplyr::select(all_of(target_cols))
 
 nrow(dat25_subplot_sub)
+
+# expand to whole grid: --# Convert to tibble for ease of use in tidyverse
+dat25 <- as_tibble(dat25_subplot_sub)
+
+# Get unique values
+all_subplots25 <- unique(dat25$subplot)
+all_species25  <- unique(dat25$species)
+all_vegtypes25 <- c("small", "advanced", "mature")  # Or derive from data if unsure
+
+# Create a complete grid
+complete_grid25 <- expand_grid(
+  subplot = all_subplots25,
+  vegtype = all_vegtypes25,
+  species = all_species25
+)
+
+# Join with original data
+dat25_expanded <- complete_grid25 %>%
+  left_join(dat25, by = c("subplot", "vegtype", "species")) %>%
+  # Optional: fill in year from subplot if consistent, or add it manually
+  mutate(year = 2025) %>% 
+  # remove the 'empty' species but keep n as NA per species/vertical class
+  filter(!species == "") %>% 
+  mutate(plot = as.factor(plot))
+# View result
+print(dat25_expanded, n = 20)
+
+dat25_expanded %>% 
+  filter(species == "")
+
+
 #length(unique(dat25_subplot_sub$species))
 # 375_T2_AH_20250827
 
@@ -110,7 +143,7 @@ dat23_subplot_sub <- dat23_subplot %>%
   # assure teh same order
   select(all_of(target_cols))
 
-dat25_subplot_sub <- dat25_subplot_sub %>%
+dat25_subplot_sub <- dat25_expanded %>%
   transmute(
     species = as.character(species),
     vegtype = as.character(vegtype),
@@ -254,17 +287,42 @@ cvx_df <- as.data.frame(pre_trees_cvx_joined)
 ####  Plot = CVX: stem density ------------------------------
 cvx_stem_density <- cvx_df %>%
 #  ungroup(.) %>% 
-  group_by(plot_comb, status, cluster_2023, cluster_2025) %>%  #, area_m2
+  group_by(common_cluster_ID, plot_comb, status, cluster_2023, cluster_2025) %>%  #, area_m2
   dplyr::reframe(
     n_trees = n(),
     area_m2 = mean(area_m2, na.rm  = T),  # keep are here instead of grouping
     pre_dist_dens_ha = n_trees / area_m2 * 10000
   )
 
+# filter pre-disturbnace trees per year
+cvx_stem_density23 <- cvx_stem_density %>% 
+  filter(!is.na(cluster_2023) )
+
+cvx_stem_density25 <- cvx_stem_density %>% 
+  filter(!is.na(cluster_2025) ) %>% 
+  mutate(cluster_2025 = as.factor(cluster_2025))
+
+# add to field data year by year
+dat_subplots23 <- dat_subplots %>% 
+  filter(year == 2023) %>% 
+  left_join(cvx_stem_density23, by = c("plot" = "cluster_2023" )) %>% 
+  select(-cluster_2025, -common_cluster_ID, -plot_comb ) 
+
+dat_subplots25 <- dat_subplots %>% 
+  filter(year == 2025) %>% 
+  left_join(cvx_stem_density25, by = c("plot" = "cluster_2025" )) %>% 
+  select(-plot, -cluster_2023, -common_cluster_ID ) %>% 
+  rename(plot = plot_comb) %>% 
+  select(plot, subplot, species,  vegtype,    hgt,     n,     dbh,   year, n_subplots,status, n_trees,  area_m2, pre_dist_dens_ha)
+
+# merge data with cleaned up naming
+dat_subplots_merged <- rbind(dat_subplots23, dat_subplots25)
 
 ### Clean up field data -----------------------------------
 # guestimate dbh and ba per individual based on height distribution 
-dat_subplot_recode <- dat_subplots %>% 
+dat_subplot_recode <- dat_subplots_merged %>% 
+  # remove if no species is defined
+  #filter(!is.na(species)) %>% # yes, I can safely exclude those, they are not representing 'empty plots' 
   # adjust tree species naming
   dplyr::mutate(
     species = str_trim(species),
@@ -335,22 +393,31 @@ dat_subplot_recode <- dat_subplot_recode %>%
     TRUE ~ "other"
   ))
 
+
+fwrite(dat_subplot_recode, 'outData/full_table_23_25.csv')
+
+# keep only overlapping plots
+dat_overlap <- dat_subplot_recode %>% 
+  filter(status == 'both')
+# filter(status == "both") %>% # keep only overlapping sites
+length(unique(dat_overlap$plot))
+
+
 # get master table, having all unique plots and subplots
-dat_master_subplot <- dat_subplot_recode %>% 
+dat_master_subplot <- dat_overlap %>% 
   dplyr::select(plot, subplot, year) %>% 
   distinct()
 
-table(dat_master_subplot$year)  
+table(dat_overlap$year)  
 
-# 2023 2025 
-# 670  990 
+n_plots_total <- length(unique(dat_master_subplot$plot))     # 126
+n_plots_total
 
-n_plots_total <- length(unique(dat_master_subplot$plot))     # 332
-n_subplots_total <-length(unique(dat_master_subplot$subplot))  # 1660
-
+n_subplots_total <-length(unique(dat_master_subplot$subplot))  # 1250
+n_subplots_total
 
 # histogram of stem denisty per vertcal class:
-dat_subplot_recode %>% 
+dat_overlap %>% 
   dplyr::filter(n > 0) %>% 
   ggplot(aes(n , fill = year)) +
   geom_histogram() + 
