@@ -154,7 +154,7 @@ cluster_lookup <- subplot_all |>
   dplyr::distinct()  # keep the latest version to avoid duplicated records
 #  mutate(plot_key = paste(plot_id, source_folder, sep = "__"))
 
-
+#  subplots 518_T4, 519_T4 had cluster NA -> changed manually to cluster 143
 
 
 # ---- PHASE 2: Process vegetation data ----
