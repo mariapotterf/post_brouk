@@ -61,6 +61,9 @@ dat25_sf_min <- dat25_sf %>%
 length(unique(dat25_subplot$plot_key))  # 1009
 
 # needed columns to merge field data from 2023&2025: 
+
+management_types_v <- c("clear", "grndwrk", "logging_trail", "planting", "anti_browsing")
+
 target_cols <- c("plot",
                  "subplot",
                  "species",
@@ -68,7 +71,19 @@ target_cols <- c("plot",
                  "hgt",
                  "n",
                  "dbh",
-                 "year")
+                 "year",
+                 management_types_v)
+
+
+# I have few other species - keep simply as 'other' to not misrepresent their occerence elsewhere
+
+
+#ots1
+#138_T1_JC_20250717 - not identified
+#358_T2_AH_20250827 - Sambucus nigra
+#396_T2_AH_20250827 - Frangula alnus
+#495_T4_TP_20250827 - jablon malus
+#619_T2_AH_20250827 - Pinus strobus]
 
 
 
@@ -76,14 +91,17 @@ target_cols <- c("plot",
 dat25_subplot_sub <- dat25_subplot %>% 
   filter(!is.na(cluster)) %>% # filter empty clusters - happend in 3 subplots that they do not exist in points
   dplyr::filter(naruseni == TRUE & nzchar(trimws(photo_e))) %>% # filter out the errorroneous records
-  dplyr::select(acc, VegType, height, count, dbh, plot_key, cluster) %>% 
+  dplyr::select(acc, VegType, height, count, dbh, plot_key, cluster, 
+                clearing, site_prep, logging_trail, windthrow, standing_deadwood, planting, anti_browsing) %>% 
   rename(
     subplot = plot_key,
     plot = cluster,
     vegtype = VegType,
     hgt = height,
     n = count,
-    species = acc
+    species = acc,
+    clear = clearing,
+    grndwrk = site_prep
          ) %>% 
   mutate(year = "2025") %>% 
   # target column order for the bind
@@ -114,8 +132,7 @@ dat25_expanded <-
   left_join(subplot_to_plot, by = "subplot") %>%
   mutate(year = 2025) %>%
   # Reorder columns if needed
-  dplyr::select(plot, subplot, species, vegtype, hgt, n, dbh, year) %>% 
-  filter(!species == "") #%>% 
+  dplyr::select(all_of(target_cols))
 
 
 #length(unique(dat25_subplot_sub$species))
@@ -123,12 +140,14 @@ dat25_expanded <-
 
 
 ### Field data 2023: subplot level --------------------------------------
-dat23_subplot_sub <- dat23_subplot %>% 
-  dplyr::select(vegtype, species, ID, cluster,n, hgt, dbh) %>% 
+dat23_subplot_sub <- 
+  dat23_subplot %>% 
+  dplyr::select(vegtype, species, ID, cluster,n, hgt, dbh,
+                clear, grndwrk, logging_trail, planting, anti_browsing) %>% 
   rename(subplot = ID,
          plot = cluster) %>% 
   mutate(year = "2023") %>% 
-  transmute(
+  mutate(
     species = as.character(species),
     vegtype = as.character(vegtype),
     hgt     = as.character(hgt),
@@ -139,10 +158,10 @@ dat23_subplot_sub <- dat23_subplot %>%
     year    = as.factor(year)
   ) %>%
   # assure teh same order
-  select(all_of(target_cols))
+  dplyr::select(all_of(target_cols))
 
 dat25_subplot_sub <- dat25_expanded %>%
-  transmute(
+  mutate(
     species = as.character(species),
     vegtype = as.character(vegtype),
     hgt     = as.character(hgt),
@@ -317,6 +336,8 @@ dat_subplots25 <-
   rename(plot = plot_comb) %>% 
   dplyr::select(plot, subplot, species,  vegtype,    hgt,     n,   
          dbh,   year, 
+         clear,     grndwrk,  logging_trail,  planting,
+         anti_browsing,  
          n_subplots,status, disturbance_year, 
          forest_year, disturbance_length,
          pre_dist_trees_n,  
@@ -324,6 +345,10 @@ dat_subplots25 <-
          ) %>% 
   mutate(time_snc_full_disturbance = 2025 - disturbance_year,
          time_snc_part_disturbance = 2025 - forest_year + 1)
+
+names(dat_subplots23)
+names(dat_subplots25)
+
 
 # merge data with cleaned up naming
 dat_subplots_merged <- rbind(dat_subplots23, dat_subplots25) %>% 
@@ -436,8 +461,6 @@ dat_overlap %>%
 
 
 # get disturbance characteristics
-
-
 plot_disturb_chars <- dat_overlap %>% 
   dplyr::select(plot, year, disturbance_year, forest_year, disturbance_length, time_snc_full_disturbance, time_snc_part_disturbance) %>% 
   distinct()
@@ -457,7 +480,6 @@ table(plot_disturb_chars$disturbance_length)
 
 ### Get context information: management intensity at plot level ----------------------------
 # #--- 1) Columns to use & NA -> 0
-# management_types_v <- c("clear", "grndwrk", "logging_trail", "planting", "anti_browsing")
 # 
 # dat_subplot_recode <- dat_subplot_recode %>%
 #   mutate(across(all_of(management_types_v), ~ ifelse(is.na(.), 0, .)))
@@ -498,7 +520,7 @@ table(plot_disturb_chars$disturbance_length)
 #     management_intensity = pmin(pmax(management_intensity, 0), 1)
 #   )
 
-# !!!! get share between pioneers vs planted on landscape level 
+# !!!! get share between pioneers vs planted on landscape level ---------------
 # Summarize total number of trees per year and recovery type
 total_per_year <- dat_overlap %>%
   group_by(year) %>%
@@ -519,7 +541,9 @@ tree_summary <- dat_overlap %>%
 print(tree_summary)
 
 # Stacked barplot
-ggplot(tree_summary, aes(x = year, y = share, fill = recovery_type)) +
+tree_summary %>% 
+  dplyr::filter(recovery_type != 'other') %>% 
+  ggplot( aes(x = year, y = share, fill = recovery_type)) +
   geom_bar(stat = "identity", color = "black") +
   labs(
     title = "Tree Counts by Recovery Type per Year",
@@ -530,18 +554,6 @@ ggplot(tree_summary, aes(x = year, y = share, fill = recovery_type)) +
   scale_fill_manual(values = c("early" = "#66c2a5", "late" = "#fc8d62")) +
   theme_classic2(base_size = 8)
 
-
-# avegare height and variation per successional stage
-# what are 'other species'?
-dat_overlap %>%
-  filter(recovery_type == 'other') %>% 
-  
-
-
-
-dat_overlap %>% 
-  ggplot(aes(x = recovery_type, y = hgt_est, fill = year)) +
-  geom_boxplot()
 
 
 
@@ -554,6 +566,51 @@ dat_sum_recovery <- dat_overlap %>%
 
 dat_sum_recovery
 
+
+# chnage of shares betwen early vs. late species?
+
+dat_overlap %>% 
+  #filter(!is.na(recovery_type)) %>%  # Optional: remove NAs if present
+  group_by(plot, recovery_type) %>%
+  summarise(n_stems = n(), .groups = "drop") %>%
+  pivot_wider(names_from = recovery_type,
+              values_from = n_stems,
+              values_fill = 0)  # fill missing types with 0
+
+
+# check up development of early vs ;late shares givet time since disturbance
+
+# Calculate stem counts by recovery type at the plot level
+share_early_vs_late <- 
+  dat_overlap %>%
+  filter(!is.na(n)) %>%  # Optional: remove NAs if present
+  group_by(plot, recovery_type, time_snc_full_disturbance) %>%
+  summarise(n_stems = n(), .groups = "drop") %>%
+  pivot_wider(names_from = recovery_type,
+              values_from = n_stems,
+              values_fill = 0) %>% 
+  mutate(total = early + late,
+         share_early = early/total*100,
+         share_late = late/total*100) %>% 
+  select(plot, time_snc_full_disturbance, share_early, share_late) %>%
+  pivot_longer(cols = starts_with("share_"),
+               names_to = "recovery_type",
+               values_to = "share")# %>%
+  #ungroup(.) %>% 
+ # group_by(time_snc_full_disturbance , recovery_type ) %>% 
+  #summarise(med_share = median(share, na.rm =T))
+   
+# Plot
+ggplot(share_early_vs_late, 
+       aes(x = factor(time_snc_full_disturbance),
+           y = share,
+           fill = recovery_type)) +
+  geom_boxplot() +
+  #geom_jitter() +
+  #geom_bar(stat = "identity", position = "stack") +
+  labs(x = "Time since full disturbance (years)",
+       y = "Share of stems (%)",
+       fill = "Recovery type") 
 
 
 
@@ -622,8 +679,8 @@ field_sub_summ %>%
 
 
 
-# see CV with time since disturbnace 
-field_sub_summ %>%
+# see CV with time since disturbnace : poartial disturbance
+p_partial_disturbance <- field_sub_summ %>%
   #ungroup() %>%
   select(year, time_snc_full_disturbance, time_snc_part_disturbance, mean_hgt, cv_hgt, shannon_sp, sp_richness) %>%
   pivot_longer(c(-year, 
@@ -637,8 +694,30 @@ field_sub_summ %>%
   stat_summary(fun.data = mean_sd, geom = "errorbar", width = 0.1, linewidth = 0.2, col = 'red') +
   stat_summary(fun = \(y) mean(y, na.rm = TRUE), geom = "point", size = 2, col = 'red') +
   facet_wrap(~ metric, scales = "free_y", ncol = 2) +
-  labs(x = NULL, y = NULL) +
+  labs(x = NULL, y = NULL, title = 'Partial disturbance') +
   theme_classic2()
+
+
+# see CV with time since disturbnace : full disturbance
+p_full_disturbance <- field_sub_summ %>%
+  #ungroup() %>%
+  select(year, time_snc_full_disturbance, time_snc_part_disturbance, mean_hgt, cv_hgt, shannon_sp, sp_richness) %>%
+  pivot_longer(c(-year, 
+                 - time_snc_full_disturbance, 
+                 - time_snc_part_disturbance),
+               names_to = "metric", values_to = "value") %>%
+  # keep mean_hgt > 0, leave others as-is
+  filter(!(metric == "mean_hgt" & (is.na(value) | value <= 0))) %>%
+  filter(!is.na(value)) %>%
+  ggplot(aes(x = time_snc_full_disturbance, y = value)) +
+  stat_summary(fun.data = mean_sd, geom = "errorbar", width = 0.1, linewidth = 0.2, col = 'red') +
+  stat_summary(fun = \(y) mean(y, na.rm = TRUE), geom = "point", size = 2, col = 'red') +
+  facet_wrap(~ metric, scales = "free_y", ncol = 2) +
+  labs(x = NULL, y = NULL, title = 'Full disturbance') +
+  theme_classic2()
+
+ggarrange(p_partial_disturbance, p_full_disturbance)
+
 
 field_sub_summ %>%
   #ungroup() %>%
@@ -652,6 +731,28 @@ field_sub_summ %>%
   filter(!is.na(value)) %>%
   ggplot(aes(x = time_snc_full_disturbance, y = value)) +
   geom_boxplot(aes(group = time_snc_full_disturbance ), outlier.shape = NA) +
+  stat_summary(fun.data = mean_sd, geom = "errorbar", width = 0.1, linewidth = 0.2, col = 'red') +
+  stat_summary(fun = \(y) mean(y, na.rm = TRUE), geom = "point", size = 2, col = 'red') +
+  facet_wrap(. ~ metric, scales = "free_y", ncol = 2) +
+  labs(x = NULL, y = NULL) +
+  theme_classic2()
+
+
+
+field_sub_summ %>%
+  #ungroup() %>%
+  select(year, time_snc_full_disturbance, time_snc_part_disturbance, disturbance_length ,
+         mean_hgt, cv_hgt, shannon_sp, sp_richness) %>%
+  pivot_longer(c(-year, 
+                 - disturbance_length ,
+                 - time_snc_full_disturbance, 
+                 - time_snc_part_disturbance),
+               names_to = "metric", values_to = "value") %>%
+  # keep mean_hgt > 0, leave others as-is
+  filter(!(metric == "mean_hgt" & (is.na(value) | value <= 0))) %>%
+  filter(!is.na(value)) %>%
+  ggplot(aes(x = disturbance_length , y = value)) +
+  geom_boxplot(aes(group = disturbance_length  ), outlier.shape = NA) +
   stat_summary(fun.data = mean_sd, geom = "errorbar", width = 0.1, linewidth = 0.2, col = 'red') +
   stat_summary(fun = \(y) mean(y, na.rm = TRUE), geom = "point", size = 2, col = 'red') +
   facet_wrap(. ~ metric, scales = "free_y", ncol = 2) +
