@@ -130,7 +130,7 @@ dat25_expanded <-
   ) %>%
   # Reattach plot info
   left_join(subplot_to_plot, by = "subplot") %>%
-  mutate(year = 2025) %>%
+  mutate(year = "2025") %>%
   # Reorder columns if needed
   dplyr::select(all_of(target_cols))
 
@@ -430,10 +430,54 @@ dat_subplot_recode <- dat_subplot_recode %>%
   ))
 
 
-fwrite(dat_subplot_recode, 'outData/full_table_23_25.csv')
+# clean up management type ------------------
+dat_subplot_mng <- dat_subplot_recode %>%
+  mutate(across(all_of(management_types_v), ~ ifelse(is.na(.), 0, .)))
+
+# --- 2) Subplot-level scores (use max within subplot to avoid duplicates)
+mng_subplot_scores <- dat_subplot_mng %>%
+  group_by(plot, subplot) %>%
+  summarise(
+    clear          = max(clear),
+    grndwrk        = max(grndwrk),
+    logging_trail  = max(logging_trail),
+    planting       = max(planting),
+    anti_browsing  = max(anti_browsing),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    salvage_sub    = clear + grndwrk + logging_trail,          # 0..3
+    protection_sub = planting + anti_browsing,                  # 0..2
+    management_sub = salvage_sub + protection_sub               # 0..5
+  )
+
+# --- 3) Plot-level intensities (scaled 0–1)
+mng_plot_intensity <- mng_subplot_scores %>%
+  group_by(plot) %>%
+  summarise(
+    n_subplots          = n_distinct(subplot),
+    salvage_sum         = sum(salvage_sub),
+    protection_sum      = sum(protection_sub),
+    management_sum      = sum(management_sub),
+    salvage_intensity   = salvage_sum    / (3 * n_subplots),
+    protection_intensity= protection_sum / (2 * n_subplots),
+    management_intensity= management_sum / (5 * n_subplots),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    salvage_intensity    = pmin(pmax(salvage_intensity, 0), 1),
+    protection_intensity = pmin(pmax(protection_intensity, 0), 1),
+    management_intensity = pmin(pmax(management_intensity, 0), 1)
+  )
+
+
+dat_subplot_mng <- dat_subplot_mng %>% 
+  left_join(mng_plot_intensity, by = c('plot', 'n_subplots'))
+
+fwrite(dat_subplot_mng, 'outData/full_table_23_25.csv')
 
 # keep only overlapping plots
-dat_overlap <- dat_subplot_recode %>% 
+dat_overlap <- dat_subplot_mng %>% 
   filter(status == 'both')
 # filter(status == "both") %>% # keep only overlapping sites
 length(unique(dat_overlap$plot))
@@ -460,65 +504,81 @@ dat_overlap %>%
   facet_grid(year~vegtype, scales = 'free')
 
 
-# get disturbance characteristics
+# get disturbance characteristics on plot level
 plot_disturb_chars <- dat_overlap %>% 
-  dplyr::select(plot, year, disturbance_year, forest_year, disturbance_length, time_snc_full_disturbance, time_snc_part_disturbance) %>% 
+  dplyr::select(plot, year, disturbance_year, 
+                forest_year, disturbance_length, 
+                time_snc_full_disturbance, 
+                time_snc_part_disturbance #,
+                #clear, grndwrk, logging_trail, planting, anti_browsing
+                )  %>%  
   distinct()
-
 
 plot_disturb_chars %>% 
   ggplot(aes(time_snc_full_disturbance)) + 
   geom_histogram() + 
   facet_grid(.~year)
 
+
+# make a master table having all (even empty subplots and plots)
+df_master_overlap <- dat_overlap %>% 
+  distinct(plot, subplot)
+
+
+
+
+df_master_mng <- dat_overlap %>% 
+  dplyr::filter(year == "2023") %>% # keep management oionly frm 2023 for consistency
+  distinct(plot, subplot,year,
+           clear,
+           grndwrk,
+           logging_trail,
+           planting,
+           anti_browsing)
+
+prop.table(table(df_master_mng$clear ))
+prop.table(table(df_master_mng$grndwrk))
+prop.table(table(df_master_mng$logging_trail))
+prop.table(table(df_master_mng$planting))
+prop.table(table(df_master_mng$anti_browsing))
+
+# > table(df_master_mng$clear )
+# 0   1 
+# 7 618 
+# > table(df_master_mng$grndwrk)
+# 0   1 
+# 79 546 
+
+# > table(df_master_mng$logging_trail)
+# 0   1 
+# 522 103 
+
+# > table(df_master_mng$planting)
+# 0   1 
+# 297 328 
+
+# > table(df_master_mng$anti_browsing)
+# 0   1 
+# 377 248
+
+# get management characteristics only from 2023
+#   clear,
+# grndwrk,
+# logging_trail,
+# planting,
+# anti_browsing
+
+
+nrow(mng_context)
+
+
 # these are doibles because i have records for 2023 and 2025
-table(plot_disturb_chars$disturbance_year)
-table(plot_disturb_chars$time_snc_full_disturbance)
-table(plot_disturb_chars$time_snc_part_disturbance)
-table(plot_disturb_chars$disturbance_length)
+hist(mng_context$salvage_intensity)
+hist(mng_context$protection_intensity)
+hist(mng_context$management_intensity)
 
 
-### Get context information: management intensity at plot level ----------------------------
-# #--- 1) Columns to use & NA -> 0
-# 
-# dat_subplot_recode <- dat_subplot_recode %>%
-#   mutate(across(all_of(management_types_v), ~ ifelse(is.na(.), 0, .)))
-# 
-# # --- 2) Subplot-level scores (use max within subplot to avoid duplicates)
-# mng_subplot_scores <- dat23_subplot_recode %>%
-#   group_by(plot, subplot) %>%
-#   summarise(
-#     clear          = max(clear),
-#     grndwrk        = max(grndwrk),
-#     logging_trail  = max(logging_trail),
-#     planting       = max(planting),
-#     anti_browsing  = max(anti_browsing),
-#     .groups = "drop"
-#   ) %>%
-#   mutate(
-#     salvage_sub    = clear + grndwrk + logging_trail,          # 0..3
-#     protection_sub = planting + anti_browsing,                  # 0..2
-#     management_sub = salvage_sub + protection_sub               # 0..5
-#   )
-# 
-# # --- 3) Plot-level intensities (scaled 0–1)
-# mng_plot_intensity <- mng_subplot_scores %>%
-#   group_by(plot) %>%
-#   summarise(
-#     n_subplots          = n_distinct(subplot),
-#     salvage_sum         = sum(salvage_sub),
-#     protection_sum      = sum(protection_sub),
-#     management_sum      = sum(management_sub),
-#     salvage_intensity   = salvage_sum    / (3 * n_subplots),
-#     protection_intensity= protection_sum / (2 * n_subplots),
-#     management_intensity= management_sum / (5 * n_subplots),
-#     .groups = "drop"
-#   ) %>%
-#   mutate(
-#     salvage_intensity    = pmin(pmax(salvage_intensity, 0), 1),
-#     protection_intensity = pmin(pmax(protection_intensity, 0), 1),
-#     management_intensity = pmin(pmax(management_intensity, 0), 1)
-#   )
+
 
 # !!!! get share between pioneers vs planted on landscape level ---------------
 # Summarize total number of trees per year and recovery type
@@ -570,7 +630,6 @@ dat_sum_recovery
 # chnage of shares betwen early vs. late species?
 
 dat_overlap %>% 
-  #filter(!is.na(recovery_type)) %>%  # Optional: remove NAs if present
   group_by(plot, recovery_type) %>%
   summarise(n_stems = n(), .groups = "drop") %>%
   pivot_wider(names_from = recovery_type,
@@ -596,9 +655,6 @@ share_early_vs_late <-
   pivot_longer(cols = starts_with("share_"),
                names_to = "recovery_type",
                values_to = "share")# %>%
-  #ungroup(.) %>% 
- # group_by(time_snc_full_disturbance , recovery_type ) %>% 
-  #summarise(med_share = median(share, na.rm =T))
    
 # Plot
 ggplot(share_early_vs_late, 
@@ -614,12 +670,19 @@ ggplot(share_early_vs_late,
 
 
 
-
 # --- Field data: Subplot-level metrics 
 field_sub_summ <- dat_overlap %>%
   mutate(n = coalesce(n, 0L)) %>% 
  # mutate(year = as.factor(year)) %>% 
-  group_by(plot, subplot, year, time_snc_full_disturbance, time_snc_part_disturbance,disturbance_year, forest_year, disturbance_length  ) %>%
+  group_by(plot, subplot, year, 
+           time_snc_full_disturbance, time_snc_part_disturbance,disturbance_year, 
+           forest_year, disturbance_length,
+           clear,
+           grndwrk,
+           logging_trail,
+           planting,
+           anti_browsing,
+           management_intensity) %>%
   summarise(
     stems_total = sum(n, na.rm = TRUE),
     sp_richness = if (stems_total > 0) n_distinct(species[n > 0]) else 0,
@@ -654,43 +717,80 @@ field_sub_summ <- dat_overlap %>%
   #       mean_hgt = ifelse(is.na(mean_hgt), 0L, mean_hgt)) # replace NA by 0 if stems are missing
 
 
-field_sub_summ %>%
+# get stem densiity by management ---------------------
+df_long <- field_sub_summ %>%
+  dplyr::filter(stems_total > 0) %>% 
+  filter(cv_hgt >0) %>% 
   #ungroup() %>%
-  select(year, time_snc_full_disturbance, time_snc_part_disturbance, mean_hgt, cv_hgt, shannon_sp, sp_richness) %>%
-  pivot_longer(c(-year, 
-                 - time_snc_full_disturbance, 
-                 - time_snc_part_disturbance),
+  select(year,
+         clear,
+         grndwrk,
+         logging_trail,
+         planting,
+         anti_browsing,
+         time_snc_full_disturbance, time_snc_part_disturbance, 
+         management_intensity,
+         mean_hgt, cv_hgt, shannon_sp, sp_richness) %>%
+  pivot_longer(-c(year,
+                    time_snc_full_disturbance,
+                    time_snc_part_disturbance,
+                    clear,
+                    grndwrk,
+                    logging_trail,
+                    planting,
+                    anti_browsing,
+                  management_intensity),
                names_to = "metric", values_to = "value") %>%
   # keep mean_hgt > 0, leave others as-is
   filter(!(metric == "mean_hgt" & (is.na(value) | value <= 0))) %>%
-  filter(!is.na(value)) %>%
-  mutate(metric = recode(metric,
-                         mean_hgt    = "Mean height (m)",
-                         cv_hgt      = "CV of height",
-                         shannon_sp  = "Shannon (H')",
-                         sp_richness = "Species richness"
-  )) %>%
-  ggplot(aes(x = year, y = value)) +
+  filter(!is.na(value))# %>%
+  #filter(cv_hgt >0)
+  # mutate(metric = recode(metric,
+  #                        mean_hgt    = "Mean height (m)",
+  #                        cv_hgt      = "CV of height",
+  #                        shannon_sp  = "Shannon (H')",
+  #                        sp_richness = "Species richness"
+  # )) #%>%
+
+df_long %>% 
+  ggplot(aes(x = clear, y = value)) +
   stat_summary(fun.data = mean_sd, geom = "errorbar", width = 0.1, linewidth = 0.2, col = 'red') +
   stat_summary(fun = \(y) mean(y, na.rm = TRUE), geom = "point", size = 2, col = 'red') +
   facet_wrap(~ metric, scales = "free_y", ncol = 2) +
-  labs(x = NULL, y = NULL) +
+  labs(x = NULL, y = NULL, , title = "Clearing, subplot") +
+  theme_classic2()
+
+df_long %>% 
+  ggplot(aes(x = planting, y = value)) +
+  stat_summary(fun.data = mean_sd, geom = "errorbar", width = 0.1, linewidth = 0.2, col = 'red') +
+  stat_summary(fun = \(y) mean(y, na.rm = TRUE), geom = "point", size = 2, col = 'red') +
+  facet_wrap(~ metric, scales = "free_y", ncol = 2) +
+  labs(x = NULL, y = NULL, title = "Planting, subplot") +
+  theme_classic2()
+
+df_long %>% 
+  ggplot(aes(x = management_intensity, y = value)) +
+  stat_summary(fun.data = mean_sd, geom = "errorbar", width = 0.1, linewidth = 0.2, col = 'red') +
+  stat_summary(fun = \(y) mean(y, na.rm = TRUE), geom = "point", size = 2, col = 'red') +
+  facet_wrap(~ metric, scales = "free_y", ncol = 2) +
+  labs(x = NULL, y = NULL, title = "Management intensity, subplot") +
   theme_classic2()
 
 
+df_long %>% 
+  ggplot(aes(x = management_intensity, y = value)) +
+  geom_point() + 
+  geom_smooth(method = "lm") +
+   facet_wrap(~ metric, scales = "free_y", ncol = 2) +
+  labs(x = NULL, y = NULL, title = "Management intensity, subplot") +
+  theme_classic2()
+
 
 # see CV with time since disturbnace : poartial disturbance
-p_partial_disturbance <- field_sub_summ %>%
-  #ungroup() %>%
-  select(year, time_snc_full_disturbance, time_snc_part_disturbance, mean_hgt, cv_hgt, shannon_sp, sp_richness) %>%
-  pivot_longer(c(-year, 
-                 - time_snc_full_disturbance, 
-                 - time_snc_part_disturbance),
-               names_to = "metric", values_to = "value") %>%
-  # keep mean_hgt > 0, leave others as-is
-  filter(!(metric == "mean_hgt" & (is.na(value) | value <= 0))) %>%
-  filter(!is.na(value)) %>%
+p_partial_disturbance <- df_long %>% 
   ggplot(aes(x = time_snc_part_disturbance, y = value)) +
+  geom_boxplot(aes(group = time_snc_part_disturbance ), outlier.shape = NA) +
+  
   stat_summary(fun.data = mean_sd, geom = "errorbar", width = 0.1, linewidth = 0.2, col = 'red') +
   stat_summary(fun = \(y) mean(y, na.rm = TRUE), geom = "point", size = 2, col = 'red') +
   facet_wrap(~ metric, scales = "free_y", ncol = 2) +
@@ -710,6 +810,7 @@ p_full_disturbance <- field_sub_summ %>%
   filter(!(metric == "mean_hgt" & (is.na(value) | value <= 0))) %>%
   filter(!is.na(value)) %>%
   ggplot(aes(x = time_snc_full_disturbance, y = value)) +
+  geom_boxplot(aes(group = time_snc_full_disturbance ), outlier.shape = NA) +
   stat_summary(fun.data = mean_sd, geom = "errorbar", width = 0.1, linewidth = 0.2, col = 'red') +
   stat_summary(fun = \(y) mean(y, na.rm = TRUE), geom = "point", size = 2, col = 'red') +
   facet_wrap(~ metric, scales = "free_y", ncol = 2) +
@@ -717,47 +818,6 @@ p_full_disturbance <- field_sub_summ %>%
   theme_classic2()
 
 ggarrange(p_partial_disturbance, p_full_disturbance)
-
-
-field_sub_summ %>%
-  #ungroup() %>%
-  select(year, time_snc_full_disturbance, time_snc_part_disturbance, mean_hgt, cv_hgt, shannon_sp, sp_richness) %>%
-  pivot_longer(c(-year, 
-                 - time_snc_full_disturbance, 
-                 - time_snc_part_disturbance),
-               names_to = "metric", values_to = "value") %>%
-  # keep mean_hgt > 0, leave others as-is
-  filter(!(metric == "mean_hgt" & (is.na(value) | value <= 0))) %>%
-  filter(!is.na(value)) %>%
-  ggplot(aes(x = time_snc_full_disturbance, y = value)) +
-  geom_boxplot(aes(group = time_snc_full_disturbance ), outlier.shape = NA) +
-  stat_summary(fun.data = mean_sd, geom = "errorbar", width = 0.1, linewidth = 0.2, col = 'red') +
-  stat_summary(fun = \(y) mean(y, na.rm = TRUE), geom = "point", size = 2, col = 'red') +
-  facet_wrap(. ~ metric, scales = "free_y", ncol = 2) +
-  labs(x = NULL, y = NULL) +
-  theme_classic2()
-
-
-
-field_sub_summ %>%
-  #ungroup() %>%
-  select(year, time_snc_full_disturbance, time_snc_part_disturbance, disturbance_length ,
-         mean_hgt, cv_hgt, shannon_sp, sp_richness) %>%
-  pivot_longer(c(-year, 
-                 - disturbance_length ,
-                 - time_snc_full_disturbance, 
-                 - time_snc_part_disturbance),
-               names_to = "metric", values_to = "value") %>%
-  # keep mean_hgt > 0, leave others as-is
-  filter(!(metric == "mean_hgt" & (is.na(value) | value <= 0))) %>%
-  filter(!is.na(value)) %>%
-  ggplot(aes(x = disturbance_length , y = value)) +
-  geom_boxplot(aes(group = disturbance_length  ), outlier.shape = NA) +
-  stat_summary(fun.data = mean_sd, geom = "errorbar", width = 0.1, linewidth = 0.2, col = 'red') +
-  stat_summary(fun = \(y) mean(y, na.rm = TRUE), geom = "point", size = 2, col = 'red') +
-  facet_wrap(. ~ metric, scales = "free_y", ncol = 2) +
-  labs(x = NULL, y = NULL) +
-  theme_classic2()
 
 
 
@@ -970,6 +1030,9 @@ plots_empty23    <- plot_year_wide %>% filter(`2023` == 0) %>% pull(plot) # 6 ~ 
 plots_empty25    <- plot_year_wide %>% filter(`2025` == 0) %>% pull(plot) # 2 ~ 1.5%
 plots_empty_both <- plot_year_wide %>% filter(`2023` == 0 & `2025` == 0)  # zero
 
+plots_empty23
+plots_empty25
+
 
 
 ## get average stem density per species per top 10 species --------------------------------
@@ -1100,7 +1163,7 @@ p_bar <- ggplot(top_stems_by_year, aes(x = share, y = species, fill = year)) +
   ) +
  # scale_fill_manual(values = species_colors) +
   theme_classic2(base_size = 10) +
-  theme(axis.text.y = element_text(size = 10, face = "italic"))
+  theme(axis.text.y = element_text(size = 8, face = "italic"))
 
 p_bar
 
@@ -1129,7 +1192,7 @@ species_order <- species_occurence %>%
   arrange(desc(max_share)) %>%
   pull(species)
 
-species_plot_share <- species_plot_share %>%
+species_plot_share <- species_occurence %>%
   mutate(species = factor(species, levels = rev(species_order)))
 
 # Plot
@@ -1143,7 +1206,7 @@ p_occurence <- species_plot_share %>%
     y = "Species",
     fill = "Year"
   ) +
-  theme_classic(base_size = 11) +
+  theme_classic(base_size = 10) +
   theme(
     axis.text.y = element_text(face = "italic", size = 9),
     legend.position = "right"
@@ -1153,10 +1216,8 @@ p_occurence
 
 
 
-ggarrange(p_bar, p_density, p_occurence)
-
-
-
+ggarrange(p_bar, p_occurence, p_density,  
+          ncol = 3, common.legend = T)
 
 
 
@@ -1213,6 +1274,21 @@ plot_metrics_pooled  <- dat_overlap %>%
     .groups = "drop" 
   ) #%>% 
 #mutate(cv_hgt = ifelse(is.na(cv_hgt), 0L, cv_hgt)) # replace NA by 0 if stems are missing
+
+# get only context and disturbance information on plot level
+df_plot_context <- dat_overlap %>%
+  dplyr::select(plot,year,  
+                pre_dist_trees_n,  area_m2, 
+                pre_dist_dens_ha, 
+                time_snc_full_disturbance,
+                time_snc_part_disturbance,
+                disturbance_year, forest_year, disturbance_length,
+                protection_intensity, management_intensity) %>% 
+  distinct() 
+  
+
+
+
 
 # --- 1) Subplot table (has subplot mean_hgt and stems_total as weights)
 sub_df <- field_sub_summ %>%
@@ -1292,9 +1368,10 @@ make_violin_per_year <- function(df, y,
 
 
 # porovnanie cez subplot
-p.dens     <- make_violin_per_year(plot_df, dens_ha, ylim = c(0, 45000), p_y_npc = 0.35) #,   
+p.dens     <- make_violin_per_year(plot_df, dens_ha, ylim = c(0, 45000), p_y_npc = 0.80) #,   
 p.dens
-p.height   <- make_violin_per_year(plot_df, mean_hgt, drop_zeros = TRUE, ylim = c(0, 6), p_y_npc = 0.2) #,  
+p.height   <- make_violin_per_year(plot_df, mean_hgt, drop_zeros = TRUE, ylim = c(0, 6), 
+                                   p_y_npc = 0.15) #,  
 p.cv       <- make_violin_per_year(plot_df, cv_hgt)
 p.shannon  <- make_violin_per_year(plot_df, shannon_sp)
 p.richness <- make_violin_per_year(plot_df, sp_richness)
@@ -1305,7 +1382,7 @@ p.eff      <- make_violin_per_year(plot_df, effective_numbers) #, ylim = c(0, 10
 out_plot <- ggarrange(p.dens, p.height, p.cv, p.shannon, p.richness,p.eveness,p.eff,
           common.legend = TRUE, legend = "bottom")
 
-annotate_figure(out_plot, top = text_grob("", 
+annotate_figure(out_plot, top = text_grob("Plot level", 
                                       color = "black", face = "bold", size = 14))
 
 
