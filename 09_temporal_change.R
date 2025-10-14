@@ -655,6 +655,23 @@ share_early_vs_late <-
   pivot_longer(cols = starts_with("share_"),
                names_to = "recovery_type",
                values_to = "share")# %>%
+
+# keep only share early
+df_plot_share_early <-  
+  dat_overlap %>%
+  filter(!is.na(n)) %>%  # Optional: remove NAs if present
+  group_by(plot,year, recovery_type) %>%
+  summarise(n_stems = n(), .groups = "drop") %>%
+  pivot_wider(names_from = recovery_type,
+              values_from = n_stems,
+              values_fill = 0) %>% 
+  mutate(total = early + late,
+         share_early = early/total*100,
+         share_late = late/total*100) %>% 
+  select(plot, year, share_early, share_late) 
+
+  
+
    
 # Plot
 ggplot(share_early_vs_late, 
@@ -1220,6 +1237,200 @@ ggarrange(p_bar, p_occurence, p_density,
           ncol = 3, common.legend = T)
 
 
+# get functional traits database ---------------------------------------
+# continue here!!!
+
+# --- 2) Read complete trait table 
+# trait_df has columns: species, Shade_tolerance, Drought_tolerance
+eco_traits <- read_excel('raw/traits_database/Niinemets_2006.xls',
+                         skip = 3,
+                         sheet = 'Niinemets_2006_appendix',
+                         .name_repair = function(x) gsub("\\s+", "_", x)) # replace the spaces in colnames by '_'
+
+
+
+
+library(readxl)
+library(dplyr)
+library(stringr)
+library(tidyr)
+library(tibble)
+
+# --- 0) INPUTS --------------------------------------------------------------
+niin_path <- "raw/traits_database/Niinemets_2006.xls"  # adjust if needed
+
+# Your species codes from dat_subplot_mng$species
+sp_codes <- unique(dat_overlap$species)
+sp_codes <- sp_codes[!sp_codes %in% c("", "ots1")]
+
+# --- 1) Read Niinemets + keep essential columns ----------------------------
+eco_traits_raw <- read_excel(
+  path  = niin_path,
+  sheet = "Niinemets_2006_appendix",
+  skip  = 3,
+  .name_repair = function(x) gsub("\\s+", "_", x)
+)
+
+# filter out only teh important columns
+eco_traits <- eco_traits_raw %>%
+  select(Species, Shade_tolerance, Drought_tolerance) %>%
+  mutate(Species = str_squish(Species))
+
+
+# --- 2) Map my acronyms to latin ones, indicate reason fror merge
+# 'species_latin' must either be an exact species in Niinemets OR a genus label
+# for which we will compute a genus mean (e.g., "Quercus", "Salix", "Betula").
+sp_map <- tribble(
+  ~species_code, ~species_latin,            ~notes,
+  "piab",        "Picea abies",             "",
+  "pisy",        "Pinus sylvestris",        "",
+  "lade",        "Larix decidua",           "",
+  "absp",        "Abies alba",              "Abies sp. -> proxy A. alba",
+  "psme",        "Pseudotsuga menziesii",   "Fix spelling if needed (not 'mensiesii')",
+  "taba",        "Taxus baccata",           "",
+  "fasy",        "Fagus sylvatica",         "",
+  "qusp",        "Quercus",                 "Quercus spp. -> genus mean (Q. robur & Q. petraea)",
+  "acca",        "Acer campestre",          "",
+  "acpl",        "Acer platanoides",        "",
+  "acps",        "Acer pseudoplatanus",     "",
+  "algl",        "Alnus glutinosa",         "",
+  "alin",        "Alnus incana",            "",
+  "alvi",        "Alnus viridis",           "Close to A. alnobetula complex",
+  "potr",        "Populus tremula",         "",
+  "posp",        "Populus tremula",         "Populus spp. -> use P. tremula proxy (keep consistent)",
+  "besp",        "Betula",                  "Betula spp. -> genus mean (B. pendula & B. pubescens)",
+  "frex",        "Fraxinus excelsior",      "",
+  "tisp",        "Tilia cordata",           "Tilia spp. -> proxy T. cordata",
+  "prav",        "Prunus avium",            "",
+  "soau",        "Sorbus aucuparia",        "",
+  "soto",        "Sorbus torminalis",       "",
+  "soar",        "Sorbus aria",             "",
+  "casa",        "Castanea sativa",         "",
+  "aehi",        "Aesculus hippocastanum",  "",
+  "cabe",        "Carpinus betulus",        "",
+  "ulsp",        "Ulmus glabra",            "Ulmus spp. -> proxy U. glabra (switch to U. minor if that’s your system)",
+  "rops",        "Robinia pseudoacacia",    "",
+  "saca",        "Salix caprea",            "",
+  "juni",        "Juniperus communis",      "",
+  "jure",        "Juglans regia",           "",
+  "sasp",        "Salix",                   "Salix spp. -> genus mean (S. caprea & S. alba)",
+  "aial",        "Alnus alnobetula",        "Map to A. viridis in Niinemets if needed",
+  "osca",        "Ostrya carpinifolia",     "If missing in Niinemets, proxy with Carpinus betulus",
+  "fror",        "Fraxinus ornus",          ""
+ 
+)
+
+# get compleyte binomial latin names for my acronyms
+df_filter_binomial <- sp_map %>% 
+  filter(!species_latin %in% c("Quercus", "Salix", "Betula")) %>%  # filter out only Genus names
+  select(-notes)
+
+# filter complete records 
+eco_traits_binomial <- eco_traits %>% 
+  filter(Species %in% df_filter_binomial$species_latin) %>% 
+  rename(species = Species)
+
+
+
+# --- 3) Create genus means for Quercus / Salix / Betula --------------------
+# Helper function: mean traits for a set of species -> single row with genus name
+genus_mean <- function(species_vec, genus_label) {
+  eco_traits %>%
+    filter(Species %in% species_vec) %>%
+    summarise(
+      species = genus_label,
+      Shade_tolerance   = mean(Shade_tolerance, na.rm = TRUE),
+      Drought_tolerance = mean(Drought_tolerance, na.rm = TRUE)#,
+      #n_species_used    = dplyr::n()
+    )
+}
+
+# Define which species to use per genus (adjust if your region differs)
+q_species <- c("Quercus robur", "Quercus petraea")
+s_species <- c("Salix caprea", "Salix alba")
+b_species <- c("Betula pendula", "Betula pubescens") # if only one is present, mean() still works
+
+traits_quercus <- genus_mean(q_species, "Quercus")
+traits_salix   <- genus_mean(s_species, "Salix")
+traits_betula  <- genus_mean(b_species, "Betula")
+
+# Bind genus means
+traits_full <- bind_rows(
+  eco_traits_binomial,
+  traits_quercus,
+  traits_salix,
+  traits_betula
+) 
+
+
+# add back acronyms
+traits_full <- traits_full %>% 
+  left_join(sp_map, by = c("species" = "species_latin")) %>% 
+  select(-species, -notes) %>% 
+  rename(species = species_code)
+
+
+# add traits into full data
+dat_overlap <-  dat_overlap %>% 
+  left_join(traits_full)
+
+
+dat_subplot_mng <-  dat_subplot_mng %>% 
+  left_join(traits_full)
+
+
+# get Weighted community mean per subplot and Plot -----------------
+
+# ---- choose your weighting -------------------------------------------------
+# Option A (default): weight by stem counts
+wvar <- "n"
+
+# Option B: weight by structure (uncomment ONE)
+# wvar <- "basal_area_cm2"
+# wvar <- "hgt_est"
+
+# helper to pull a numeric weight safely
+wfun <- function(x) ifelse(is.na(x) | x < 0, 0, x)
+
+# ---- 1) Subplot × year CWMs -----------------------------------------------
+cwm_subplot <- dat_overlap %>%
+  filter(species != 'ots1') %>% 
+  mutate(w = wfun(.data[[wvar]])) %>%
+  # keep only rows that contribute weight and have trait scores
+  filter(w > 0) %>%
+  group_by(plot, subplot, year) %>%
+  summarise(
+    stems_with_traits = sum(w[!is.na(Shade_tolerance) & !is.na(Drought_tolerance)], na.rm = TRUE),
+    stems_total       = sum(w, na.rm = TRUE),
+    CWM_shade   = ifelse(stems_with_traits > 0,
+                         sum(w * Shade_tolerance, na.rm = TRUE) / stems_with_traits, NA_real_),
+    CWM_drought = ifelse(stems_with_traits > 0,
+                         sum(w * Drought_tolerance, na.rm = TRUE) / stems_with_traits, NA_real_),
+    trait_coverage = stems_with_traits / pmax(stems_total, 1e-9),
+    .groups = "drop"
+  )
+
+# ---- 2) Plot × year CWMs ---------------------------------------------------
+cwm_plot <- dat_overlap %>%
+  filter(species != 'ots1') %>% 
+  mutate(w = wfun(.data[[wvar]])) %>%
+  filter(w > 0) %>%
+  group_by(plot, year) %>%
+  summarise(
+    stems_with_traits = sum(w[!is.na(Shade_tolerance) & !is.na(Drought_tolerance)], na.rm = TRUE),
+    stems_total       = sum(w, na.rm = TRUE),
+    CWM_shade   = ifelse(stems_with_traits > 0,
+                         sum(w * Shade_tolerance, na.rm = TRUE) / stems_with_traits, NA_real_),
+    CWM_drought = ifelse(stems_with_traits > 0,
+                         sum(w * Drought_tolerance, na.rm = TRUE) / stems_with_traits, NA_real_),
+    trait_coverage = stems_with_traits / pmax(stems_total, 1e-9),
+    .groups = "drop"
+  )
+
+
+
+
+
 
 # Summary stats on plot level stem density per m² --------------------
 area_subplot_m2 <- 4      # 4 m²
@@ -1295,7 +1506,7 @@ sub_df <- field_sub_summ %>%
   filter(stems_total > 0) %>% #, cv_hgt > 0
   transmute(
     ID       = subplot,
-    plot_id  = str_replace(subplot, "^[^_]+_([^_]+_[^_]+)_.*$", "\\1"),
+    plot_id  = plot, #str_replace(subplot, "^[^_]+_([^_]+_[^_]+)_.*$", "\\1"),
     year     = year,
     level    = "subplot",
     dens_m2  = stems_total / area_subplot_m2,     # 4 m² subplot
@@ -1307,7 +1518,9 @@ sub_df <- field_sub_summ %>%
     effective_numbers = effective_numbers,
     w        = stems_total
   ) %>% 
-  mutate(dens_ha = dens_m2*10000)
+  mutate(dens_ha = dens_m2*10000) %>% 
+  left_join(df_plot_context, by = c("plot_id" = "plot",
+                                    "year" = "year"))
 
 # --- 2) Plot table (pooled metrics already computed)
 plot_df <- plot_metrics_pooled %>%
@@ -1327,15 +1540,20 @@ plot_df <- plot_metrics_pooled %>%
   ) %>%
   #filter(!is.na(cv_hgt), cv_hgt > 0) %>% 
   mutate(dens_ha = dens_m2*10000,
-         mean_hgt = replace_na(mean_hgt, 0))        # Replace NA with 0)
-
+         mean_hgt = replace_na(mean_hgt, 0)) %>% # Replace NA with 0)
+  left_join(df_plot_context, by = c("plot_id" = "plot",
+                                  "year" = "year"))
+  
 # --- 3) Bind & clean
 both_levels_re2 <- bind_rows(sub_df, plot_df) %>%
   mutate(
     level   = factor(level, levels = c("subplot","plot")),
     plot_id = factor(plot_id),
     w       = pmin(pmax(w, 1), 50)   # cap weights so a few dense plots don't dominate
-  ) 
+  ) %>% 
+  left_join(df_plot_share_early, by = c('plot_id' = 'plot',
+                                        "year" = "year"))
+  
 
 # add comparison between years at plot and subplot levels
 
@@ -1444,7 +1662,22 @@ ggplot(plot_df, aes(x = cv_hgt, y = shannon_sp)) +
   geom_smooth(method = "lm") +
   facet_wrap(~year) 
 
+
+ggplot(plot_df, aes(x = time_snc_full_disturbance, y =cv_hgt )) +
+  geom_point() +
+  geom_smooth(method = "lm") 
+
+ggplot(plot_df, aes(x = time_snc_full_disturbance, y =mean_hgt )) +
+  geom_point() +
+  geom_smooth(method = "lm") 
+
+summary(lm(sp_richness ~ time_snc_full_disturbance, data = plot_df))
+
+
 # change over time
+
+
+
 
 # Step 1: Reduce to one row per plot × year
 plot_wide <- plot_df %>%
