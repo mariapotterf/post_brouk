@@ -1,8 +1,8 @@
 
-# -----------------------------------------------------------------
+
 #             Temporal change in species composition 
 #                          and structure
-# ------------------------------------------------------------------
+
 
 # read data: 
 # - field data from 2023 & 2025
@@ -580,7 +580,7 @@ hist(mng_context$management_intensity)
 
 
 
-# !!!! get share between pioneers vs planted on landscape level ---------------
+## get share between pioneers vs planted on landscape level ---------------
 # Summarize total number of trees per year and recovery type
 total_per_year <- dat_overlap %>%
   group_by(year) %>%
@@ -656,7 +656,7 @@ share_early_vs_late <-
                names_to = "recovery_type",
                values_to = "share")# %>%
 
-# keep only share early
+### Early vs late: plot level --------------------------
 df_plot_share_early <-  
   dat_overlap %>%
   filter(!is.na(n)) %>%  # Optional: remove NAs if present
@@ -670,7 +670,19 @@ df_plot_share_early <-
          share_late = late/total*100) %>% 
   select(plot, year, share_early, share_late) 
 
-  
+### early vs late : subplot level ---------------------
+df_sub_share_early <-  
+  dat_overlap %>%
+  filter(!is.na(n)) %>%  # Optional: remove NAs if present
+  group_by(subplot, plot,year, recovery_type) %>%
+  summarise(n_stems = n(), .groups = "drop") %>%
+  pivot_wider(names_from = recovery_type,
+              values_from = n_stems,
+              values_fill = 0) %>% 
+  mutate(total = early + late,
+         share_early = early/total*100,
+         share_late = late/total*100) %>% 
+  select(subplot, plot, year, share_early, share_late) 
 
    
 # Plot
@@ -728,7 +740,8 @@ field_sub_summ <- dat_overlap %>%
     .groups = "drop"  #,
     #range_hgt = if (sum(n > 0) >= 2) diff(range(hgt_est[n > 0], na.rm = TRUE)) else NA_real_,
    
-  ) #%>%
+  )  %>% 
+  left_join(cwm_subplot)
   
  # mutate(cv_hgt = ifelse(is.na(cv_hgt), 0L, cv_hgt),
   #       mean_hgt = ifelse(is.na(mean_hgt), 0L, mean_hgt)) # replace NA by 0 if stems are missing
@@ -747,10 +760,14 @@ df_long <- field_sub_summ %>%
          anti_browsing,
          time_snc_full_disturbance, time_snc_part_disturbance, 
          management_intensity,
-         mean_hgt, cv_hgt, shannon_sp, sp_richness) %>%
+         mean_hgt, cv_hgt, shannon_sp, sp_richness,
+         CWM_shade ,
+         CWM_drought ) %>%
   pivot_longer(-c(year,
                     time_snc_full_disturbance,
                     time_snc_part_disturbance,
+                  CWM_shade ,
+                  CWM_drought,
                     clear,
                     grndwrk,
                     logging_trail,
@@ -769,6 +786,9 @@ df_long <- field_sub_summ %>%
   #                        sp_richness = "Species richness"
   # )) #%>%
 
+
+
+## Time since disturbnace ----------------------------------------
 df_long %>% 
   ggplot(aes(x = clear, y = value)) +
   stat_summary(fun.data = mean_sd, geom = "errorbar", width = 0.1, linewidth = 0.2, col = 'red') +
@@ -785,22 +805,8 @@ df_long %>%
   labs(x = NULL, y = NULL, title = "Planting, subplot") +
   theme_classic2()
 
-df_long %>% 
-  ggplot(aes(x = management_intensity, y = value)) +
-  stat_summary(fun.data = mean_sd, geom = "errorbar", width = 0.1, linewidth = 0.2, col = 'red') +
-  stat_summary(fun = \(y) mean(y, na.rm = TRUE), geom = "point", size = 2, col = 'red') +
-  facet_wrap(~ metric, scales = "free_y", ncol = 2) +
-  labs(x = NULL, y = NULL, title = "Management intensity, subplot") +
-  theme_classic2()
 
 
-df_long %>% 
-  ggplot(aes(x = management_intensity, y = value)) +
-  geom_point() + 
-  geom_smooth(method = "lm") +
-   facet_wrap(~ metric, scales = "free_y", ncol = 2) +
-  labs(x = NULL, y = NULL, title = "Management intensity, subplot") +
-  theme_classic2()
 
 
 # see CV with time since disturbnace : poartial disturbance
@@ -834,7 +840,41 @@ p_full_disturbance <- field_sub_summ %>%
   labs(x = NULL, y = NULL, title = 'Full disturbance') +
   theme_classic2()
 
-ggarrange(p_partial_disturbance, p_full_disturbance)
+
+# traits analysis: subplot  -------------------
+field_sub_summ %>%
+  #ungroup() %>%
+  select(year, time_snc_full_disturbance, time_snc_part_disturbance, 
+         mean_hgt, cv_hgt, shannon_sp, sp_richness,  CWM_shade ,
+         CWM_drought) %>%
+  pivot_longer(c(-year, 
+                 - time_snc_full_disturbance, 
+                 - time_snc_part_disturbance),
+               names_to = "metric", values_to = "value") %>%
+  # keep mean_hgt > 0, leave others as-is
+  filter(!(metric == "mean_hgt" & (is.na(value) | value <= 0))) %>%
+  filter(!is.na(value)) %>%
+  ggplot(aes(x = time_snc_full_disturbance, y = value)) +
+  geom_boxplot(aes(group = time_snc_full_disturbance ), outlier.shape = NA) +
+  stat_summary(fun.data = mean_sd, geom = "errorbar", width = 0.1, linewidth = 0.2, col = 'red') +
+  stat_summary(fun = \(y) mean(y, na.rm = TRUE), geom = "point", size = 2, col = 'red') +
+  facet_wrap(~ metric, scales = "free_y", ncol = 2) +
+  labs(x = NULL, y = NULL, title = 'Full disturbance') +
+  theme_classic2()
+
+
+
+df_long %>% 
+  ggplot(aes(x = time_snc_part_disturbance, y = value)) +
+  geom_boxplot(aes(group = time_snc_part_disturbance ), outlier.shape = NA) +
+  
+  stat_summary(fun.data = mean_sd, geom = "errorbar", width = 0.1, linewidth = 0.2, col = 'red') +
+  stat_summary(fun = \(y) mean(y, na.rm = TRUE), geom = "point", size = 2, col = 'red') +
+  facet_wrap(~ metric, scales = "free_y", ncol = 2) +
+  labs(x = NULL, y = NULL, title = 'Partial disturbance') +
+  theme_classic2()
+
+
 
 
 
@@ -1237,18 +1277,9 @@ ggarrange(p_bar, p_occurence, p_density,
           ncol = 3, common.legend = T)
 
 
-# get functional traits database ---------------------------------------
-# continue here!!!
+# Get functional traits database ---------------------------------------
 
-# --- 2) Read complete trait table 
-# trait_df has columns: species, Shade_tolerance, Drought_tolerance
-eco_traits <- read_excel('raw/traits_database/Niinemets_2006.xls',
-                         skip = 3,
-                         sheet = 'Niinemets_2006_appendix',
-                         .name_repair = function(x) gsub("\\s+", "_", x)) # replace the spaces in colnames by '_'
-
-
-
+# tolerance scales range from 0 (no tolerance) to 5 (maximal tolerance)
 
 library(readxl)
 library(dplyr)
@@ -1256,14 +1287,14 @@ library(stringr)
 library(tidyr)
 library(tibble)
 
-# --- 0) INPUTS --------------------------------------------------------------
+#  Input
 niin_path <- "raw/traits_database/Niinemets_2006.xls"  # adjust if needed
 
 # Your species codes from dat_subplot_mng$species
 sp_codes <- unique(dat_overlap$species)
 sp_codes <- sp_codes[!sp_codes %in% c("", "ots1")]
 
-# --- 1) Read Niinemets + keep essential columns ----------------------------
+# Read Niinemets + keep essential columns 
 eco_traits_raw <- read_excel(
   path  = niin_path,
   sheet = "Niinemets_2006_appendix",
@@ -1277,7 +1308,7 @@ eco_traits <- eco_traits_raw %>%
   mutate(Species = str_squish(Species))
 
 
-# --- 2) Map my acronyms to latin ones, indicate reason fror merge
+# Map my acronyms to latin ones, indicate reason fror merge
 # 'species_latin' must either be an exact species in Niinemets OR a genus label
 # for which we will compute a genus mean (e.g., "Quercus", "Salix", "Betula").
 sp_map <- tribble(
@@ -1332,7 +1363,7 @@ eco_traits_binomial <- eco_traits %>%
 
 
 
-# --- 3) Create genus means for Quercus / Salix / Betula --------------------
+#  3) Create genus means for Quercus / Salix / Betula 
 # Helper function: mean traits for a set of species -> single row with genus name
 genus_mean <- function(species_vec, genus_label) {
   eco_traits %>%
@@ -1379,9 +1410,9 @@ dat_subplot_mng <-  dat_subplot_mng %>%
   left_join(traits_full)
 
 
-# get Weighted community mean per subplot and Plot -----------------
+## get Weighted community mean per subplot and Plot ------------------
 
-# ---- choose your weighting -------------------------------------------------
+# choose  weighting : by stems (for early communities), by structure?
 # Option A (default): weight by stem counts
 wvar <- "n"
 
@@ -1392,7 +1423,7 @@ wvar <- "n"
 # helper to pull a numeric weight safely
 wfun <- function(x) ifelse(is.na(x) | x < 0, 0, x)
 
-# ---- 1) Subplot × year CWMs -----------------------------------------------
+# Subplot × year CWMs 
 cwm_subplot <- dat_overlap %>%
   filter(species != 'ots1') %>% 
   mutate(w = wfun(.data[[wvar]])) %>%
@@ -1410,7 +1441,7 @@ cwm_subplot <- dat_overlap %>%
     .groups = "drop"
   )
 
-# ---- 2) Plot × year CWMs ---------------------------------------------------
+# 2) Plot × year CWMs
 cwm_plot <- dat_overlap %>%
   filter(species != 'ots1') %>% 
   mutate(w = wfun(.data[[wvar]])) %>%
@@ -1427,8 +1458,42 @@ cwm_plot <- dat_overlap %>%
     .groups = "drop"
   )
 
+### quick plots on subplot and plot level 
+ord_year <- function(x) factor(as.character(x), levels = c("2023","2025"))
 
 
+# Long format for subplot
+subplot_long <- cwm_subplot %>%
+  transmute(level = "subplot",
+            plot, subplot,
+            year = ord_year(year),
+            CWM_shade, CWM_drought) %>%
+  pivot_longer(c(CWM_shade, CWM_drought),
+               names_to = "trait", values_to = "CWM")
+
+# Long format for plot
+plot_long <- cwm_plot %>%
+  transmute(level = "plot",
+            plot,
+            year = ord_year(year),
+            CWM_shade, CWM_drought) %>%
+  pivot_longer(c(CWM_shade, CWM_drought),
+               names_to = "trait", values_to = "CWM")
+
+# Combine
+all_long <- bind_rows(subplot_long, plot_long) %>%
+  filter(!is.na(CWM))
+
+# Nice facet labels
+trait_labs <- c(CWM_shade = "Shade tolerance", CWM_drought = "Drought tolerance")
+
+ggplot(all_long, aes(x = year, y = CWM, fill = year)) +
+  geom_boxplot(width = 0.6, outlier.alpha = 0.15) +
+  geom_jitter(width = 0.1, alpha = 0.25, size = 0.7) +
+  facet_grid(level ~ trait, labeller = labeller(trait = trait_labs)) +
+  labs(x = "Year", y = "Community-weighted mean (CWM)",
+       title = "Trait CWMs by level and year") +
+  theme_classic2(base_size = 10)
 
 
 
@@ -1452,7 +1517,8 @@ plot_metrics_mean <- field_sub_summ %>%
     #var_cv_hgt       = var(cv_hgt,       na.rm = TRUE),
     #mean_range_hgt   = mean(range_hgt,   na.rm = TRUE),
     .groups = "drop"
-  )
+  ) %>% 
+  left_join(cwm_plot)
 
 
 # --- pooled CV directly from dat23_subplot_recode ---
@@ -1483,7 +1549,8 @@ plot_metrics_pooled  <- dat_overlap %>%
       sqrt(var_hgt) / mean_hgt else
         if (stems_total > 1 && is.finite(mean_hgt) && mean_hgt > 0) 0 else NA_real_,
     .groups = "drop" 
-  ) #%>% 
+  ) %>%
+  left_join(cwm_plot)
 #mutate(cv_hgt = ifelse(is.na(cv_hgt), 0L, cv_hgt)) # replace NA by 0 if stems are missing
 
 # get only context and disturbance information on plot level
@@ -1500,8 +1567,8 @@ df_plot_context <- dat_overlap %>%
 
 
 
-
-# --- 1) Subplot table (has subplot mean_hgt and stems_total as weights)
+# create final table for both levels -----------------------------------------------------
+# 1) Subplot table (has subplot mean_hgt and stems_total as weights)
 sub_df <- field_sub_summ %>%
   filter(stems_total > 0) %>% #, cv_hgt > 0
   transmute(
@@ -1520,9 +1587,12 @@ sub_df <- field_sub_summ %>%
   ) %>% 
   mutate(dens_ha = dens_m2*10000) %>% 
   left_join(df_plot_context, by = c("plot_id" = "plot",
-                                    "year" = "year"))
+                                    "year" = "year")) %>% 
+  left_join(cwm_subplot, by = c("plot_id" = "plot",
+                                "year" = "year",
+                                "ID" = 'subplot') )
 
-# --- 2) Plot table (pooled metrics already computed)
+# 2) Plot table (pooled metrics already computed)
 plot_df <- plot_metrics_pooled %>%
   transmute(
     ID       = plot,
@@ -1542,9 +1612,11 @@ plot_df <- plot_metrics_pooled %>%
   mutate(dens_ha = dens_m2*10000,
          mean_hgt = replace_na(mean_hgt, 0)) %>% # Replace NA with 0)
   left_join(df_plot_context, by = c("plot_id" = "plot",
-                                  "year" = "year"))
+                                  "year" = "year")) %>% 
+  left_join(cwm_plot, by = c("plot_id" = "plot",
+                                "year" = "year") )
   
-# --- 3) Bind & clean
+#  3) Bind & clean final table with both levels
 both_levels_re2 <- bind_rows(sub_df, plot_df) %>%
   mutate(
     level   = factor(level, levels = c("subplot","plot")),
@@ -1553,8 +1625,49 @@ both_levels_re2 <- bind_rows(sub_df, plot_df) %>%
   ) %>% 
   left_join(df_plot_share_early, by = c('plot_id' = 'plot',
                                         "year" = "year"))
-  
 
+p_plot <- plot_df %>%
+  #ungroup() %>%
+  select(year, time_snc_full_disturbance, time_snc_part_disturbance, 
+         mean_hgt, cv_hgt, shannon_sp, sp_richness,  CWM_shade ,
+         CWM_drought) %>%
+  pivot_longer(c(-year, 
+                 - time_snc_full_disturbance, 
+                 - time_snc_part_disturbance),
+               names_to = "metric", values_to = "value") %>%
+  # keep mean_hgt > 0, leave others as-is
+  filter(!(metric == "mean_hgt" & (is.na(value) | value <= 0))) %>%
+  filter(!is.na(value)) %>%
+  ggplot(aes(x = time_snc_full_disturbance, y = value)) +
+  geom_boxplot(aes(group = time_snc_full_disturbance ), outlier.shape = NA) +
+  stat_summary(fun.data = mean_sd, geom = "errorbar", width = 0.1, linewidth = 0.2, col = 'red') +
+  stat_summary(fun = \(y) mean(y, na.rm = TRUE), geom = "point", size = 2, col = 'red') +
+  facet_wrap(~ metric, scales = "free_y", ncol = 2) +
+  labs(x = NULL, y = NULL, title = 'Plot level') +
+  theme_classic2()
+
+
+p_subplot <- sub_df %>%
+  #ungroup() %>%
+  select(year, time_snc_full_disturbance, time_snc_part_disturbance, 
+         mean_hgt, cv_hgt, shannon_sp, sp_richness,  CWM_shade ,
+         CWM_drought) %>%
+  pivot_longer(c(-year, 
+                 - time_snc_full_disturbance, 
+                 - time_snc_part_disturbance),
+               names_to = "metric", values_to = "value") %>%
+  # keep mean_hgt > 0, leave others as-is
+  filter(!(metric == "mean_hgt" & (is.na(value) | value <= 0))) %>%
+  filter(!is.na(value)) %>%
+  ggplot(aes(x = time_snc_full_disturbance, y = value)) +
+  geom_boxplot(aes(group = time_snc_full_disturbance ), outlier.shape = NA) +
+  stat_summary(fun.data = mean_sd, geom = "errorbar", width = 0.1, linewidth = 0.2, col = 'red') +
+  stat_summary(fun = \(y) mean(y, na.rm = TRUE), geom = "point", size = 2, col = 'red') +
+  facet_wrap(~ metric, scales = "free_y", ncol = 2) +
+  labs(x = NULL, y = NULL, title = 'Subplot level') +
+  theme_classic2()
+  
+ggarrange(p_plot, p_subplot)
 # add comparison between years at plot and subplot levels
 
 make_violin_per_year <- function(df, y,
@@ -2489,112 +2602,6 @@ ggplot(cross_scale, aes(x = x_height,
   theme_classic(base_size = 8) + 
   lims(x = c(0,1),
        y = c(0,4))
-
-
-
-# TOY example !!! -------------------
-#library(dplyr)
-# library(tidyr)
-
-# Variance decomposition: within-subplot, between subplots (within plots), between-plots (landscape)
-
-#library(dplyr)
-
-# --- Toy dataset: two plots -----------------------------------
-dd <- tibble::tibble(
-  plot     = c("p1","p1","p1","p1","p1",  "p2","p2","p2"),
-  subplot  = c("s1","s1","s2","s2","s3",  "s1","s2","s3"),
-  species  = c("a","b","c","a", NA,       "a","b","c"),
-  counts   = c(5,2,1,1,NA,                 3,2,1),
-  height_m = c(5,0.2,3,1,NA,               4,2,6)
-)
-
-# --- Step 1: subplot means and within-subplot SS --------------
-sub_height <- dd %>%
-  group_by(plot, subplot) %>%
-  summarise(
-    N_sub = sum(counts, na.rm=TRUE),
-    mean_h = ifelse(N_sub > 0,
-                    stats::weighted.mean(height_m, w=counts, na.rm=TRUE),
-                    NA_real_),
-    SS_within_sub = ifelse(N_sub > 1,
-                           sum(counts * (height_m - mean_h)^2, na.rm=TRUE),
-                           0),
-    .groups="drop"
-  )
-
-# --- Step 2: plot-level decomposition -------------------------
-plot_stats <- sub_height %>%
-  group_by(plot) %>%
-  summarise(
-    N_tot = sum(N_sub),
-    mu_plot = ifelse(N_tot > 0,
-                     stats::weighted.mean(mean_h, w=N_sub, na.rm=TRUE),
-                     NA_real_),
-    SS_within = sum(SS_within_sub),
-    SS_between_sub = sum(N_sub * (mean_h - mu_plot)^2, na.rm=TRUE),
-    .groups="drop"
-  )
-
-# --- Step 3: landscape-level decomposition -------------------
-# grand mean across all trees in all plots
-mu_grand <- weighted.mean(plot_stats$mu_plot, 
-                          w=plot_stats$N_tot, 
-                          na.rm=TRUE)
-
-SS_within_all  <- sum(plot_stats$SS_within)
-SS_bsub_all    <- sum(plot_stats$SS_between_sub)
-SS_bplots_all  <- sum(plot_stats$N_tot * (plot_stats$mu_plot - mu_grand)^2)
-
-N_all <- sum(plot_stats$N_tot)
-
-var_within_all <- SS_within_all  / (N_all - 1)
-var_bsub_all   <- SS_bsub_all    / (N_all - 1)
-var_bplots_all <- SS_bplots_all  / (N_all - 1)
-var_total_all  <- (SS_within_all + SS_bsub_all + SS_bplots_all) / (N_all - 1)
-
-cv_within_all <- sqrt(var_within_all)/mu_grand
-cv_bsub_all   <- sqrt(var_bsub_all)/mu_grand
-cv_bplots_all <- sqrt(var_bplots_all)/mu_grand
-cv_total_all  <- sqrt(var_total_all)/mu_grand
-
-landscape_stats <- tibble::tibble(
-  mu_grand,
-  cv_within_all,
-  cv_bsub_all,
-  cv_bplots_all,
-  cv_total_all
-)
-
-landscape_stats
-
-
-
-
-
-
-
-# TEST END -----------------------------------
-
-
-
-
-
-
-
-
-
-
-
-## relationship between Shannon vs CV on subplot ------------------------------------------------------------
-# CV of heights vs shannon
-field_sub_summ %>% 
-  dplyr::filter(shannon_sp >0) %>% 
-  ggplot(aes(x = cv_hgt,
-             y = shannon_sp)) +
-  geom_jitter() + 
-  geom_smooth(method = 'gam')
-
 
 
 
