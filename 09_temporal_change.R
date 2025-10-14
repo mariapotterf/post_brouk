@@ -748,7 +748,7 @@ field_sub_summ <- dat_overlap %>%
 
 
 # get stem densiity by management ---------------------
-df_long <- field_sub_summ %>%
+df_sub_long <- field_sub_summ %>%
   dplyr::filter(stems_total > 0) %>% 
   filter(cv_hgt >0) %>% 
   #ungroup() %>%
@@ -760,14 +760,15 @@ df_long <- field_sub_summ %>%
          anti_browsing,
          time_snc_full_disturbance, time_snc_part_disturbance, 
          management_intensity,
+         stems_total,
          mean_hgt, cv_hgt, shannon_sp, sp_richness,
          CWM_shade ,
          CWM_drought ) %>%
   pivot_longer(-c(year,
                     time_snc_full_disturbance,
                     time_snc_part_disturbance,
-                  CWM_shade ,
-                  CWM_drought,
+                    #CWM_shade ,
+                    #CWM_drought,
                     clear,
                     grndwrk,
                     logging_trail,
@@ -810,25 +811,19 @@ df_long %>%
 
 
 # see CV with time since disturbnace : poartial disturbance
-p_partial_disturbance <- df_long %>% 
+p_partial_disturbance <- df_sub_long %>% 
   ggplot(aes(x = time_snc_part_disturbance, y = value)) +
   geom_boxplot(aes(group = time_snc_part_disturbance ), outlier.shape = NA) +
   
   stat_summary(fun.data = mean_sd, geom = "errorbar", width = 0.1, linewidth = 0.2, col = 'red') +
   stat_summary(fun = \(y) mean(y, na.rm = TRUE), geom = "point", size = 2, col = 'red') +
   facet_wrap(~ metric, scales = "free_y", ncol = 2) +
-  labs(x = NULL, y = NULL, title = 'Partial disturbance') +
+  labs(x = NULL, y = NULL, title = 'Subplot: Partial disturbance') +
   theme_classic2()
 
 
 # see CV with time since disturbnace : full disturbance
-p_full_disturbance <- field_sub_summ %>%
-  #ungroup() %>%
-  select(year, time_snc_full_disturbance, time_snc_part_disturbance, mean_hgt, cv_hgt, shannon_sp, sp_richness) %>%
-  pivot_longer(c(-year, 
-                 - time_snc_full_disturbance, 
-                 - time_snc_part_disturbance),
-               names_to = "metric", values_to = "value") %>%
+p_full_disturbance <- df_sub_long %>%
   # keep mean_hgt > 0, leave others as-is
   filter(!(metric == "mean_hgt" & (is.na(value) | value <= 0))) %>%
   filter(!is.na(value)) %>%
@@ -837,8 +832,11 @@ p_full_disturbance <- field_sub_summ %>%
   stat_summary(fun.data = mean_sd, geom = "errorbar", width = 0.1, linewidth = 0.2, col = 'red') +
   stat_summary(fun = \(y) mean(y, na.rm = TRUE), geom = "point", size = 2, col = 'red') +
   facet_wrap(~ metric, scales = "free_y", ncol = 2) +
-  labs(x = NULL, y = NULL, title = 'Full disturbance') +
+  labs(x = NULL, y = NULL, title = 'Subplot: Full disturbance') +
   theme_classic2()
+
+ggarrange(p_partial_disturbance, p_full_disturbance, ncol = 2)
+
 
 
 # traits analysis: subplot  -------------------
@@ -863,16 +861,6 @@ field_sub_summ %>%
   theme_classic2()
 
 
-
-df_long %>% 
-  ggplot(aes(x = time_snc_part_disturbance, y = value)) +
-  geom_boxplot(aes(group = time_snc_part_disturbance ), outlier.shape = NA) +
-  
-  stat_summary(fun.data = mean_sd, geom = "errorbar", width = 0.1, linewidth = 0.2, col = 'red') +
-  stat_summary(fun = \(y) mean(y, na.rm = TRUE), geom = "point", size = 2, col = 'red') +
-  facet_wrap(~ metric, scales = "free_y", ncol = 2) +
-  labs(x = NULL, y = NULL, title = 'Partial disturbance') +
-  theme_classic2()
 
 
 
@@ -1400,6 +1388,8 @@ traits_full <- traits_full %>%
   select(-species, -notes) %>% 
   rename(species = species_code)
 
+fwrite(traits_full, 'outData/my_species_traits.csv')
+
 
 # add traits into full data
 dat_overlap <-  dat_overlap %>% 
@@ -1485,7 +1475,8 @@ all_long <- bind_rows(subplot_long, plot_long) %>%
   filter(!is.na(CWM))
 
 # Nice facet labels
-trait_labs <- c(CWM_shade = "Shade tolerance", CWM_drought = "Drought tolerance")
+trait_labs <- c(CWM_shade = "Shade tolerance", 
+                CWM_drought = "Drought tolerance")
 
 ggplot(all_long, aes(x = year, y = CWM, fill = year)) +
   geom_boxplot(width = 0.6, outlier.alpha = 0.15) +
@@ -1494,6 +1485,61 @@ ggplot(all_long, aes(x = year, y = CWM, fill = year)) +
   labs(x = "Year", y = "Community-weighted mean (CWM)",
        title = "Trait CWMs by level and year") +
   theme_classic2(base_size = 10)
+
+
+
+# is teh change in community shading/drought tolerance driven by planting????
+p_shade_planting <- field_sub_summ %>% 
+  ggplot(aes(x = as.factor(time_snc_full_disturbance),
+             y = CWM_shade,
+             fill = factor(planting))) +
+  geom_boxplot()
+
+p_shade_drought <- field_sub_summ %>% 
+  ggplot(aes(x = as.factor(time_snc_full_disturbance),
+             y = CWM_drought ,
+             fill = factor(planting))) +
+  geom_boxplot()
+
+ggarrange(p_shade_planting, p_shade_drought, ncol = 1,
+          nrow = 2)
+
+# get heights by species
+library(forcats)
+dat_overlap %>% 
+  dplyr::filter(hgt_est>0) %>% 
+  mutate(species = fct_reorder(species, hgt_est, .fun = median, .desc = TRUE)) %>%
+  ggplot(aes(x = species,
+             y = hgt_est,
+             fill = year)) + 
+  geom_boxplot(outlier.shape = NA) +
+  coord_cartesian(ylim = c(0,7.5)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# compare change in feights pioneer vs late
+dat_overlap %>% 
+  dplyr::filter(recovery_type != "other") %>%
+  dplyr::filter(hgt_est>0) %>% 
+  #mutate(species = fct_reorder(species, hgt_est, .fun = median, .desc = TRUE)) %>%
+  ggplot(aes(x = recovery_type,
+             y = hgt_est,
+             fill = year)) + 
+  geom_boxplot(outlier.shape = NA) +
+  coord_cartesian(ylim = c(0,6)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+dat_overlap %>% 
+  dplyr::filter(recovery_type != "other") %>%
+  dplyr::filter(hgt_est>0) %>% 
+  #mutate(species = fct_reorder(species, hgt_est, .fun = median, .desc = TRUE)) %>%
+  ggplot(aes(x = recovery_type,
+             y = n,
+             fill = year)) + 
+  geom_boxplot(outlier.shape = NA) +
+  coord_cartesian(ylim = c(0,6)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
 
 
 
@@ -1625,6 +1671,126 @@ both_levels_re2 <- bind_rows(sub_df, plot_df) %>%
   ) %>% 
   left_join(df_plot_share_early, by = c('plot_id' = 'plot',
                                         "year" = "year"))
+
+
+
+
+# test ---------------------
+library(mgcv)
+library(gratia)
+m_hgt_tw <- gam(
+  mean_hgt ~ level + 
+    s(time_snc_full_disturbance, by = level, k = 5, bs = "cs") +
+    s(plot_id, bs = "re"),
+  family = tw(link = "log"),  # Tweedie with log-link
+  data = both_levels_re2
+)
+summary(m_hgt_tw)
+appraise(m_hgt_tw)
+draw(m_hgt_tw, select = c(1,2))
+plot(m_hgt_tw, page = 1)
+
+m_stems_tw <- gam(
+  stems_total ~ level + 
+    s(time_snc_full_disturbance, by = level, k = 5, bs = "cs") +
+    s(plot_id, bs = "re"),
+  family = tw(link = "log"),  # Tweedie with log-link
+  data = both_levels_re2,
+)
+summary(m_stems_tw)
+appraise(m_stems_tw)
+draw(m_stems_tw, select = c(1,2))
+
+
+
+
+
+m_cv_tw <- gam(
+  cv_hgt ~ level + 
+    s(time_snc_full_disturbance, by = level, k = 5, bs = "cs") +
+    s(plot_id, bs = "re"),
+  #family = tw(link = "log"),  # Tweedie with log-link
+  data = filter(both_levels_re2, cv_hgt >0)
+)
+summary(m_cv_tw)
+appraise(m_cv_tw)
+draw(m_cv_tw, select = c(1,2))
+
+m_shan_tw <- gam(
+  shannon_sp ~ level + 
+    s(time_snc_full_disturbance, by = level, k = 5, bs = "cs") +
+    s(plot_id, bs = "re"),
+  #family = tw(link = "log"),  # Tweedie with log-link
+  data = both_levels_re2
+)
+summary(m_shan_tw)
+appraise(m_shan_tw)
+draw(m_shan_tw, select = c(1,2))
+
+
+
+# get variables over plot level !!!
+df_plot_long <- plot_df %>%
+  dplyr::filter(stems_total > 0) %>% 
+  filter(cv_hgt >0) %>% 
+  #ungroup() %>%
+  select(year,
+         time_snc_full_disturbance, 
+         time_snc_part_disturbance, 
+         dens_ha, 
+         # management_intensity,
+         mean_hgt, cv_hgt, shannon_sp, sp_richness,
+         CWM_shade ,
+         CWM_drought ) %>%
+  pivot_longer(-c(year,
+                  time_snc_full_disturbance,
+                  time_snc_part_disturbance#,
+                  #CWM_shade ,
+                  #CWM_drought,
+                 ),
+               names_to = "metric", values_to = "value") %>%
+  # keep mean_hgt > 0, leave others as-is
+  filter(!(metric == "mean_hgt" & (is.na(value) | value <= 0))) %>%
+  filter(!is.na(value))# %>%
+
+
+
+
+
+df_plot_long %>%
+  # keep mean_hgt > 0, leave others as-is
+  filter(!(metric == "mean_hgt" & (is.na(value) | value <= 0))) %>%
+  filter(!is.na(value)) %>%
+  ggplot(aes(x = time_snc_full_disturbance, y = value)) +
+  geom_boxplot(aes(group = time_snc_full_disturbance ), outlier.shape = NA) +
+  stat_summary(fun.data = mean_sd, geom = "errorbar", width = 0.1, linewidth = 0.2, col = 'red') +
+  stat_summary(fun = \(y) mean(y, na.rm = TRUE), geom = "point", size = 2, col = 'red') +
+  facet_wrap(~ metric, scales = "free_y", ncol = 2) +
+  labs(x = NULL, y = NULL, title = 'Plot: Full disturbance') +
+  theme_classic2()
+
+#!!!!
+
+
+
+# check my pioneer vs early species separation in drought/shade tolerance?
+p_traits_development1 <- dat_overlap %>% 
+  filter(recovery_type != 'other') %>% 
+  ggplot(aes(x = recovery_type, 
+             y = Drought_tolerance)) +
+  geom_boxplot()
+
+p_traits_development2 <- dat_overlap %>% 
+  filter(recovery_type != 'other') %>% 
+  ggplot(aes(x = recovery_type, 
+             y = Shade_tolerance )) +
+  geom_boxplot()
+
+
+ggarrange(p_traits_development1, p_traits_development2)
+
+
+
 
 p_plot <- plot_df %>%
   #ungroup() %>%
@@ -2651,33 +2817,6 @@ plot_compare <- plot_compare %>%
       delta_richness > 0  ~ "Reinforcement"
     )
   )
-
-# SKIP ----------------
-hist(plot_compare$delta_richness)
-hist(plot_compare$delta_cv_hgt)
-
-# op <- par(mfrow = c(1, 2))  # two plots on one page
-# #windows()
-# hist(na.omit(plot_compare$delta_richness),
-#      main = "Δ Richness (pooled − mean)", xlab = "Difference",
-#      col = "grey85", border = "grey40")
-# abline(v = 0, col = "red", lty = 2, lwd = 2)
-# 
-# hist(na.omit(plot_compare$delta_cv_hgt),
-#      main = "Δ CV Height (pooled − mean)", xlab = "Difference",
-#      col = "grey85", border = "grey40")
-# abline(v = 0, col = "red", lty = 2, lwd = 2)
-# 
-# par(op)
-
-# -----------------------------------------
-# Linear model
-# -----------------------------------------7
-# x - mean of subplot values 
-# y - pooled plot value
-# what the subplot tells me on average? e
-# what the whole plot looks like if i pool everything?
-
 
 
 
