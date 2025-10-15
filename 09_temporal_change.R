@@ -1670,9 +1670,91 @@ both_levels_re2 <- bind_rows(sub_df, plot_df) %>%
     w       = pmin(pmax(w, 1), 50)   # cap weights so a few dense plots don't dominate
   ) %>% 
   left_join(df_plot_share_early, by = c('plot_id' = 'plot',
-                                        "year" = "year"))
+                                        "year" = "year")) %>% 
+  mutate(early_class = case_when(
+    share_early >= 70 ~ "early_dom",
+    share_early <= 20 ~ "late_dom",
+    TRUE              ~ "mixed"
+  )) |> 
+  mutate(early_class = factor(early_class, 
+                              levels = c("late_dom",
+                                         "mixed",
+                                         "early_dom")))
 
+both_levels_re2 %>% 
+  filter(level == 'subplot') %>% 
+  ggplot(aes(x = factor(time_snc_full_disturbance),
+             y = cv_hgt,
+             fill = early_class)) + 
+  geom_boxplot() + 
+  facet_grid(.~early_class)
 
+p_early_cls_plot <- both_levels_re2 %>% 
+  filter(level == 'plot') %>% 
+  ggplot(aes(x = factor(time_snc_full_disturbance),
+             y = cv_hgt,
+             color = early_class,
+             fill = early_class,
+             group = early_class)) +
+  geom_point(alpha = 0.1) +
+  geom_smooth(method = 'lm') +
+  coord_cartesian(y = c(0,1))
+  #facet_grid(.~early_class)
+
+p_early_cls_subplot <- both_levels_re2 %>% 
+  filter(level == 'subplot') %>% 
+  ggplot(aes(x = factor(time_snc_full_disturbance),
+             y = cv_hgt,
+             color = early_class,
+             fill = early_class,
+             group = early_class)) +
+  geom_point(alpha = 0.1) +
+  geom_smooth(method = 'lm') +
+  coord_cartesian(y = c(0,1))
+#facet_grid(.~early_class)
+ggarrange(p_early_cls_plot, p_early_cls_subplot, common.legend = T)
+
+# test effect of early seral dominance
+m_cv_cont <- gam(
+  cv_hgt ~ s(share_early, k=5) + s(time_snc_full_disturbance, k=5) +
+    te(share_early, time_snc_full_disturbance, k=c(4,4)) +
+    level + s(plot_id, bs="re"),
+  data = both_levels_re2, 
+  family = gaussian()
+)
+
+summary(m_cv_cont)
+draw(m_cv_cont)
+
+m_cv <- gam(
+  cv_hgt ~ early_class + level +
+    s(time_snc_full_disturbance, by = early_class, k = 5, bs = "cs") +
+    s(plot_id, bs = "re"),
+  data = both_levels_re2, family = gaussian()
+)
+summary(m_cv)
+
+m_hgt <- gam(
+  mean_hgt ~ early_class + level +
+    s(time_snc_full_disturbance, by = early_class, k = 5, bs = "cs") +
+    s(plot_id, bs = "re"),
+  data = both_levels_re2, family = tw(link = "log")
+)
+
+summary(m_hgt)
+
+boxplot(cv_hgt ~ early_class, 
+        data = both_levels_re2, 
+        col = "grey90")
+boxplot(mean_hgt ~ early_class, 
+        data = both_levels_re2, 
+        col = "grey90")
+
+# CV smooths by class
+draw(m_cv, select = 1:3)
+
+# Mean height smooths by class
+draw(m_hgt, select = 1:3)
 
 
 # test ---------------------
@@ -1703,7 +1785,32 @@ draw(m_stems_tw, select = c(1,2))
 
 
 
+m_share_early_tw <- gam(
+  share_early ~ level + 
+    s(time_snc_full_disturbance, by = level, k = 5, bs = "cs") +
+    s(plot_id, bs = "re"),
+  family = tw(link = "log"),  # Tweedie with log-link
+  data = both_levels_re2,
+)
+summary(m_share_early_tw)
+appraise(m_share_early_tw)
+draw(m_share_early_tw, select = c(1,2))
 
+
+
+m_shade_tw <- gam(
+  CWM_shade ~ level + 
+    s(time_snc_full_disturbance, by = level, k = 5, bs = "cs") +
+    s(plot_id, bs = "re"),
+  family = tw(link = "log"),  # Tweedie with log-link
+  data = both_levels_re2,
+)
+summary(m_shade_tw)
+appraise(m_shade_tw)
+draw(m_shade_tw, select = c(1,2))
+
+
+hist(both_levels_re2$share_early)
 
 m_cv_tw <- gam(
   cv_hgt ~ level + 
