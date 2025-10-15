@@ -40,6 +40,10 @@ library(ggridges)
 library(scales)
 
 
+theme_set(theme_classic2(base_size = 10) +
+            theme(axis.title = element_text(size = 10),
+                  axis.text  = element_text(size = 10)))
+
 
 # Read files: --------------
 # --- Field data: 2023 
@@ -1821,10 +1825,6 @@ summary(m_hgt)
 # !!!!
 
 
-p <- predict_response(m_hgt, terms = c("time_snc_full_disturbance [all]"))
-
-plot(p, one_plot = TRUE)
-
 
 boxplot(cv_hgt ~ early_class, 
         data = both_levels_re2, 
@@ -1918,66 +1918,15 @@ appraise(m_shan_tw)
 draw(m_shan_tw, select = c(1,2))
 
 
+# niely plot teh values
+p <- predict_response(m_hgt, terms = c("time_snc_full_disturbance [all]"))
 
-# get variables over plot level !!!
-df_plot_long <- plot_df %>%
-  dplyr::filter(stems_total > 0) %>% 
-  filter(cv_hgt >0) %>% 
-  #ungroup() %>%
-  select(year,
-         time_snc_full_disturbance, 
-         time_snc_part_disturbance, 
-         dens_ha, 
-         # management_intensity,
-         mean_hgt, cv_hgt, shannon_sp, sp_richness,
-         CWM_shade ,
-         CWM_drought ) %>%
-  pivot_longer(-c(year,
-                  time_snc_full_disturbance,
-                  time_snc_part_disturbance#,
-                  #CWM_shade ,
-                  #CWM_drought,
-                 ),
-               names_to = "metric", values_to = "value") %>%
-  # keep mean_hgt > 0, leave others as-is
-  filter(!(metric == "mean_hgt" & (is.na(value) | value <= 0))) %>%
-  filter(!is.na(value))# %>%
+plot(p, one_plot = TRUE)
 
 
 
 
 
-df_plot_long %>%
-  # keep mean_hgt > 0, leave others as-is
-  filter(!(metric == "mean_hgt" & (is.na(value) | value <= 0))) %>%
-  filter(!is.na(value)) %>%
-  ggplot(aes(x = time_snc_full_disturbance, y = value)) +
-  geom_boxplot(aes(group = time_snc_full_disturbance ), outlier.shape = NA) +
-  stat_summary(fun.data = mean_sd, geom = "errorbar", width = 0.1, linewidth = 0.2, col = 'red') +
-  stat_summary(fun = \(y) mean(y, na.rm = TRUE), geom = "point", size = 2, col = 'red') +
-  facet_wrap(~ metric, scales = "free_y", ncol = 2) +
-  labs(x = NULL, y = NULL, title = 'Plot: Full disturbance') +
-  theme_classic2()
-
-#!!!!
-
-
-
-# check my pioneer vs early species separation in drought/shade tolerance?
-p_traits_development1 <- dat_overlap %>% 
-  filter(recovery_type != 'other') %>% 
-  ggplot(aes(x = recovery_type, 
-             y = Drought_tolerance)) +
-  geom_boxplot()
-
-p_traits_development2 <- dat_overlap %>% 
-  filter(recovery_type != 'other') %>% 
-  ggplot(aes(x = recovery_type, 
-             y = Shade_tolerance )) +
-  geom_boxplot()
-
-
-ggarrange(p_traits_development1, p_traits_development2)
 
 
 
@@ -2120,28 +2069,40 @@ out_summary_years
 
 
 # how does the diversity and composition changes over years?
+make_box <- function(df, y, x = "time_snc_full_disturbance",
+                     ylim = NULL, fill = "grey95") {
+  x_sym <- sym(x); y_sym <- sym(y)
+  
+  p <- ggplot(df, aes(x = factor(!!x_sym), y = !!y_sym)) +
+    geom_boxplot(outlier.shape = NA, fill = fill) +
+    geom_jitter(width = 0.15, alpha = 0.5, size = 0.6, color = "grey30") +
+    labs(x = "Years since dist.", y = gsub("_", " ", y)) +
+    theme()
+    theme_classic2()
+  
+  if (!is.null(ylim)) p <- p + coord_cartesian(ylim = ylim)
+  p
+}
+# !!!
 
-ggplot(plot_df, aes(x = mean_hgt, y = shannon_sp)) +
-  geom_point() +
-  geom_smooth(method = "lm") +
-  facet_wrap(~year) 
+# Example usage ---------------------------------------------------------------
+ys <- c("mean_hgt", "cv_hgt", "dens_ha", "sp_richness", "shannon_sp", "CWM_shade")
+ylims <- list(mean_hgt = c(0, 6), cv_hgt = c(0, 1.5))  # others left NULL
 
-ggplot(plot_df, aes(x = cv_hgt, y = shannon_sp)) +
-  geom_point() +
-  geom_smooth(method = "lm") +
-  facet_wrap(~year) 
+plots <- lapply(ys, function(v) make_box(filter(plot_df, !time_snc_full_disturbance %in% c(0, 11, 13)),
+                                         y = v, ylim = ylims[[v]]))
+
+ggarrange(plotlist = plots, ncol = 3, nrow = 2, labels = 'auto')
 
 
-ggplot(plot_df, aes(x = time_snc_full_disturbance, y =cv_hgt )) +
-  geom_point() +
-  geom_smooth(method = "lm") 
 
-ggplot(plot_df, aes(x = time_snc_full_disturbance, y =mean_hgt )) +
-  geom_point() +
-  geom_smooth(method = "lm") 
 
-summary(lm(sp_richness ~ time_snc_full_disturbance, data = plot_df))
 
+
+both_levels_re2 %>% 
+  filter(level == 'plot') %>% 
+  ggplot(aes(y = share_early, x = factor(time_snc_full_disturbance))) +
+  geom_boxplot(outlier.shape = NA) +geom_jitter(alpha = 0.5, size = 0.5)
 
 # change over time
 
