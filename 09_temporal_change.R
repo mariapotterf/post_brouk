@@ -1753,6 +1753,9 @@ both_levels_re2 %>%
   geom_boxplot() + 
   facet_grid(.~early_class)
 
+
+
+# get test scater plots ---------------------------------
 p_early_cls_plot <- both_levels_re2 %>% 
   filter(level == 'plot') %>% 
   ggplot(aes(x = factor(time_snc_full_disturbance),
@@ -1780,7 +1783,7 @@ p_early_cls_subplot <- both_levels_re2 %>%
 #facet_grid(.~early_class)
 ggarrange(p_early_cls_plot, p_early_cls_subplot, common.legend = T)
 
-# test effect of early seral dominance
+# test effect of early seral dominance ---------------------
 m_cv_cont <- gam(
   cv_hgt ~ s(share_early, k=5) + s(time_snc_full_disturbance, k=5) +
     te(share_early, time_snc_full_disturbance, k=c(4,4)) +
@@ -1789,23 +1792,22 @@ m_cv_cont <- gam(
   family = gaussian()
 )
 
-m_cv_cont1 <- gam(
-  cv_hgt ~ s(share_early, k=5) + 
-    s(time_snc_full_disturbance, k=5) +
-    te(share_early, time_snc_full_disturbance, k=c(4,4)) +
-    level + s(plot_id, bs="re"),
-  data = both_levels_re2, 
-  family = gaussian()
-)
-summary(m_cv_cont1)
-appraise(m_cv_cont1)
-plot.gam(m_cv_cont1, page = 1)
+summary(m_cv_cont)
+appraise(m_cv_cont)
+plot.gam(m_cv_cont, page = 1)
 
+
+# nicely plot the predicted values 
+p <- predict_response(m_cv_cont, terms = c("time_snc_full_disturbance [all]"))
+
+plot(p, one_plot = TRUE)
 
 
 summary(m_cv_cont)
 draw(m_cv_cont)
 
+
+# share classes --------------------
 m_cv <- gam(
   cv_hgt ~ early_class + level +
     s(time_snc_full_disturbance, by = early_class, k = 5, bs = "cs") +
@@ -1814,16 +1816,15 @@ m_cv <- gam(
 )
 summary(m_cv)
 
-m_hgt <- gam(
-  mean_hgt ~ early_class + level +
-    s(time_snc_full_disturbance, by = early_class, k = 5, bs = "cs") +
-    s(plot_id, bs = "re"),
-  data = both_levels_re2, family = tw(link = "log")
+
+# nicely plot the predicted values 
+p <- predict_response(
+  m_cv,
+  terms = c("time_snc_full_disturbance [all]",    # x-sequence
+            "early_class",                        # 3 groups
+            "level [subplot]")                    # fix level (or drop to average)
 )
-
-summary(m_hgt)
-# !!!!
-
+plot(p, one_plot = TRUE)
 
 
 boxplot(cv_hgt ~ early_class, 
@@ -1832,13 +1833,6 @@ boxplot(cv_hgt ~ early_class,
 boxplot(mean_hgt ~ early_class, 
         data = both_levels_re2, 
         col = "grey90")
-
-# CV smooths by class
-draw(m_cv, select = 1:3)
-
-# Mean height smooths by class
-draw(m_hgt, select = 1:3)
-
 
 # test ---------------------
 library(mgcv)
@@ -1850,6 +1844,15 @@ m_hgt_tw <- gam(
   family = tw(link = "log"),  # Tweedie with log-link
   data = both_levels_re2
 )
+
+p <- predict_response(
+  m_hgt_tw,
+  terms = c("time_snc_full_disturbance [all]",    # x-sequence
+            #"early_class",                        # 3 groups
+            "level [subplot]")                    # fix level (or drop to average)
+)
+plot(p, one_plot = TRUE)
+
 summary(m_hgt_tw)
 appraise(m_hgt_tw)
 draw(m_hgt_tw, select = c(1,2))
@@ -1918,7 +1921,7 @@ appraise(m_shan_tw)
 draw(m_shan_tw, select = c(1,2))
 
 
-# niely plot teh values
+# nicely plot the predicted values 
 p <- predict_response(m_hgt, terms = c("time_snc_full_disturbance [all]"))
 
 plot(p, one_plot = TRUE)
