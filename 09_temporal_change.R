@@ -1672,7 +1672,7 @@ both_levels_re2 <- bind_rows(sub_df, plot_df) %>%
   left_join(df_plot_share_early, by = c('plot_id' = 'plot',
                                         "year" = "year")) %>% 
   mutate(early_class = case_when(
-    share_early >= 70 ~ "early_dom",
+    share_early >= 60 ~ "early_dom",
     share_early <= 20 ~ "late_dom",
     TRUE              ~ "mixed"
   )) |> 
@@ -1680,6 +1680,8 @@ both_levels_re2 <- bind_rows(sub_df, plot_df) %>%
                               levels = c("late_dom",
                                          "mixed",
                                          "early_dom")))
+
+table(both_levels_re2$early_class)
 
 both_levels_re2 %>% 
   filter(level == 'subplot') %>% 
@@ -1697,6 +1699,7 @@ p_early_cls_plot <- both_levels_re2 %>%
              fill = early_class,
              group = early_class)) +
   geom_point(alpha = 0.1) +
+  ggtitle('plot') +
   geom_smooth(method = 'lm') +
   coord_cartesian(y = c(0,1))
   #facet_grid(.~early_class)
@@ -1709,6 +1712,7 @@ p_early_cls_subplot <- both_levels_re2 %>%
              fill = early_class,
              group = early_class)) +
   geom_point(alpha = 0.1) +
+  ggtitle('subplot') +
   geom_smooth(method = 'lm') +
   coord_cartesian(y = c(0,1))
 #facet_grid(.~early_class)
@@ -1722,6 +1726,20 @@ m_cv_cont <- gam(
   data = both_levels_re2, 
   family = gaussian()
 )
+
+m_cv_cont1 <- gam(
+  cv_hgt ~ s(share_early, k=5) + 
+    s(time_snc_full_disturbance, k=5) +
+    te(share_early, time_snc_full_disturbance, k=c(4,4)) +
+    level + s(plot_id, bs="re"),
+  data = both_levels_re2, 
+  family = gaussian()
+)
+summary(m_cv_cont1)
+appraise(m_cv_cont1)
+plot.gam(m_cv_cont1, page = 1)
+
+
 
 summary(m_cv_cont)
 draw(m_cv_cont)
@@ -2098,107 +2116,8 @@ ggplot(plot_wide, aes(x = delta_hgt, y = delta_cv)) +
 
 # Make a threshold for legacy effects: > 4 m
 
-# ---- 1) Tall-stem legacy (change threshold to 4 for sensitivity) ----
-tall_thresh <- 3.5   # meters
-
-tall_sub <- dat_overlap %>%
-  filter(!is.na(hgt_est), n > 0) %>%
-  mutate(is_tall = hgt_est >= tall_thresh) %>%
-  group_by(plot, subplot, year) %>%
-  summarise(
-    tall_n      = sum(n[is_tall], na.rm = TRUE),
-    stems_total = sum(n, na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
-  mutate(tall_density_m2 = tall_n / 4)  # 4 m² subplot
-
-legacy_plot <- tall_sub %>%
-  group_by(plot, year) %>%
-  summarise(
-    tall_presence        = as.integer(any(tall_n > 0)),
-    tall_share_subplots  = mean(tall_n > 0),
-    tall_density_m2      = sum(tall_n) / 20,     # 20 m² per plot (5×4 m²)
-    .groups = "drop"
-  )
-
-# graded class; collapse to binary later if sample sizes are tiny
-nz <- legacy_plot %>% filter(tall_density_m2 > 0)
-cuts <- if (nrow(nz) >= 3) quantile(nz$tall_density_m2, probs = c(1/3, 2/3), na.rm = TRUE) else c(0, 0)
-
-legacy_plot <- legacy_plot %>%
-  mutate(legacy_class = case_when(
-    tall_density_m2 == 0 ~ "none",
-    tall_density_m2 <= cuts[1] ~ "low",
-    tall_density_m2 <= cuts[2] ~ "mid",
-    TRUE ~ "high"
-  )) %>%
-  mutate(legacy_class = factor(legacy_class, 
-                               levels = c("none","low","mid","high")))
-
-# ---- 2) Join onto your modelling frame (both_levels_re2 already has plot_id) ----
-both_levels_re4 <- both_levels_re2 %>%
-  left_join(legacy_plot, by = c("plot_id" = "plot")) %>%
-  left_join(cvx_stem_density, by = c("plot_id" = "plot")) %>% # year 2025 is automatically filtered
-  mutate(
-    legacy_class = as.character(legacy_class),
-    legacy_class = ifelse(is.na(legacy_class), "none", legacy_class),
-    legacy_class = factor(legacy_class, levels = c("none","low","mid","high")),
-    tall_presence = ifelse(is.na(tall_presence), 0L, tall_presence)
-  )
 
 
-# If any legacy_class × level cell has < 10 rows, collapse to binary
-tbl <- table(both_levels_re4$legacy_class, both_levels_re4$level)
-if (length(tbl) > 0 && min(tbl) < 10) {
-  both_levels_re4 <- both_levels_re4 %>%
-    mutate(legacy_class = factor(ifelse(tall_presence == 1, "present", "absent"),
-                                 levels = c("absent","present")))
-}
-
-# make sure types are right and there are no NAs for covariates/weights
-# build the interaction factor explicitly
-both_levels_re4 <- both_levels_re4 %>%
-  mutate(
-    plot_id      = factor(plot_id),
-    level        = factor(level, levels = c("subplot","plot")),
-    legacy_class = factor(legacy_class, levels = c("absent","present")),
-    lev_legacy   = interaction(level, legacy_class, drop = TRUE),
-    w            = pmin(pmax(w, 1), 50)
-  ) %>% 
-  filter(!is.na(mean_hgt), !is.na(w), !is.na(cv_hgt), !is.na(dens_m2))
-
-
-
-
-# ---- 3) Fit GAM with level × legacy-specific smooths (controls: mean_hgt; RE: plot) ----
-m_cv_legacy <- gam(
-  cv_hgt ~ level + legacy_class +
-    s(dens_m2, by = interaction(level, legacy_class), k = 5) +
-    s(mean_hgt, k = 5) +
-    s(plot_id, bs = "re"),
-  data    = both_levels_re4,
-  weights = w,
-  family  = Gamma(link = "log"),
-  method  = "REML"
-)
-summary(m_cv_legacy)
-library(gratia)
-appraise(m_cv_legacy)
-plot.gam(m_cv_legacy, page = 1)
-
-# test pre-disturbance trees:
-both_levels_re4 %>% 
-  ggplot(aes(x = pre_dist_dens_ha   ,
-             y = dens_m2            )) +
-  geom_point() + 
-  geom_smooth()
-
-
-both_levels_re4 %>% 
-  ggplot(aes(x = pre_dist_dens_ha   ,
-             y = cv_hgt            )) +
-  geom_point() + 
-  geom_smooth()
 
 
 both_levels_re4 %>% 
