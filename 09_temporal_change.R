@@ -423,9 +423,24 @@ dat_subplot_recode <- dat_subplot_recode %>%
     # --- Pioneer / early successional ---
     species %in% c("besp","alin","algl","alvi","potr","posp","prav",
                    "tisp","soau","soto","soar","cabe","ulsp","aial",
-                   "fror","juni","jure","qusp","sasp","osca") ~ "early",
+                   "fror","juni","jure","sasp","osca") ~ "early",
     
     # --- Everything else / not clearly one of the two ---
+    TRUE ~ "other"
+  )) %>% # should be done based on shade tolerance!
+  # possoble to classify based on shade tolerance into early/late
+  mutate(recovery_type3 = case_when(
+    # LATE (shade-tolerant)
+    species %in% c("piab","absp","fasy","taba","tisp","cabe","osca") ~ "late",
+    
+    # EARLY (light-demanding / pioneers)
+    species %in% c("pisy","lade","alin","algl","alvi","potr","posp","prav",
+                   "soto","soar","aial","saca","rops","juni","sasp","besp") ~ "early",
+    
+    # INTERMEDIATE / AMBIGUOUS -> other
+    species %in% c("psme","acca","acpl","acps","frex","casa","aehi",
+                   "ulsp","soau","jure","fror","qusp") ~ "intermediate",
+    
     TRUE ~ "other"
   ))
 
@@ -503,6 +518,49 @@ dat_overlap %>%
   geom_histogram() + 
   facet_grid(year~vegtype, scales = 'free')
 
+
+
+# correlate if early sspecies cooccur with late species
+dat_overlap_plot_seral <- dat_overlap %>% 
+  group_by(plot, recovery_type, year) %>% 
+  summarise(sum_n = sum(n, na.rm = T)) %>% 
+  pivot_wider(
+    names_from  = recovery_type,
+    values_from = sum_n,
+    values_fill = 0,
+    names_prefix = "n_"
+  )
+
+dat_overlap_plot_seral %>% 
+  ggplot(aes(x = n_early,
+             y = n_late#,
+             #color = year
+             )) +
+  geom_point() + 
+  geom_smooth(method = 'lm')
+
+# maybe lets say if tehre are early in 2023, are tehre more late in 2025?
+library(glmmTMB)
+
+dat <- dat_overlap_plot_seral %>%
+  mutate(n_total = n_early + n_late + n_other)
+
+# wide by year per plot
+w <- dat %>%
+  select(plot, year, n_early, n_late, n_total) %>%
+  pivot_wider(names_from = year,
+              values_from = c(n_early, n_late, n_total),
+              values_fill = 0)
+
+# NB GLMM: late_2025 ~ early_2023 (+baseline late_2023), offset = log(n_total_2025)
+fit_lag <- glmmTMB(
+  n_late_2025 ~ scale(n_early_2023) + scale(n_late_2023) + (1|plot) +
+    offset(log(pmax(n_total_2025, 1))),
+  family = nbinom2, data = w
+)
+summary(fit_lag)
+
+# need to understand this further
 
 # get disturbance characteristics on plot level
 plot_disturb_chars <- dat_overlap %>% 
@@ -1760,6 +1818,13 @@ m_hgt <- gam(
 )
 
 summary(m_hgt)
+# !!!!
+
+
+p <- predict_response(m_hgt, terms = c("time_snc_full_disturbance [all]"))
+
+plot(p, one_plot = TRUE)
+
 
 boxplot(cv_hgt ~ early_class, 
         data = both_levels_re2, 
@@ -2117,10 +2182,5 @@ ggplot(plot_wide, aes(x = delta_hgt, y = delta_cv)) +
 # Make a threshold for legacy effects: > 4 m
 
 
-
-
-p <- predict_response(m_tw_pre1, terms = c("dens_m2 [all]"))
-
-plot(p, one_plot = TRUE)
 
 #
