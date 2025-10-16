@@ -46,7 +46,7 @@ theme_set(theme_classic2(base_size = 10) +
 
 
 # Read files: --------------
-# --- Field data: 2023 
+## --- Field data: 2023 
 dat23_subplot    <- data.table::fread("outData/subplot_full_2023.csv")   # subplot-level table
 dat23_sf         <- sf::st_read("outData/sf_context_2023.gpkg")          # subplot spatial data
 
@@ -54,7 +54,7 @@ dat23_sf         <- sf::st_read("outData/sf_context_2023.gpkg")          # subpl
 dat23_sf_min <- dat23_sf %>%
   dplyr::select(subplot = ID, plot = cluster)
 
-# read data from 2025
+## read data from 2025 ----------------
 dat25_subplot    <- data.table::fread("outData/subplot_full_2025.csv")   # subplot-level table
 dat25_sf         <- sf::st_read("outData/subplot_with_clusters_2025.gpkg")          # subplot spatial data
 
@@ -64,8 +64,7 @@ dat25_sf_min <- dat25_sf %>%
 
 length(unique(dat25_subplot$plot_key))  # 1009
 
-# needed columns to merge field data from 2023&2025: 
-
+# needed columns to merge field data from 2023&2025:
 management_types_v <- c("clear", "grndwrk", "logging_trail", "planting", "anti_browsing")
 
 target_cols <- c("plot",
@@ -80,6 +79,7 @@ target_cols <- c("plot",
 
 
 # I have few other species - keep simply as 'other' to not misrepresent their occerence elsewhere
+# just remove
 
 
 #ots1
@@ -108,16 +108,22 @@ dat25_subplot_sub <- dat25_subplot %>%
     grndwrk = site_prep
          ) %>% 
   mutate(year = "2025") %>% 
+  filter(species != 'otsp1') %>% 
   # target column order for the bind
   dplyr::select(all_of(target_cols))
 
 nrow(dat25_subplot_sub)
 head(dat25_subplot_sub)
 
-subplot_to_plot <- dat25_subplot_sub %>%
+subplot_to_plot25 <- dat25_subplot_sub %>%
   distinct(subplot, plot)
 
-# Expand dataset
+# Expand dataset to fit 2023 dataset - have all species, but filled with NA instead of species
+# having markjed as NA (in 2025)
+species_vec25 <- unique(dat25_subplot_sub$species)
+species_vec25 <- species_vec25[species_vec25 != ""]
+
+
 dat25_expanded <-
   dat25_subplot_sub %>%
   as_tibble() %>%
@@ -125,7 +131,7 @@ dat25_expanded <-
   tidyr::complete(
     subplot,
     vegtype = c("small", "advanced", "mature"),
-    species = unique(dat25_subplot_sub$species),
+    species = species_vec25,
     fill = list(
       n = NA_integer_,
       dbh = NA_character_,
@@ -133,17 +139,30 @@ dat25_expanded <-
     )
   ) %>%
   # Reattach plot info
-  left_join(subplot_to_plot, by = "subplot") %>%
+  left_join(subplot_to_plot25, by = "subplot") %>%
   mutate(year = "2025") %>%
   # Reorder columns if needed
   dplyr::select(all_of(target_cols))
 
+# How many plots/subplots do not have any stems present? 
+dat25_expanded %>%
+  group_by(plot) %>%
+  summarise(all_stems_missing = all(is.na(n) | n == 0)) %>%
+  filter(all_stems_missing) #%>%  # just 1???
+  #nrow()
 
-#length(unique(dat25_subplot_sub$species))
+dat25_expanded %>%
+  group_by(subplot) %>%
+  summarise(all_stems_missing = all(is.na(n) | n == 0)) %>%
+  filter(all_stems_missing) #%>%
+# 196 ~ 20%
+
+length(unique(dat25_subplot_sub$species))
+length(unique(dat25_subplot_sub$subplot))
 # 375_T2_AH_20250827
 
 
-### Field data 2023: subplot level --------------------------------------
+## Field data 2023: subplot level --------------------------------------
 dat23_subplot_sub <- 
   dat23_subplot %>% 
   dplyr::select(vegtype, species, ID, cluster,n, hgt, dbh,
@@ -227,7 +246,7 @@ dat_subplots <- dat_subplots %>%
   dplyr::filter(n_subplots == 5)
 
 
-# --- Tree-based history (vector layers)
+## Tree-based pre-disturbance history (vector layers) ------------------------
 convex_hull      <- terra::vect("raw/pre-disturb_history_trees/cvx_hull_completed_3035.gpkg")
 pre_trees        <- terra::vect("raw/pre-disturb_history_trees/pre-disturbance_trees_3035.gpkg")
 
@@ -258,7 +277,7 @@ pre_trees_df <- as.data.frame(pre_trees) %>%
 pre_trees_3035_clean          <- pre_trees
 values(pre_trees_3035_clean)  <- pre_trees_df
 
-## Clean up convex hull characteristics -------------------------
+## Clean up convex hull characteristics 
 cvx_clean <- convex_hull %>% 
   as.data.frame() %>%   # attributes only (no geometry)
   mutate(
@@ -299,13 +318,13 @@ table(convex_hull_3035_clean$status)
 # both only_2023 only_2025 
 # 130         9        74 
 
-# Add subplot (square)/plot (convex hull) info to each tree  (spatial join)
+# Add plot (convex hull) info to each tree  (spatial join)
 pre_trees_cvx_joined <- terra::intersect(pre_trees_3035_clean, convex_hull_3035_clean)
 
 ### Get pre-disturbnace stem density per plot 
 cvx_df <- as.data.frame(pre_trees_cvx_joined)
 
-####  Plot = CVX: stem density ------------------------------
+####  Plot level = CVX: stem density 
 cvx_stem_density <- cvx_df %>%
 #  ungroup(.) %>% 
   group_by(common_cluster_ID, plot_comb, status, cluster_2023, cluster_2025,
@@ -359,7 +378,7 @@ dat_subplots_merged <- rbind(dat_subplots23, dat_subplots25) %>%
   mutate(plot    = as.factor(plot),
          subplot = as.factor(subplot))
 
-### Clean up field data -----------------------------------
+## Clean up field data -----------------------------------
 # guestimate dbh and ba per individual based on height distribution 
 dat_subplot_recode <- dat_subplots_merged %>% 
   # remove if no species is defined
@@ -449,7 +468,7 @@ dat_subplot_recode <- dat_subplot_recode %>%
   ))
 
 
-# clean up management type ------------------
+## Clean up management type ------------------
 dat_subplot_mng <- dat_subplot_recode %>%
   mutate(across(all_of(management_types_v), ~ ifelse(is.na(.), 0, .)))
 
@@ -477,26 +496,30 @@ mng_plot_intensity <- mng_subplot_scores %>%
     n_subplots          = n_distinct(subplot),
     salvage_sum         = sum(salvage_sub),
     protection_sum      = sum(protection_sub),
+    planting_sum        = sum(planting),
     management_sum      = sum(management_sub),
+    planting_intensity = planting_sum / n_subplots,
     salvage_intensity   = salvage_sum    / (3 * n_subplots),
     protection_intensity= protection_sum / (2 * n_subplots),
     management_intensity= management_sum / (5 * n_subplots),
     .groups = "drop"
   ) %>%
   mutate(
+    planting_intensity    = pmin(pmax(planting_intensity, 0), 1),
     salvage_intensity    = pmin(pmax(salvage_intensity, 0), 1),
     protection_intensity = pmin(pmax(protection_intensity, 0), 1),
     management_intensity = pmin(pmax(management_intensity, 0), 1)
-  )
+  ) %>% 
+  select(-n_subplots)
 
 
-dat_subplot_mng <- dat_subplot_mng %>% 
-  left_join(mng_plot_intensity, by = c('plot', 'n_subplots'))
+dat_subplot_mng2 <- dat_subplot_mng %>% 
+  left_join(mng_plot_intensity, by = c('plot'))
 
-fwrite(dat_subplot_mng, 'outData/full_table_23_25.csv')
+fwrite(dat_subplot_mng2, 'outData/full_table_23_25.csv')
 
 # keep only overlapping plots
-dat_overlap <- dat_subplot_mng %>% 
+dat_overlap <- dat_subplot_mng2 %>% 
   filter(status == 'both')
 # filter(status == "both") %>% # keep only overlapping sites
 length(unique(dat_overlap$plot))
@@ -523,48 +546,6 @@ dat_overlap %>%
   facet_grid(year~vegtype, scales = 'free')
 
 
-
-# correlate if early sspecies cooccur with late species
-dat_overlap_plot_seral <- dat_overlap %>% 
-  group_by(plot, recovery_type, year) %>% 
-  summarise(sum_n = sum(n, na.rm = T)) %>% 
-  pivot_wider(
-    names_from  = recovery_type,
-    values_from = sum_n,
-    values_fill = 0,
-    names_prefix = "n_"
-  )
-
-dat_overlap_plot_seral %>% 
-  ggplot(aes(x = n_early,
-             y = n_late#,
-             #color = year
-             )) +
-  geom_point() + 
-  geom_smooth(method = 'lm')
-
-# maybe lets say if tehre are early in 2023, are tehre more late in 2025?
-library(glmmTMB)
-
-dat <- dat_overlap_plot_seral %>%
-  mutate(n_total = n_early + n_late + n_other)
-
-# wide by year per plot
-w <- dat %>%
-  select(plot, year, n_early, n_late, n_total) %>%
-  pivot_wider(names_from = year,
-              values_from = c(n_early, n_late, n_total),
-              values_fill = 0)
-
-# NB GLMM: late_2025 ~ early_2023 (+baseline late_2023), offset = log(n_total_2025)
-fit_lag <- glmmTMB(
-  n_late_2025 ~ scale(n_early_2023) + scale(n_late_2023) + (1|plot) +
-    offset(log(pmax(n_total_2025, 1))),
-  family = nbinom2, data = w
-)
-summary(fit_lag)
-
-# need to understand this further
 
 # get disturbance characteristics on plot level
 plot_disturb_chars <- dat_overlap %>% 
