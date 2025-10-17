@@ -49,6 +49,10 @@ theme_set(theme_classic2(base_size = 10) +
 # get ecological traits
 traits_full <- fread('outData/my_species_traits.csv')
 
+traits_full<- traits_full %>% 
+  mutate(
+  seral_stage = if_else(Shade_tolerance < 2.5, "early", "late") # low value are less totalera = sun loving, high values are 
+)
 
 ## --- Field data: 2023 
 dat23_subplot    <- data.table::fread("outData/subplot_full_2023.csv")   # subplot-level table
@@ -446,10 +450,10 @@ dat_subplot_recode <- dat_subplots_merged %>%
 
 
 # define recovery type: based on species that are likely planted/pioneer
-dat_subplot_recode <- dat_subplot_recode %>%
-  mutate(
-    seral_stage = if_else(Shade_tolerance < 3, "early", "late")
-  )
+# dat_subplot_recode <- dat_subplot_recode %>%
+#   mutate(
+#     seral_stage = if_else(Shade_tolerance < 3, "early", "late") # low value are less totalera = sun loving, high values are 
+#   )
   # mutate(recovery_type = case_when(
   #   # --- Planted / late-successional / non-native ---
   #   species %in% c("piab","pisy","absp","lade","psme","taba",
@@ -534,6 +538,8 @@ dat_overlap <- dat_subplot_mng2 %>%
   filter(status == 'both')
 # filter(status == "both") %>% # keep only overlapping sites
 length(unique(dat_overlap$plot))
+
+hist(traits_full$Shade_tolerance)
 
 
 ### export important tables ---------------
