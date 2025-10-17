@@ -143,6 +143,21 @@ data.table::fwrite(inventory_all,   "outTable/SPEI_inventory.csv")
 data.table::fwrite(summary_monthly, "outTable/SPEI_monthly_summary.csv")
 data.table::fwrite(summary_yearly,  "outTable/SPEI_yearly_summary.csv")
 
+
+
+# make plots -----------------------------------
+
+library(data.table)
+library(ggplot2)
+library(dplyr)
+
+
+
+summary_monthly <- fread("outTable/SPEI_monthly_summary.csv")
+summary_yearly  <- fread("outTable/SPEI_yearly_summary.csv")
+
+
+
 # ---- PLOTS ------------------------------------------------------------------
 # Monthly: mean ± SD over time, faceted by SPEI window
 year_bands <- summary_monthly |>
@@ -185,58 +200,6 @@ p_monthly <- summary_monthly %>%
 p_monthly
 
 
-p_monthly_cols <- summary_monthly %>% 
-  dplyr::filter(grepl("(?i)harg\\s*?1([^0-9]|$)", scene, perl = TRUE)) %>% 
-  dplyr::mutate(sign = ifelse(mean > 0, "Positive (> 0)", "Negative (< 0)")) %>%
-  ggplot(aes(x = date, y = mean, group = scene, color = sign)) +
-  geom_errorbar(aes(ymin = mean - sd, ymax = mean + sd), width = 0.2, alpha = 0.7) +
-  geom_line() +
-  geom_point(size = 1.05) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
-  facet_wrap(~ spei, ncol = 1, scales = "free_y") +
-  scale_color_manual(values = c("Negative (< 0)" = "red", "Positive (> 0)" = "blue")) +
-  labs(
-    x = "Date",
-    y = "SPEI (monthly mean ± SD)",
-    title = "Monthly SPEI by scene",
-    color = NULL
-  ) +
-  theme_bw(base_size = 9)
-
-p_monthly_cols
-
-
-p_monthly_cols_sub <- summary_monthly %>% 
-  dplyr::filter(grepl("(?i)harg\\s*?1([^0-9]|$)", scene, perl = TRUE)) %>% 
-  dplyr::filter(year > 1999) %>% 
-  
-  dplyr::mutate(sign = ifelse(mean > 0, "Positive (> 0)", "Negative (< 0)")) %>%
-  ggplot(aes(x = date, y = mean, group = scene, color = sign)) +
-  geom_rect(
-    data = filter(year_bands,year>1999),
-    aes(xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf),
-    inherit.aes = FALSE, fill = "grey85", alpha = 0.25
-  ) +
-  
-  
-  geom_errorbar(aes(ymin = mean - sd, ymax = mean + sd), width = 0.2, alpha = 0.7) +
-  geom_line() +
-  geom_point(size = 0.5) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
-  facet_wrap(~ spei, ncol = 1, scales = "free_y") +
-  scale_color_manual(values = c("Negative (< 0)" = "red", 
-                                "Positive (> 0)" = "blue")) +
-  labs(
-    x = "Date",
-    y = "SPEI (monthly mean ± SD)",
-    title = "Monthly SPEI by scene",
-    color = NULL
-  ) +
-  theme_bw(base_size = 9)
-
-p_monthly_cols_sub
-
-
 
 
 # Yearly: mean ± SD per year, faceted by SPEI window
@@ -256,3 +219,168 @@ p_yearly <- summary_monthly %>%
 
 p_monthly
 p_yearly
+
+
+
+# Get mothly + SD values, only SPEI12 for 2000-2024 and 1961-2024, inreacse labels on x axis -----------------
+
+
+p_monthly_cols <- summary_monthly %>% 
+  filter(spei == 12) %>% 
+  dplyr::filter(grepl("(?i)harg\\s*?1([^0-9]|$)", scene, perl = TRUE)) %>% 
+  dplyr::mutate(sign = ifelse(mean > 0, "Positive (> 0)", "Negative (< 0)")) %>%
+  ggplot(aes(x = date, y = mean, group = scene, color = sign)) +
+  geom_errorbar(aes(ymin = mean - sd, ymax = mean + sd), width = 0.2, alpha = 0.7) +
+  geom_line() +
+  geom_point(size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+  #facet_wrap(~ spei, ncol = 1, scales = "free_y") +
+  scale_color_manual(values = c("Negative (< 0)" = "red", "Positive (> 0)" = "blue")) +
+  scale_x_date(
+    date_breaks = "5 years",         # change to "2 years" for denser ticks
+    date_labels = "%Y"               # show only year
+  ) +
+  labs(
+    x = "Year",
+    y = "SPEI 12 (monthly mean ± SD)",
+    title = "Monthly SPEI 12 ± SD(1961-2024)",
+    color = NULL
+  ) +
+  theme_bw(base_size = 9) + 
+  theme(legend.position = "none")
+
+#p_monthly_cols
+
+
+p_monthly_cols_sub <- summary_monthly %>% 
+  dplyr::filter(grepl("(?i)harg\\s*?1([^0-9]|$)", scene, perl = TRUE)) %>% 
+  dplyr::filter(year > 1999) %>% 
+  dplyr::filter(spei == 12) %>% 
+  
+  dplyr::mutate(sign = ifelse(mean > 0, "Positive (> 0)", "Negative (< 0)")) %>%
+  ggplot(aes(x = date, y = mean, group = scene, color = sign)) +
+  geom_rect(
+    data = filter(year_bands,year>1999),
+    aes(xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf),
+    inherit.aes = FALSE, fill = "grey85", alpha = 0.25
+  ) +
+  geom_errorbar(aes(ymin = mean - sd, ymax = mean + sd), width = 0.2, alpha = 0.7) +
+  geom_line() +
+  geom_point(size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+ # facet_wrap(~ spei, ncol = 1, scales = "free_y") +
+  scale_color_manual(values = c("Negative (< 0)" = "red", 
+                                "Positive (> 0)" = "blue")) +
+  labs(
+    x = "Year",
+    y = "SPEI 12 (monthly mean ± SD)",
+    title = "Monthly SPEI 12 ± SD (2000-2024)",
+    color = NULL
+  ) +
+  scale_x_date(
+    date_breaks = "2 years",         # change to "2 years" for denser ticks
+    date_labels = "%Y"               # show only year
+  ) +
+  theme_bw(base_size = 9) +
+  theme(legend.position = "none")
+
+
+
+# Show only means (not SD) -------------------------------------
+
+# Get mothly values, only SPEI12 for 2000-2024 and 1961-2024, inreacse labels on x axis -----------------
+p_monthly_means <- summary_monthly %>% 
+  filter(spei == 12) %>% 
+  dplyr::filter(grepl("(?i)harg\\s*?1([^0-9]|$)", scene, perl = TRUE)) %>% 
+  dplyr::mutate(sign = ifelse(mean > 0, "Positive (> 0)", "Negative (< 0)")) %>%
+  ggplot(aes(x = date, y = mean, group = scene, color = sign)) +
+ # geom_errorbar(aes(ymin = mean - sd, ymax = mean + sd), width = 0.2, alpha = 0.7) +
+  geom_line() +
+  geom_point(size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+  #facet_wrap(~ spei, ncol = 1, scales = "free_y") +
+  scale_color_manual(values = c("Negative (< 0)" = "red", "Positive (> 0)" = "blue")) +
+  scale_x_date(
+    date_breaks = "5 years",         # change to "2 years" for denser ticks
+    date_labels = "%Y"               # show only year
+  ) +
+  labs(
+    x = "Year",
+    y = "SPEI 12 (monthly mean)",
+    title = "Monthly SPEI 12  (1961-2024)",
+    color = NULL
+  ) +
+  theme_bw(base_size = 9) + 
+  theme(legend.position = "none")
+
+
+
+p_monthly_mean_sub <- summary_monthly %>% 
+  dplyr::filter(grepl("(?i)harg\\s*?1([^0-9]|$)", scene, perl = TRUE)) %>% 
+  dplyr::filter(year > 1999) %>% 
+  dplyr::filter(spei == 12) %>% 
+  dplyr::mutate(sign = ifelse(mean > 0, "Positive (> 0)", "Negative (< 0)")) %>%
+  ggplot(aes(x = date, y = mean, group = scene, color = sign)) +
+  geom_rect(
+    data = filter(year_bands,year>1999),
+    aes(xmin = xmin, xmax = xmax, ymin = -Inf, ymax = Inf),
+    inherit.aes = FALSE, fill = "grey85", alpha = 0.25
+  ) +  #  geom_errorbar(aes(ymin = mean - sd, ymax = mean + sd), width = 0.2, alpha = 0.7) +
+  geom_line() +
+  geom_point(size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+  # facet_wrap(~ spei, ncol = 1, scales = "free_y") +
+  scale_color_manual(values = c("Negative (< 0)" = "red", 
+                                "Positive (> 0)" = "blue")) +
+  labs(
+    x = "Year",
+    y = "SPEI 12 (monthly mean)",
+    title = "Monthly SPEI 12 (2000-2024)",
+    color = NULL
+  ) +
+  scale_x_date(
+    date_breaks = "2 years",         # change to "2 years" for denser ticks
+    date_labels = "%Y"               # show only year
+  ) +
+  theme_bw(base_size = 9) +
+  theme(legend.position = "none")
+
+
+
+
+
+
+# Combine plots
+comb_plot_means_SD  <- ggarrange(p_monthly_cols, p_monthly_cols_sub, ncol = 1)
+comb_plot_means     <- ggarrange(p_monthly_means, p_monthly_mean_sub, ncol = 1)
+
+
+# Save as vector PDF
+ggsave("outFigSPEI/monthly_spei12_mean_SD.pdf", comb_plot_means_SD,
+       width = 7, height = 5, units = "in", device = cairo_pdf)
+
+
+ggsave("outFigSPEI/monthly_spei12_mean.pdf", comb_plot_means,
+       width = 7, height = 5, units = "in", device = cairo_pdf)
+
+
+# Save as svg
+ggsave("outFigSPEI/monthly_spei12_mean_SD.svg", comb_plot_means_SD,
+       width = 7, height = 5, units = "in", device = "svg")
+
+
+ggsave("outFigSPEI/monthly_spei12_mean.svg", comb_plot_means,
+       width = 7, height = 5, units = "in", device = "svg")
+
+# save as png
+ggsave("outFigSPEI/monthly_spei12_mean_SD.png", comb_plot_means_SD,
+       width = 7, height = 5, units = "in", device = "png")
+
+
+ggsave("outFigSPEI/monthly_spei12_mean.png", comb_plot_means,
+       width = 7, height = 5, units = "in", device = "png")
+
+
+
+
+
