@@ -2,6 +2,10 @@
 # Analyze data temporal change
 #   
 
+# read overlapping data: from 223 and 2025
+# investigate how they change with time since disturbnace
+# structure (height, cv, stem density), composition (shannon, richness, eveness)
+# run models:
 
 
 gc()
@@ -21,6 +25,7 @@ library(vegan) # for diversity indices
 
 library(mgcv)
 library(ggeffects)
+library(gratia)
 
 library(RColorBrewer)
 
@@ -28,23 +33,15 @@ library(ggridges)
 library(scales)
 
 
+
+
 theme_set(theme_classic2(base_size = 10) +
             theme(axis.title = element_text(size = 10),
                   axis.text  = element_text(size = 10)))
 
 
-
-
-
-
-
-
-
-fwrite(dat_overlap, 'outData/full_table_overlap_23_25.csv')
-
-
-
-
+# Read data -----------------------------
+dat_overlap  <- fread('outData/full_table_overlap_23_25.csv')
 
 
 # get master table, having all unique plots and subplots
@@ -68,11 +65,13 @@ dat_overlap %>%
   facet_grid(year~vegtype, scales = 'free')
 
 
-
-## Get disturbance characteristics on plot level --------------
+# Clean up dat on subplot & plot level ---------------------------------
+## Get disturbance characteristics (plot) --------------
 plot_disturb_chars <- dat_overlap %>% 
-  dplyr::select(plot, year, disturbance_year, 
-                forest_year, disturbance_length, 
+  dplyr::select(plot, year, 
+                disturbance_year, 
+                forest_year, 
+                disturbance_length, 
                 time_snc_full_disturbance, 
                 time_snc_part_disturbance #,
                 #clear, grndwrk, logging_trail, planting, anti_browsing
@@ -84,6 +83,27 @@ plot_disturb_chars %>%
   geom_histogram() + 
   facet_grid(.~year)
 
+
+p_hist_dist_length <- plot_disturb_chars %>% 
+ # filter(year == 2023) %>%  # to keep half of values
+  ggplot(aes(disturbance_length)) + 
+  geom_histogram(fill = 'grey90', color = 'black') 
+
+p_hist_dist_year <- plot_disturb_chars %>%
+  #filter(year == 2023) %>%  # to keep half of values
+  filter(disturbance_year > 2012) %>% 
+  ggplot(aes(disturbance_year)) + 
+  geom_histogram(fill = 'grey90', color = 'black') 
+
+
+p_hist_time_since_dist <- plot_disturb_chars %>%
+ # filter(year == 2023) %>%  # to keep half of values
+  filter(disturbance_year > 2012) %>% 
+  ggplot(aes(time_snc_full_disturbance)) + 
+  geom_histogram(fill = 'grey90', color = 'black') 
+
+ggarrange(p_hist_dist_year, p_hist_dist_length, p_hist_time_since_dist,
+          ncol = 3)
 
 # make a master table having all (even empty subplots and plots)
 df_master_overlap <- dat_overlap %>% 
@@ -133,7 +153,7 @@ prop.table(table(df_master_mng$anti_browsing))
 # anti_browsing
 
 
-## Get share between pioneers vs planted on landscape level ---------------
+## Early vs late (landscape, plot, subplot) ---------------
 # Summarize total number of trees per year and recovery type
 total_per_year <- dat_overlap %>%
   group_by(year) %>%
@@ -143,7 +163,7 @@ total_per_year <- dat_overlap %>%
   )
 
 tree_summary <- dat_overlap %>%
-  group_by(year, recovery_type) %>%
+  group_by(year, seral_stage ) %>%
   summarise(
     n_trees_recovery = sum(n, na.rm = TRUE),
     .groups = "drop"
@@ -155,8 +175,8 @@ print(tree_summary)
 
 # Stacked barplot
 tree_summary %>% 
-  dplyr::filter(recovery_type != 'other') %>% 
-  ggplot( aes(x = year, y = share, fill = recovery_type)) +
+  dplyr::filter(seral_stage != 'other') %>% 
+  ggplot( aes(x = year, y = share, fill = seral_stage)) +
   geom_bar(stat = "identity", color = "black") +
   labs(
     title = "Tree Counts by Recovery Type per Year",
@@ -173,19 +193,19 @@ tree_summary %>%
 dat_sum_recovery <- dat_overlap %>%
   mutate(n = coalesce(n, 0L)) %>% 
   # mutate(year = as.factor(year)) %>% 
-  group_by(recovery_type, year) %>%
+  group_by(seral_stage, year) %>%
   summarise(
     stems_total = sum(n, na.rm = TRUE))
 
 dat_sum_recovery
 
 
-## chnage of shares betwen early vs. late species? --------------------
+### Early vs. late species over time --------------------
 
 dat_overlap %>% 
-  group_by(plot, recovery_type) %>%
+  group_by(plot, seral_stage) %>%
   summarise(n_stems = n(), .groups = "drop") %>%
-  pivot_wider(names_from = recovery_type,
+  pivot_wider(names_from = seral_stage,
               values_from = n_stems,
               values_fill = 0)  # fill missing types with 0
 
@@ -196,9 +216,9 @@ dat_overlap %>%
 share_early_vs_late <- 
   dat_overlap %>%
   filter(!is.na(n)) %>%  # Optional: remove NAs if present
-  group_by(plot, recovery_type, time_snc_full_disturbance) %>%
+  group_by(plot, seral_stage, time_snc_full_disturbance) %>%
   summarise(n_stems = n(), .groups = "drop") %>%
-  pivot_wider(names_from = recovery_type,
+  pivot_wider(names_from = seral_stage,
               values_from = n_stems,
               values_fill = 0) %>% 
   mutate(total = early + late,
@@ -206,53 +226,174 @@ share_early_vs_late <-
          share_late = late/total*100) %>% 
   select(plot, time_snc_full_disturbance, share_early, share_late) %>%
   pivot_longer(cols = starts_with("share_"),
-               names_to = "recovery_type",
+               names_to = "seral_stage",
                values_to = "share")# %>%
 
 ### Early vs late: plot level 
 df_plot_share_early <-  
   dat_overlap %>%
   filter(!is.na(n)) %>%  # Optional: remove NAs if present
-  group_by(plot,year, recovery_type) %>%
+  group_by(plot,year, seral_stage, time_snc_full_disturbance) %>%
   summarise(n_stems = n(), .groups = "drop") %>%
-  pivot_wider(names_from = recovery_type,
+  pivot_wider(names_from = seral_stage,
               values_from = n_stems,
               values_fill = 0) %>% 
   mutate(total = early + late,
          share_early = early/total*100,
          share_late = late/total*100) %>% 
-  select(plot, year, share_early, share_late) 
+  select(plot, year, share_early, share_late,time_snc_full_disturbance) 
 
 ### early vs late : subplot level 
 df_sub_share_early <-  
   dat_overlap %>%
   filter(!is.na(n)) %>%  # Optional: remove NAs if present
-  group_by(subplot, plot,year, recovery_type) %>%
+  group_by(subplot, plot,year, seral_stage, time_snc_full_disturbance) %>%
   summarise(n_stems = n(), .groups = "drop") %>%
-  pivot_wider(names_from = recovery_type,
+  pivot_wider(names_from = seral_stage,
               values_from = n_stems,
               values_fill = 0) %>% 
   mutate(total = early + late,
          share_early = early/total*100,
          share_late = late/total*100) %>% 
-  select(subplot, plot, year, share_early, share_late) 
+  select(subplot, plot, year, share_early, share_late,time_snc_full_disturbance) 
 
 
 # Plot
 ggplot(share_early_vs_late, 
        aes(x = factor(time_snc_full_disturbance),
            y = share,
-           fill = recovery_type)) +
+           fill = seral_stage)) +
   geom_boxplot() +
   #geom_jitter() +
   #geom_bar(stat = "identity", position = "stack") +
-  labs(x = "Time since full disturbance (years)",
+  labs(x = "Time since stand replacing\ndisturbance (years)",
        y = "Share of stems (%)",
-       fill = "Recovery type") 
+       fill = "Seral stage") 
+
+# not pretty 
+ggplot(df_sub_share_early,
+       aes(x = factor(time_snc_full_disturbance),
+           y = share_early)) +
+  geom_boxplot() +
+  labs(x = "Time since full disturbance (years)",
+       y = "Share of stems (%)")
+# 
+# 
+# ggplot(df_plot_share_early, 
+#        aes(x = factor(time_snc_full_disturbance),
+#            y = share_early)) +
+#   geom_boxplot() +
+#   labs(x = "Time since full disturbance (years)",
+#        y = "Share of stems (%)") 
 
 
 
-# --- Field data: Subplot-level metrics 
+
+## Traits: Weighted community mean (subplot & plot) ------------------
+
+# choose  weighting : by stems (for early communities), by structure?
+# Option A (default): weight by stem counts
+wvar <- "n"
+
+# Option B: weight by structure (uncomment ONE)
+# wvar <- "basal_area_cm2"
+# wvar <- "hgt_est"
+
+# helper to pull a numeric weight safely
+wfun <- function(x) ifelse(is.na(x) | x < 0, 0, x)
+
+# Subplot × year CWMs 
+cwm_subplot <- dat_overlap %>%
+  #filter(species != 'ots1') %>% 
+  mutate(w = wfun(.data[[wvar]])) %>%
+  # keep only rows that contribute weight and have trait scores
+  filter(w > 0) %>%
+  group_by(plot, subplot, year, time_snc_full_disturbance) %>%
+  summarise(
+    stems_with_traits = sum(w[!is.na(Shade_tolerance) & !is.na(Drought_tolerance)], na.rm = TRUE),
+    stems_total       = sum(w, na.rm = TRUE),
+    CWM_shade   = ifelse(stems_with_traits > 0,
+                         sum(w * Shade_tolerance, na.rm = TRUE) / stems_with_traits, NA_real_),
+    CWM_drought = ifelse(stems_with_traits > 0,
+                         sum(w * Drought_tolerance, na.rm = TRUE) / stems_with_traits, NA_real_),
+    trait_coverage = stems_with_traits / pmax(stems_total, 1e-9),
+    .groups = "drop"
+  )
+
+# 2) Plot × year CWMs
+cwm_plot <- dat_overlap %>%
+  filter(species != 'ots1') %>% 
+  mutate(w = wfun(.data[[wvar]])) %>%
+  filter(w > 0) %>%
+  group_by(plot, year, time_snc_full_disturbance) %>%
+  summarise(
+    stems_with_traits = sum(w[!is.na(Shade_tolerance) & !is.na(Drought_tolerance)], na.rm = TRUE),
+    stems_total       = sum(w, na.rm = TRUE),
+    CWM_shade   = ifelse(stems_with_traits > 0,
+                         sum(w * Shade_tolerance, na.rm = TRUE) / stems_with_traits, NA_real_),
+    CWM_drought = ifelse(stems_with_traits > 0,
+                         sum(w * Drought_tolerance, na.rm = TRUE) / stems_with_traits, NA_real_),
+    trait_coverage = stems_with_traits / pmax(stems_total, 1e-9),
+    .groups = "drop"
+  )
+
+### quick plots on subplot and plot level 
+ord_year <- function(x) factor(as.character(x), levels = c("2023","2025"))
+
+
+# Long format for subplot
+cwm_subplot_long <- cwm_subplot %>%
+  transmute(level = "subplot",
+            plot, subplot,
+            time_snc_full_disturbance,
+            year = ord_year(year),
+            CWM_shade, CWM_drought) %>%
+  pivot_longer(c(CWM_shade, CWM_drought),
+               names_to = "trait", values_to = "CWM")
+
+# Long format for plot
+cwm_plot_long <- cwm_plot %>%
+  transmute(level = "plot",
+            plot,
+            time_snc_full_disturbance,
+            year = ord_year(year),
+            CWM_shade, CWM_drought) %>%
+  pivot_longer(c(CWM_shade, CWM_drought),
+               names_to = "trait", values_to = "CWM")
+
+# Combine
+cwm_all_long <- bind_rows(cwm_subplot_long, cwm_plot_long) %>%
+  filter(!is.na(CWM))
+
+# Nice facet labels
+trait_labs <- c(CWM_shade = "Shade tolerance", 
+                CWM_drought = "Drought tolerance")
+
+ggplot(cwm_all_long, aes(x = year, y = CWM, fill = year)) +
+  geom_boxplot(width = 0.6, outlier.alpha = 0.15) +
+  geom_jitter(width = 0.1, alpha = 0.25, size = 0.7) +
+  facet_grid(level ~ trait, labeller = labeller(trait = trait_labs)) +
+  labs(x = "Year", y = "Community-weighted mean (CWM)",
+       title = "Trait CWMs by level and year") +
+  theme_classic2(base_size = 10)
+
+cwm_all_long %>% 
+  ggplot(aes(x = time_snc_full_disturbance, 
+             y = CWM, 
+             fill = factor(time_snc_full_disturbance))) +
+  geom_boxplot(width = 0.6, outlier.shape = NA) +
+ # geom_jitter(width = 0.1, alpha = 0.25, size = 0.7) +
+  facet_grid(level ~ trait, 
+             labeller = labeller(trait = trait_labs),
+             scales = 'free_y') +
+  labs(x = "Year", y = "Community-weighted mean (CWM)",
+       title = "Trait CWMs",
+       subtitle = "by level and time since disturbance") +
+  theme_classic2(base_size = 10) + 
+  theme(legend.position = "none")
+
+
+## Field data summary: subplot metrics ----------------------------------------------------------
 field_sub_summ <- dat_overlap %>%
   mutate(n = coalesce(n, 0L)) %>% 
   # mutate(year = as.factor(year)) %>% 
@@ -302,7 +443,76 @@ field_sub_summ <- dat_overlap %>%
 #       mean_hgt = ifelse(is.na(mean_hgt), 0L, mean_hgt)) # replace NA by 0 if stems are missing
 
 
-# get stem densiity by management ---------------------
+# is teh change in community shading/drought tolerance driven by planting????
+# Plot: Shade ~ Time since disturbance, by planting
+x_lab_time_snc_full_dist = "Time since stand\nreplacing disturbance (years)"
+
+p_shade_planting <- field_sub_summ %>% 
+  ggplot(aes(x = as.factor(time_snc_full_disturbance),
+             y = CWM_shade,
+             fill = factor(planting))) +
+ #
+  geom_boxplot() +
+  labs(x = x_lab_time_snc_full_dist,
+       y = "CWM shade",
+       fill = "Planting") +
+  theme_classic2() +
+  theme(text  = element_text(size = 10))
+
+# Plot: Drought ~ Time since disturbance, by planting
+p_shade_drought <- field_sub_summ %>% 
+  ggplot(aes(x = as.factor(time_snc_full_disturbance),
+             y = CWM_drought,
+             fill = factor(planting))) +
+  geom_boxplot(outlier.shape = NA) +
+  labs(x = x_lab_time_snc_full_dist,
+       y = "CWM drought",
+       fill = "Planting") +
+  theme_classic2()+
+  theme(text  = element_text(size = 10))
+
+# Plot: Shade ~ Planting
+p_shade_total <- field_sub_summ %>% 
+  ggplot(aes(x = factor(planting),
+             y = CWM_shade,
+             fill = factor(planting))) +
+  #
+  geom_boxplot(outlier.shape = NA) +
+  stat_compare_means(method = "wilcox.test", label = "p.format", 
+                     label.y = 4, size = 3) +
+  labs(x = "Planting",
+       y = "CWM shade",
+       fill = "Planting") +
+  theme_classic2() +
+  theme(text  = element_text(size = 10))
+
+# Plot: Drought ~ Planting
+p_drought_total <- field_sub_summ %>% 
+  ggplot(aes(x = factor(planting),
+             y = CWM_drought,
+             fill = factor(planting))) +
+  geom_boxplot() +
+  stat_compare_means(method = "wilcox.test", label = "p.format", 
+                     label.y = 4, size = 3) +
+  labs(x = "Planting",
+       y = "CWM drought",
+       fill = "Planting") +
+  theme_classic2() +
+  theme(text  = element_text(size = 10))
+
+# Arrange all plots
+annotate_figure(
+  ggarrange(p_shade_planting, p_shade_total,
+            p_shade_drought, p_drought_total,
+            ncol = 2, nrow = 2,
+            common.legend = TRUE, legend = "bottom"),
+  top = text_grob("Subplot level", 
+                  face = "bold", size = 12)
+)
+
+
+
+### Quick plotting: Convert subplot to long format ---------------------
 df_sub_long <- field_sub_summ %>%
   dplyr::filter(stems_total > 0) %>% 
   filter(cv_hgt >0) %>% 
@@ -334,36 +544,36 @@ df_sub_long <- field_sub_summ %>%
   # keep mean_hgt > 0, leave others as-is
   filter(!(metric == "mean_hgt" & (is.na(value) | value <= 0))) %>%
   filter(!is.na(value))# %>%
-#filter(cv_hgt >0)
-# mutate(metric = recode(metric,
-#                        mean_hgt    = "Mean height (m)",
-#                        cv_hgt      = "CV of height",
-#                        shannon_sp  = "Shannon (H')",
-#                        sp_richness = "Species richness"
-# )) #%>%
 
 
-
-## Time since disturbnace ----------------------------------------
-df_long %>% 
-  ggplot(aes(x = clear, y = value)) +
-  stat_summary(fun.data = mean_sd, geom = "errorbar", width = 0.1, linewidth = 0.2, col = 'red') +
-  stat_summary(fun = \(y) mean(y, na.rm = TRUE), geom = "point", size = 2, col = 'red') +
-  facet_wrap(~ metric, scales = "free_y", ncol = 2) +
-  labs(x = NULL, y = NULL, , title = "Clearing, subplot") +
-  theme_classic2()
-
-df_long %>% 
-  ggplot(aes(x = planting, y = value)) +
-  stat_summary(fun.data = mean_sd, geom = "errorbar", width = 0.1, linewidth = 0.2, col = 'red') +
-  stat_summary(fun = \(y) mean(y, na.rm = TRUE), geom = "point", size = 2, col = 'red') +
-  facet_wrap(~ metric, scales = "free_y", ncol = 2) +
-  labs(x = NULL, y = NULL, title = "Planting, subplot") +
-  theme_classic2()
+# CV vs disturbance length
+field_sub_summ %>%
+  dplyr::filter(stems_total > 0) %>% 
+  filter(cv_hgt >0) %>% 
+  ggplot(aes(x = disturbance_length,
+             y = cv_hgt)) +
+  geom_point() +
+  geom_smooth()
 
 
+# Filtered data
+filtered_data <- field_sub_summ %>%
+  dplyr::filter(stems_total > 0, cv_hgt > 0)
+
+# Fit linear model
+model <- lm(cv_hgt ~ disturbance_length, data = filtered_data)
+
+# Print summary
+summary(model)
+
+# Fit GAM model
+gam_model <- gam(cv_hgt ~ s(disturbance_length, k =3), data = filtered_data)
+
+# Summary of the model
+summary(gam_model)
 
 
+### Subplot: Time since disturbnace ----------------------------------------
 
 # see CV with time since disturbnace : poartial disturbance
 p_partial_disturbance <- df_sub_long %>% 
@@ -391,34 +601,6 @@ p_full_disturbance <- df_sub_long %>%
   theme_classic2()
 
 ggarrange(p_partial_disturbance, p_full_disturbance, ncol = 2)
-
-
-
-# traits analysis: subplot  -------------------
-field_sub_summ %>%
-  #ungroup() %>%
-  select(year, time_snc_full_disturbance, time_snc_part_disturbance, 
-         mean_hgt, cv_hgt, shannon_sp, sp_richness,  CWM_shade ,
-         CWM_drought) %>%
-  pivot_longer(c(-year, 
-                 - time_snc_full_disturbance, 
-                 - time_snc_part_disturbance),
-               names_to = "metric", values_to = "value") %>%
-  # keep mean_hgt > 0, leave others as-is
-  filter(!(metric == "mean_hgt" & (is.na(value) | value <= 0))) %>%
-  filter(!is.na(value)) %>%
-  ggplot(aes(x = time_snc_full_disturbance, y = value)) +
-  geom_boxplot(aes(group = time_snc_full_disturbance ), outlier.shape = NA) +
-  stat_summary(fun.data = mean_sd, geom = "errorbar", width = 0.1, linewidth = 0.2, col = 'red') +
-  stat_summary(fun = \(y) mean(y, na.rm = TRUE), geom = "point", size = 2, col = 'red') +
-  facet_wrap(~ metric, scales = "free_y", ncol = 2) +
-  labs(x = NULL, y = NULL, title = 'Full disturbance') +
-  theme_classic2()
-
-
-
-
-
 
 
 
@@ -488,6 +670,9 @@ p2 <- ggplot(field_sub_summ_filt, aes(x = shannon_sp, y = cv_hgt, color = year,
 
 ggarrange(p1, p2)
 # ssame analysis on both scales? 
+
+# Species composition --------------------------------------------------
+
 
 ## get summary acroos all trees and study sites --------------------------
 # find species with the highest share of stems overall
@@ -614,7 +799,7 @@ species_labels <- c(
 )
 
 
-# Identify plots without any stems present ---------------------------------------------------------------------------------
+## Identify plots without any stems present ---------------------------------------------------------------------------------
 
 # Step 1: Summarise total stems per plot and year
 plot_year_summ <- df %>%
@@ -819,122 +1004,7 @@ p_occurence
 ggarrange(p_bar, p_occurence, p_density,  
           ncol = 3, common.legend = T)
 
-
-
-
-# add traits into full data
-dat_overlap <-  dat_overlap %>% 
-  left_join(traits_full)
-
-
-dat_subplot_mng <-  dat_subplot_mng %>% 
-  left_join(traits_full)
-
-
-## get Weighted community mean per subplot and Plot ------------------
-
-# choose  weighting : by stems (for early communities), by structure?
-# Option A (default): weight by stem counts
-wvar <- "n"
-
-# Option B: weight by structure (uncomment ONE)
-# wvar <- "basal_area_cm2"
-# wvar <- "hgt_est"
-
-# helper to pull a numeric weight safely
-wfun <- function(x) ifelse(is.na(x) | x < 0, 0, x)
-
-# Subplot × year CWMs 
-cwm_subplot <- dat_overlap %>%
-  #filter(species != 'ots1') %>% 
-  mutate(w = wfun(.data[[wvar]])) %>%
-  # keep only rows that contribute weight and have trait scores
-  filter(w > 0) %>%
-  group_by(plot, subplot, year) %>%
-  summarise(
-    stems_with_traits = sum(w[!is.na(Shade_tolerance) & !is.na(Drought_tolerance)], na.rm = TRUE),
-    stems_total       = sum(w, na.rm = TRUE),
-    CWM_shade   = ifelse(stems_with_traits > 0,
-                         sum(w * Shade_tolerance, na.rm = TRUE) / stems_with_traits, NA_real_),
-    CWM_drought = ifelse(stems_with_traits > 0,
-                         sum(w * Drought_tolerance, na.rm = TRUE) / stems_with_traits, NA_real_),
-    trait_coverage = stems_with_traits / pmax(stems_total, 1e-9),
-    .groups = "drop"
-  )
-
-# 2) Plot × year CWMs
-cwm_plot <- dat_overlap %>%
-  filter(species != 'ots1') %>% 
-  mutate(w = wfun(.data[[wvar]])) %>%
-  filter(w > 0) %>%
-  group_by(plot, year) %>%
-  summarise(
-    stems_with_traits = sum(w[!is.na(Shade_tolerance) & !is.na(Drought_tolerance)], na.rm = TRUE),
-    stems_total       = sum(w, na.rm = TRUE),
-    CWM_shade   = ifelse(stems_with_traits > 0,
-                         sum(w * Shade_tolerance, na.rm = TRUE) / stems_with_traits, NA_real_),
-    CWM_drought = ifelse(stems_with_traits > 0,
-                         sum(w * Drought_tolerance, na.rm = TRUE) / stems_with_traits, NA_real_),
-    trait_coverage = stems_with_traits / pmax(stems_total, 1e-9),
-    .groups = "drop"
-  )
-
-### quick plots on subplot and plot level 
-ord_year <- function(x) factor(as.character(x), levels = c("2023","2025"))
-
-
-# Long format for subplot
-subplot_long <- cwm_subplot %>%
-  transmute(level = "subplot",
-            plot, subplot,
-            year = ord_year(year),
-            CWM_shade, CWM_drought) %>%
-  pivot_longer(c(CWM_shade, CWM_drought),
-               names_to = "trait", values_to = "CWM")
-
-# Long format for plot
-plot_long <- cwm_plot %>%
-  transmute(level = "plot",
-            plot,
-            year = ord_year(year),
-            CWM_shade, CWM_drought) %>%
-  pivot_longer(c(CWM_shade, CWM_drought),
-               names_to = "trait", values_to = "CWM")
-
-# Combine
-all_long <- bind_rows(subplot_long, plot_long) %>%
-  filter(!is.na(CWM))
-
-# Nice facet labels
-trait_labs <- c(CWM_shade = "Shade tolerance", 
-                CWM_drought = "Drought tolerance")
-
-ggplot(all_long, aes(x = year, y = CWM, fill = year)) +
-  geom_boxplot(width = 0.6, outlier.alpha = 0.15) +
-  geom_jitter(width = 0.1, alpha = 0.25, size = 0.7) +
-  facet_grid(level ~ trait, labeller = labeller(trait = trait_labs)) +
-  labs(x = "Year", y = "Community-weighted mean (CWM)",
-       title = "Trait CWMs by level and year") +
-  theme_classic2(base_size = 10)
-
-
-
-# is teh change in community shading/drought tolerance driven by planting????
-p_shade_planting <- field_sub_summ %>% 
-  ggplot(aes(x = as.factor(time_snc_full_disturbance),
-             y = CWM_shade,
-             fill = factor(planting))) +
-  geom_boxplot()
-
-p_shade_drought <- field_sub_summ %>% 
-  ggplot(aes(x = as.factor(time_snc_full_disturbance),
-             y = CWM_drought ,
-             fill = factor(planting))) +
-  geom_boxplot()
-
-ggarrange(p_shade_planting, p_shade_drought, ncol = 1,
-          nrow = 2)
-
+### heights by species -------------------------------------------------------
 # get heights by species
 library(forcats)
 dat_overlap %>% 
@@ -949,10 +1019,10 @@ dat_overlap %>%
 
 # compare change in feights pioneer vs late
 dat_overlap %>% 
-  dplyr::filter(recovery_type != "other") %>%
+  dplyr::filter(seral_stage != "other") %>%
   dplyr::filter(hgt_est>0) %>% 
   #mutate(species = fct_reorder(species, hgt_est, .fun = median, .desc = TRUE)) %>%
-  ggplot(aes(x = recovery_type,
+  ggplot(aes(x = seral_stage,
              y = hgt_est,
              fill = year)) + 
   geom_boxplot(outlier.shape = NA) +
@@ -961,10 +1031,10 @@ dat_overlap %>%
 
 
 dat_overlap %>% 
-  dplyr::filter(recovery_type != "other") %>%
+  dplyr::filter(seral_stage != "other") %>%
   dplyr::filter(hgt_est>0) %>% 
   #mutate(species = fct_reorder(species, hgt_est, .fun = median, .desc = TRUE)) %>%
-  ggplot(aes(x = recovery_type,
+  ggplot(aes(x = seral_stage,
              y = n,
              fill = year)) + 
   geom_boxplot(outlier.shape = NA) +
@@ -980,7 +1050,7 @@ area_plot_m2    <- 5*4    # 20 m²
 
 
 
-# --- Plot-level metrics (aggregate over subplots) ---
+## --- Plot-level metrics (aggregate over subplots) ---
 plot_metrics_mean <- field_sub_summ %>%
   group_by(plot, year) %>%
   summarise(
@@ -1042,8 +1112,6 @@ df_plot_context <- dat_overlap %>%
   distinct() 
 
 
-
-
 # create final table for both levels -----------------------------------------------------
 # 1) Subplot table (has subplot mean_hgt and stems_total as weights)
 sub_df <- field_sub_summ %>%
@@ -1095,11 +1163,7 @@ plot_df <- plot_metrics_pooled %>%
 
 #  3) Bind & clean final table with both levels
 both_levels_re2 <- bind_rows(sub_df, plot_df) %>%
-  mutate(
-    level   = factor(level, levels = c("subplot","plot")),
-    plot_id = factor(plot_id),
-    w       = pmin(pmax(w, 1), 50)   # cap weights so a few dense plots don't dominate
-  ) %>% 
+  
   left_join(df_plot_share_early, by = c('plot_id' = 'plot',
                                         "year" = "year")) %>% 
   mutate(early_class = case_when(
@@ -1107,12 +1171,26 @@ both_levels_re2 <- bind_rows(sub_df, plot_df) %>%
     share_early <= 20 ~ "late_dom",
     TRUE              ~ "mixed"
   )) |> 
-  mutate(early_class = factor(early_class, 
+  mutate(trait_class = factor(early_class, 
                               levels = c("late_dom",
                                          "mixed",
-                                         "early_dom")))
+                                         "early_dom"))) %>% 
+  mutate(
+    level   = factor(level, levels = c("subplot","plot")),
+    plot_id = factor(plot_id),
+    w       = pmin(pmax(w, 1), 50)   # cap weights so a few dense plots don't dominate
+  ) %>% 
+  mutate(time_since = ifelse(time_snc_full_disturbance <= 2, "early", "later") %>% 
+           factor(levels = c("early", "later")))
 
-table(both_levels_re2$early_class)
+table(both_levels_re2$trait_class)
+
+# add small value to CV = 0
+both_levels_re2 <- both_levels_re2 %>%
+  mutate(cv_hgt_pos = ifelse(cv_hgt <= 0, 1e-4, cv_hgt))
+
+
+
 
 both_levels_re2 %>% 
   filter(level == 'subplot') %>% 
@@ -1121,6 +1199,54 @@ both_levels_re2 %>%
              fill = early_class)) + 
   geom_boxplot() + 
   facet_grid(.~early_class)
+
+# cv_hgt vs disturbance length 
+# Fit GAMM: smooth term + random effect of plot_id
+m0 <- gam(cv_hgt_pos ~ disturbance_length +
+            #s(disturbance_length, by = level, k = 3) + 
+            #level + 
+            s(plot_id, bs = "re"),
+          #family = tw(),
+          #family = Gamma(link = "log"),
+          data = both_levels_re2 %>% filter(stems_total > 0),
+          method = "REML")
+
+summary(m0)
+
+# add time since disturbance as a fector
+m1 <- gam(cv_hgt_pos ~ s(disturbance_length, by = level, k = 3) + 
+            level + time_since +
+            s(plot_id, bs = "re"),
+          #family = tw(),
+          #family = Gamma(link = "log"),
+          data = both_levels_re2 %>% filter(stems_total > 0),
+          method = "REML")
+
+summary(m1)
+
+# add interaction between level and time since disturbance
+m2 <- gam(cv_hgt_pos ~ s(disturbance_length, by = level, k = 3) + 
+            level*time_since +
+            s(plot_id, bs = "re"),
+          #family = tw(),
+          #family = Gamma(link = "log"),
+          data = both_levels_re2 %>% filter(stems_total > 0),
+          method = "REML")
+
+summary(m2)
+
+plot(m2, page = 1)
+
+
+
+# remove 
+
+# nicely plot the predicted values 
+p <- predict_response(m_cv_cont, terms = c("time_snc_full_disturbance [all]"))
+
+plot(p, one_plot = TRUE)
+
+
 
 
 
