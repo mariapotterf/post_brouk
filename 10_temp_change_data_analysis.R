@@ -155,7 +155,7 @@ prop.table(table(df_master_mng$anti_browsing))
 
 ## Early vs late (landscape, plot, subplot) ---------------
 # Summarize total number of trees per year and recovery type
-total_per_year <- dat_overlap %>%
+total_trees_per_year <- dat_overlap %>%
   group_by(year) %>%
   summarise(
     total_trees = sum(n, na.rm = TRUE),
@@ -168,7 +168,7 @@ tree_summary <- dat_overlap %>%
     n_trees_recovery = sum(n, na.rm = TRUE),
     .groups = "drop"
   ) %>% 
-  left_join(total_per_year) %>% 
+  left_join(total_trees_per_year) %>% 
   mutate(share = n_trees_recovery /total_trees * 100)
 
 print(tree_summary)
@@ -269,22 +269,6 @@ ggplot(share_early_vs_late,
   labs(x = "Time since stand replacing\ndisturbance (years)",
        y = "Share of stems (%)",
        fill = "Seral stage") 
-
-# not pretty 
-ggplot(df_sub_share_early,
-       aes(x = factor(time_snc_full_disturbance),
-           y = share_early)) +
-  geom_boxplot() +
-  labs(x = "Time since full disturbance (years)",
-       y = "Share of stems (%)")
-# 
-# 
-# ggplot(df_plot_share_early, 
-#        aes(x = factor(time_snc_full_disturbance),
-#            y = share_early)) +
-#   geom_boxplot() +
-#   labs(x = "Time since full disturbance (years)",
-#        y = "Share of stems (%)") 
 
 
 
