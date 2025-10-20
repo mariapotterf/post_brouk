@@ -554,57 +554,5 @@ fwrite(dat_subplot_mng2, 'outData/full_table_23_25.csv')
 
 
 
-# Clean upda data for Michal: -------------------------------------------------------
-# read all 2025 data, sf
-# clean up and recode
-# keep empty subplots & plots
-# export final veg data and gpkg
-
-gc()
-
-library(terra)
-library(sf)
-library(ggplot2)
-library(data.table)
-library(dplyr)
-library(stringr)
-library(purrr)
-library(tidyr)
-library(ggpubr)
-
-## read data from 2025 ----------------
-dat25_subplot    <- data.table::fread("outData/subplot_full_2025.csv")   # subplot-level table
-dat25_sf         <- sf::st_read("outData/subplot_with_clusters_2025.gpkg")          # subplot spatial data
-
-# Select and rename
-dat25_sf_min <- dat25_sf %>%
-  dplyr::select(plot_key, cluster,plot_id)
-
-length(unique(dat25_subplot$plot_key))  # 1009
 
 
-dat25_subplot <- dat25_subplot %>% 
-  rename(
-  subplot = plot_key,
-  plot = cluster,
-  vegtype = VegType,
-  hgt = height,
-  n = count,
-  species = acc,
-  clear = clearing,
-  grndwrk = site_prep
-) 
-
-
-n25_subplots <- dat25_subplot %>%
-  #filter(!is.na(plot), !is.na(subplot)) %>%
-  distinct(plot, subplot) %>%       # drop species/vegtype duplicates
-  count(plot, name = "n_subplots") #%>%
-#arrange(plot)
-
-
-dat25_subplot %>% 
-  filter(plot == "143") %>% 
-  #filter(subplot == '506_T4_TP_20250827') %>% 
-  dplyr::select(plot, subplot, species, n, hgt) #%>% 
-  distinct(subplot)
