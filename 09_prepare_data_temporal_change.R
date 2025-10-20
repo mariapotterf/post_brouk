@@ -211,19 +211,21 @@ dat25_subplot_sub <- dat25_expanded %>%
 #  remove the erroneous subplots, if i have 6 subplots in cluster: 
 
 # plots to check :
-  # 15_102 ???  - kept 6
-  # 15_124
-  # 15_145
-  # 184
-  # 26_101
-  # 26_142
-  # 48
-  
+# 15_102 ???  - kept 6
+# 15_124
+# 15_145
+# 26_101
+# 26_142
+# --- 2025: 
+# 48 - 6 -> remove 375_T2_AH_20250827
+# 117 - 6 -> 306_T3_JL_20250717
+# 125 - 6 -> 424_T4_TP_20250827            
+# 147 - 6 -> 539_T4_TP_20250827            
+# 167 - 6 -> 644_T4_TP_20250827
+# 184 - 6 -> 741_T4_TP_20250827
+# NA - has only 3
+
 # subplots: 
-# 424_T4_TP_20250827 - to remove, empty
-# 539_T4_TP_20250827 - removed, empty
-# 375_T2_AH_20250827 - to remove, empty
-# 744_T4_TP_20250827
 # 13_15_102_5
 # 13_15_124_2
 # 13_15_145_4
@@ -234,15 +236,18 @@ dat25_subplot_sub <- dat25_expanded %>%
 dat_subplots <- bind_rows(dat23_subplot_sub, dat25_subplot_sub)
 
 
-bad_subplots <- c("424_T4_TP_20250827","539_T4_TP_20250827","375_T2_AH_20250827",
-                  "744_T4_TP_20250827","13_15_102_5","13_15_124_2",
-                  "13_15_145_4","13_26_101_2","13_26_142_1",
-                  "506_T4_TP_20250827") # has missing tree species
+bad_subplots <- c("306_T3_JL_20250717",
+                  "424_T4_TP_20250827", 
+                  "539_T4_TP_20250827",
+                  "644_T4_TP_20250827",
+                  "741_T4_TP_20250827",
+                  "13_15_102_5","13_15_124_2",
+                  "13_15_145_4","13_26_101_2","13_26_142_1") 
 
 dat_subplots <- dat_subplots[!(subplot %in% bad_subplots)]
 
 # remove whole plots (robust to numeric/character mix)
-bad_plots <- c("15_104", "143", "26_134")
+bad_plots <- c("15_104", "26_134")
 
 dat_subplots <- dat_subplots %>%
   dplyr::filter(!as.character(plot) %in% bad_plots)
@@ -545,3 +550,61 @@ hist(traits_full$Shade_tolerance)
 ### export important tables ---------------
 
 fwrite(dat_subplot_mng2, 'outData/full_table_23_25.csv')
+
+
+
+
+# Clean upda data for Michal: -------------------------------------------------------
+# read all 2025 data, sf
+# clean up and recode
+# keep empty subplots & plots
+# export final veg data and gpkg
+
+gc()
+
+library(terra)
+library(sf)
+library(ggplot2)
+library(data.table)
+library(dplyr)
+library(stringr)
+library(purrr)
+library(tidyr)
+library(ggpubr)
+
+## read data from 2025 ----------------
+dat25_subplot    <- data.table::fread("outData/subplot_full_2025.csv")   # subplot-level table
+dat25_sf         <- sf::st_read("outData/subplot_with_clusters_2025.gpkg")          # subplot spatial data
+
+# Select and rename
+dat25_sf_min <- dat25_sf %>%
+  dplyr::select(plot_key, cluster,plot_id)
+
+length(unique(dat25_subplot$plot_key))  # 1009
+
+
+dat25_subplot <- dat25_subplot %>% 
+  rename(
+  subplot = plot_key,
+  plot = cluster,
+  vegtype = VegType,
+  hgt = height,
+  n = count,
+  species = acc,
+  clear = clearing,
+  grndwrk = site_prep
+) 
+
+
+n25_subplots <- dat25_subplot %>%
+  #filter(!is.na(plot), !is.na(subplot)) %>%
+  distinct(plot, subplot) %>%       # drop species/vegtype duplicates
+  count(plot, name = "n_subplots") #%>%
+#arrange(plot)
+
+
+dat25_subplot %>% 
+  filter(plot == "143") %>% 
+  #filter(subplot == '506_T4_TP_20250827') %>% 
+  dplyr::select(plot, subplot, species, n, hgt) #%>% 
+  distinct(subplot)
