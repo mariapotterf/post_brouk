@@ -93,7 +93,7 @@ car_parking_list <- lapply(car_parking_files, function(path) {
 car_parking_all <- do.call(rbind, car_parking_list)
 
 # Export merged result as KML
-st_write(car_parking_all, "outData/google_my_map/merged_car_parking.kml", driver = "KML", delete_dsn = TRUE)
+#st_write(car_parking_all, "outData/google_my_map/merged_car_parking.kml", driver = "KML", delete_dsn = TRUE)
 
 
 
@@ -527,3 +527,125 @@ fwrite(dat_subplot, 'outData/subplot_full_2025.csv')
 # Save spatial subplot data with cluster IDs
 st_write(subplot_all, "outData/subplot_with_clusters_2025.gpkg", delete_layer = TRUE)
 st_write(subplot_all, "outData/google_my_map/subplot_with_clusters_2025.kml", driver = "KML", delete_dsn = TRUE)
+
+
+
+# Clean upda data for Michal: -------------------------------------------------------
+# read all 2025 data, sf
+# clean up and recode
+# keep empty subplots & plots
+# export final veg data and gpkg
+
+gc()
+
+library(terra)
+library(sf)
+library(ggplot2)
+library(data.table)
+library(dplyr)
+library(stringr)
+library(purrr)
+library(tidyr)
+library(ggpubr)
+
+## read data from 2025 ----------------
+dat25_subplot    <- data.table::fread("outData/subplot_full_2025.csv")   # subplot-level table
+dat25_sf         <- sf::st_read("outData/subplot_with_clusters_2025.gpkg")          # subplot spatial data
+
+# Select and rename
+dat25_sf_min <- dat25_sf %>%
+  dplyr::select(plot_key, cluster,plot_id)
+
+length(unique(dat25_subplot$plot_key))  # 1009
+
+
+dat25_subplot <- dat25_subplot %>% 
+  rename(
+    subplot = plot_key,
+    plot = cluster,
+    vegtype = VegType,
+    hgt = height,
+    n = count,
+    species = acc,
+    clear = clearing,
+    grndwrk = site_prep
+  ) 
+
+
+# filter bad plots
+dat25_subplot <- dat25_subplot[!(subplot %in% dat25_subplot)]
+
+
+
+n25_subplots <- dat25_subplot %>%
+  #filter(!is.na(plot), !is.na(subplot)) %>%
+  distinct(plot, subplot) %>%       # drop species/vegtype duplicates
+  count(plot, name = "n_subplots") #%>%
+#arrange(plot)
+
+
+# recode teh data
+## Recode field data -----------------------------------
+# guestimate dbh and ba per individual based on height distribution 
+dat25_subplot_recode <- dat25_subplot %>% 
+  # remove if no species is defined
+  #filter(!is.na(species)) %>% # yes, I can safely exclude those, they are not representing 'empty plots' 
+  # adjust tree species naming
+  # dplyr::mutate(
+  #   species = str_trim(species),
+  #   species = dplyr::case_when(
+  #     species == "abal" ~ "absp",
+  #     species %in% c("quro", "quru") ~ "qusp",
+  #     TRUE ~ species
+  #   )
+  # ) %>% 
+  mutate(
+    # Create a numeric height estimate (keep original height class string)
+    hgt_est = case_when(
+      vegtype == "mature" & dbh == "10–20cm" ~ 10.0,
+      vegtype == "mature" & dbh == "20–40cm" ~ 20.0,
+      vegtype == "mature" & dbh == "40–60cm" ~ 30.0,
+      hgt == "0.2–0.4"                       ~ 0.3,
+      hgt == "0.4–0.6"                       ~ 0.5,
+      hgt == "0.6–0.8"                       ~ 0.7,
+      hgt == "0.8–1.0"                       ~ 0.9,
+      hgt == "1.0–1.3"                       ~ 1.2,
+      hgt == "1.3–2.0"                       ~ 1.7,
+      hgt == "2–4"                           ~ 3.0,
+      hgt == ">4"                            ~ 5.0,
+      TRUE                                   ~ NA_real_
+    ),
+    
+    # Estimate DBH (already numeric)
+    dbh_est = case_when(
+      vegtype == "mature" & dbh == "10–20cm" ~ 15.0,
+      vegtype == "mature" & dbh == "20–40cm" ~ 30.0,
+      vegtype == "mature" & dbh == "40–60cm" ~ 50.0,
+      vegtype == "mature" & dbh == ">60cm"   ~ 70.0,
+      hgt == "0.2–0.4"                       ~ 0.3,
+      hgt == "0.4–0.6"                       ~ 0.5,
+      hgt == "0.6–0.8"                       ~ 0.7,
+      hgt == "0.8–1.0"                       ~ 0.9,
+      hgt == "1.0–1.3"                       ~ 1.2,
+      hgt == "1.3–2.0"                       ~ 1.7,
+      hgt == "2–4"                           ~ 3.0,
+      hgt == ">4"                            ~ 5.0,
+      TRUE                                   ~ NA_real_
+    )
+  )# %>% 
+# # Calculate basal area
+# mutate(
+#   basal_area_cm2 = pi * (dbh_est / 2)^2,
+#   ba_total_cm2   = basal_area_cm2 * n,
+#   ba_total_m2    = ba_total_cm2 / 10000,
+#   #ba_ha_m2       = ba_total_m2 * scaling_factor
+# ) #%>% 
+#left_join(traits_full)  # add trait table to identify early vs late seral
+
+length(unique(dat25_subplot_recode$subplot))
+
+# 
+
+fwrite(dat25_subplot_recode, "outDataShare/dat25_subplot_recode.csv")
+sf::st_write(dat25_sf_min, "outDataShare/dat25_sf_min.gpkg", delete_dsn = TRUE)
+
