@@ -431,6 +431,7 @@ field_sub_summ <- dat_overlap %>%
 # Plot: Shade ~ Time since disturbance, by planting
 x_lab_time_snc_full_dist = "Time since stand\nreplacing disturbance (years)"
 
+#### Effect of planting? ---------------------------------------------
 p_shade_planting <- field_sub_summ %>% 
   ggplot(aes(x = as.factor(time_snc_full_disturbance),
              y = CWM_shade,
@@ -496,7 +497,7 @@ annotate_figure(
 
 
 
-### Quick plotting: Convert subplot to long format ---------------------
+#### Subplot quick plotting: all vars ---------------------
 df_sub_long <- field_sub_summ %>%
   dplyr::filter(stems_total > 0) %>% 
   filter(cv_hgt >0) %>% 
@@ -529,32 +530,6 @@ df_sub_long <- field_sub_summ %>%
   filter(!(metric == "mean_hgt" & (is.na(value) | value <= 0))) %>%
   filter(!is.na(value))# %>%
 
-
-# CV vs disturbance length
-field_sub_summ %>%
-  dplyr::filter(stems_total > 0) %>% 
-  filter(cv_hgt >0) %>% 
-  ggplot(aes(x = disturbance_length,
-             y = cv_hgt)) +
-  geom_point() +
-  geom_smooth()
-
-
-# Filtered data
-filtered_data <- field_sub_summ %>%
-  dplyr::filter(stems_total > 0, cv_hgt > 0)
-
-# Fit linear model
-model <- lm(cv_hgt ~ disturbance_length, data = filtered_data)
-
-# Print summary
-summary(model)
-
-# Fit GAM model
-gam_model <- gam(cv_hgt ~ s(disturbance_length, k =3), data = filtered_data)
-
-# Summary of the model
-summary(gam_model)
 
 
 ### Subplot: Time since disturbnace ----------------------------------------
@@ -658,7 +633,7 @@ ggarrange(p1, p2)
 # Species composition --------------------------------------------------
 
 
-## get summary acroos all trees and study sites --------------------------
+## Get summary across all trees and study sites --------------------------
 # find species with the highest share of stems overall
 # 0) Safe counts (treat NA counts as 0)
 df <- dat_overlap %>%
@@ -782,8 +757,8 @@ species_labels <- c(
   sasp = "Salix sp."
 )
 
-
-## Identify plots without any stems present ---------------------------------------------------------------------------------
+## Overall stats --------------------------------------------------------
+### Identify plots without any stems present ---------------------------------------------------------------------------------
 
 # Step 1: Summarise total stems per plot and year
 plot_year_summ <- df %>%
@@ -804,7 +779,7 @@ plots_empty25
 
 
 
-## get average stem density per species per top 10 species --------------------------------
+### get average stem density per species per top 10 species --------------------------------
 df_stem_dens_species <- df %>% 
   group_by(plot, species, year, n_subplots ) %>%
   summarize(sum_n = sum(n, na.rm =T)) %>% 
@@ -834,7 +809,7 @@ df_stem_dens_species_year <- df_stem_dens_species %>%
 
 
 
-# Boxplot for stem density -------------
+### Boxplot for stem density -------------
 df_stem_dens_species_year2 <- df_stem_dens_species_year %>%
   dplyr::filter(!is.na(log_sum_stem_density) & sum_n > 0) %>%
   dplyr::mutate(year = factor(year, levels = c("2023","2025")),
@@ -996,7 +971,7 @@ dat_overlap %>%
   mutate(species = fct_reorder(species, hgt_est, .fun = median, .desc = TRUE)) %>%
   ggplot(aes(x = species,
              y = hgt_est,
-             fill = year)) + 
+             fill = factor(year))) + 
   geom_boxplot(outlier.shape = NA) +
   coord_cartesian(ylim = c(0,7.5)) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
@@ -1008,27 +983,15 @@ dat_overlap %>%
   #mutate(species = fct_reorder(species, hgt_est, .fun = median, .desc = TRUE)) %>%
   ggplot(aes(x = seral_stage,
              y = hgt_est,
-             fill = year)) + 
+             fill = factor(year))) + 
   geom_boxplot(outlier.shape = NA) +
   coord_cartesian(ylim = c(0,6)) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 
-dat_overlap %>% 
-  dplyr::filter(seral_stage != "other") %>%
-  dplyr::filter(hgt_est>0) %>% 
-  #mutate(species = fct_reorder(species, hgt_est, .fun = median, .desc = TRUE)) %>%
-  ggplot(aes(x = seral_stage,
-             y = n,
-             fill = year)) + 
-  geom_boxplot(outlier.shape = NA) +
-  coord_cartesian(ylim = c(0,6)) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+# Drivers -----------------------------------------------------------------
 
-
-
-
-# Summary stats on plot level stem density per m² --------------------
+## Summary stats on plot level stem density per m² --------------------
 area_subplot_m2 <- 4      # 4 m²
 area_plot_m2    <- 5*4    # 20 m²
 
@@ -1096,7 +1059,7 @@ df_plot_context <- dat_overlap %>%
   distinct() 
 
 
-# create final table for both levels -----------------------------------------------------
+## create final table for both levels -----------------------------------------------------
 # 1) Subplot table (has subplot mean_hgt and stems_total as weights)
 sub_df <- field_sub_summ %>%
   filter(stems_total > 0) %>% #, cv_hgt > 0
@@ -1120,6 +1083,17 @@ sub_df <- field_sub_summ %>%
   left_join(cwm_subplot, by = c("plot_id" = "plot",
                                 "year" = "year",
                                 "ID" = 'subplot') )
+
+nrow(sub_df)
+hist(sub_df$cv_hgt)
+
+# i have some many NA in cv_hgt?
+# check
+dat_overlap %>% 
+  filter(subplot == "514_T4_TP_20250827") %>% 
+  arrange(n)
+
+
 
 # 2) Plot table (pooled metrics already computed)
 plot_df <- plot_metrics_pooled %>%
@@ -1164,25 +1138,52 @@ both_levels_re2 <- bind_rows(sub_df, plot_df) %>%
     plot_id = factor(plot_id),
     w       = pmin(pmax(w, 1), 50)   # cap weights so a few dense plots don't dominate
   ) %>% 
-  mutate(time_since = ifelse(time_snc_full_disturbance <= 2, "early", "later") %>% 
+  mutate(time_since_f = ifelse(time_snc_full_disturbance <= 2, "early", "later") %>% 
            factor(levels = c("early", "later")))
 
 table(both_levels_re2$trait_class)
 
+hist(both_levels_re2$stems_total, breaks = 150)
+range(both_levels_re2$stems_total)
+
 # add small value to CV = 0
 both_levels_re2 <- both_levels_re2 %>%
-  mutate(cv_hgt_pos = ifelse(cv_hgt <= 0, 1e-4, cv_hgt))
-
-
-
+  mutate(
+    cv_hgt_pos = ifelse(cv_hgt <= 0, 1e-4, cv_hgt)#is.na(cv_hgt) | 
+  ) %>% 
+  filter(!is.na(mean_hgt), !is.na(w), !is.na(cv_hgt), !is.na(dens_m2))
 
 both_levels_re2 %>% 
   filter(level == 'subplot') %>% 
   ggplot(aes(x = factor(time_snc_full_disturbance),
-             y = cv_hgt,
+             y = cv_hgt_pos,
              fill = early_class)) + 
   geom_boxplot() + 
   facet_grid(.~early_class)
+
+##### CV_hgt vs disturbance length ----------------
+# 
+both_levels_re2 %>%
+  dplyr::filter(stems_total > 0) %>% 
+  filter(cv_hgt_pos >0) %>% 
+  ggplot(aes(x = disturbance_length,
+             y = cv_hgt_pos)) +
+  geom_point() +
+  geom_smooth(method = 'gam', k = 2)
+
+
+
+
+both_levels_re2 %>%
+  dplyr::filter(stems_total > 0) %>% 
+  filter(cv_hgt_pos >0) %>% 
+  ggplot(aes(x = time_snc_part_disturbance,
+             y = cv_hgt_pos)) +
+  geom_point() +
+  geom_smooth(method = 'gam', k = 2)
+
+
+##### CV x Disturbnace length 
 
 # cv_hgt vs disturbance length 
 # Fit GAMM: smooth term + random effect of plot_id
@@ -1199,7 +1200,7 @@ summary(m0)
 
 # add time since disturbance as a fector
 m1 <- gam(cv_hgt_pos ~ s(disturbance_length, by = level, k = 3) + 
-            level + time_since +
+            level + time_since_f +
             s(plot_id, bs = "re"),
           #family = tw(),
           #family = Gamma(link = "log"),
@@ -1210,7 +1211,7 @@ summary(m1)
 
 # add interaction between level and time since disturbance
 m2 <- gam(cv_hgt_pos ~ s(disturbance_length, by = level, k = 3) + 
-            level*time_since +
+            level*time_since_f +
             s(plot_id, bs = "re"),
           #family = tw(),
           #family = Gamma(link = "log"),
@@ -1230,6 +1231,78 @@ p <- predict_response(m_cv_cont, terms = c("time_snc_full_disturbance [all]"))
 
 plot(p, one_plot = TRUE)
 
+##### CV x time since disturbnace ------------------------------------
+
+# add interaction between level and time since disturbance
+m_cv_hgt1 <- gam(cv_hgt_pos ~ 
+                   s(time_snc_full_disturbance , k = 3) +
+                   s(plot_id, bs = "re"),
+                 
+                 #family = tw(),
+                 family = Gamma(link = "log"),
+                 data = both_levels_re2, #%>% filter(stems_total > 0),
+                 method = "REML")
+
+both_levels_re2 %>% 
+  filter(stems_total > 0) %>% 
+  filter(cv_hgt > 0) %>% 
+  ggplot(aes(x = time_snc_part_disturbance,
+             y = cv_hgt_pos,
+             color = level)) +
+  geom_point() + 
+  geom_smooth(method = 'lm') + facet_grid(.~level)
+
+
+m_cv_hgt1 <- gam(cv_hgt_pos ~ 
+                     s(time_snc_full_disturbance , k = 3) +
+                     s(plot_id, bs = "re"),
+                 family = tw(link = "log"),
+                   #family = Gamma(link = "log"),
+                 weights = w,
+                   data = both_levels_re2, #%>% filter(stems_total > 0 &cv_hgt >0),
+                   method = "REML")
+
+summary(m_cv_hgt1)
+appraise(m_cv_hgt1)
+hist(both_levels_re2$cv_hgt_pos)
+plot(m_cv_hgt1, page = 1)
+
+summary(both_levels_re2$cv_hgt_pos)
+hist(both_levels_re2$cv_hgt_pos, breaks = 100)
+table(both_levels_re2$cv_hgt_pos == 1e-4)  # check how many were imputed
+
+
+
+m_cv_hgt_tw <- gam(cv_hgt_pos ~ 
+                     s(time_snc_full_disturbance , by = level, k = 3) + 
+            level +
+            s(plot_id, bs = "re"),
+          #family = tw(),
+          family = Gamma(link = "log"),
+          data = both_levels_re2 %>% filter(stems_total > 0),
+          method = "REML")
+
+summary(m_cv_hgt_tw)
+appraise(m_cv_hgt_tw)
+
+plot(m_cv_hgt_tw, page = 1)
+
+p <- predict_response(
+  m_cv_hgt_tw,
+  terms = c("time_snc_full_disturbance [all]",    # x-sequence
+            "level [all]"
+            #"early_class")                    # fix level (or drop to average)
+  ))
+plot(p, one_plot = TRUE)
+#p_mean_hgt <- plot(p, one_plot = TRUE)
+
+
+# remove 
+
+# nicely plot the predicted values 
+p <- predict_response(m_cv_cont, terms = c("time_snc_full_disturbance [all]"))
+
+plot(p, one_plot = TRUE)
 
 
 
@@ -1313,7 +1386,7 @@ boxplot(mean_hgt ~ early_class,
         data = both_levels_re2, 
         col = "grey90")
 
-# test ---------------------
+###### CV: tome since disturbnace  ---------------------
 library(mgcv)
 library(gratia)
 m_hgt_tw <- gam(
@@ -1327,10 +1400,12 @@ m_hgt_tw <- gam(
 p <- predict_response(
   m_hgt_tw,
   terms = c("time_snc_full_disturbance [all]",    # x-sequence
-            #"early_class",                        # 3 groups
-            "level [subplot]")                    # fix level (or drop to average)
-)
-plot(p, one_plot = TRUE)
+            "level [all]"
+            #"early_class")                    # fix level (or drop to average)
+))
+p_mean_hgt <- plot(p, one_plot = TRUE)
+#ggarrange(p1,p1)
+
 
 summary(m_hgt_tw)
 appraise(m_hgt_tw)
@@ -1347,6 +1422,15 @@ m_stems_tw <- gam(
 summary(m_stems_tw)
 appraise(m_stems_tw)
 draw(m_stems_tw, select = c(1,2))
+
+p_stems_tw <- predict_response(
+  m_stems_tw,
+  terms = c("time_snc_full_disturbance [all]",    # x-sequence
+            "level [all]"
+            #"early_class")                    # fix level (or drop to average)
+  ))
+p_stems_tw <- plot(p_stems_tw, one_plot = TRUE)
+p_stems_tw
 
 
 
