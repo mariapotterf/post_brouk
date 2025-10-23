@@ -12,11 +12,56 @@ library(rasterVis)
 library(RColorBrewer)
 library(terra)
 
+#install.packages("RCzechia")
+library(RCzechia)    # get spatial data for czechia: Jirka Lacko https://rczechia.jla-data.net/
+
+# Get cities as POINTS
+pts <- RCzechia::obce_body()
+
+# Define a vector of major cities to keep
+major_cities <- c(
+  "Praha",           # Prague
+  "Brno",            # Brno
+  "Ostrava",         # Ostrava
+  "Plzeň",           # Plzen
+  # "Liberec",         # Liberec
+  # "Olomouc",         # Olomouc
+  # "Ústí nad Labem",  # Usti
+  # "Hradec Králové",  # Hradec
+  "České Budějovice",# Ceske Budejovice
+  #"Pardubice"        # Pardubice
+)
+
+# Filter to just these cities
+pts_major <- pts %>%
+  filter(NAZ_OBEC %in% major_cities) %>%
+  arrange(NAZ_OBEC)
+
+
+st_write(pts_major, "raw/CR_administrativa/major_czech_cities.gpkg", delete_layer = TRUE)
+
+
+# Get line geometries of rivers
+rivers <- RCzechia::reky()
+
+# Define main rivers of interest
+main_rivers <- c("Vltava", "Labe", "Morava")  # Optionally add Morava, Dyje, etc.
+
+# Filter by river name (NAZEV)
+rivers_main <- rivers %>%
+  filter(NAZEV %in% main_rivers) %>%
+  arrange(NAZEV)
+
+# Write to GeoPackage
+st_write(rivers_main, "raw/CR_administrativa/main_czech_rivers.gpkg", delete_layer = TRUE)
+
 
 
 # --- INPUTS -----------------------------------------------------------------
-spei_folder <- "raw/SPEI12/spei12_harg1_split"  # 
+spei_folder <- "raw/SPEI12_new/spei12_harg1_split"  # 
 okres_shp   <- terra::vect("raw/CR_administrativa/OKRESY_P.shp")
+
+
 
 # --- READ FILES ---
 files <- list.files(spei_folder, pattern = "\\.tif$", full.names = TRUE)
@@ -144,6 +189,7 @@ write_xlsx(df_final, "outTable/okres_SPEI12_monthly_stats.xlsx")
 
 # --- EXPORT RASTERS OF ZONAL MEANS -------------------------------------------
 
+# average per month ----------------
 # Make sure output folder exists
 #dir_create("outData/SPEI12_zonal")
 
@@ -180,6 +226,45 @@ for (i in seq_len(nrow(unique_dates))) {
   # print(out_path)  # ccheck if values corresponds with 
   writeRaster(r_out, out_path, overwrite = TRUE)
 }
+
+## avg per years -----------------------------------------
+
+# Make sure output folder exists
+#dir_create("outData/SPEI12_zonal_year")
+
+# 1. Compute yearly mean SPEI per okres
+df_zonal_year <- df_final %>% 
+  group_by(okres_id, year) %>% 
+  summarise(mean_spei = mean(mean, na.rm = TRUE), .groups = "drop")
+
+# 2. Loop over years to create rasters
+unique_years <- sort(unique(df_zonal_year$year))
+
+for (yr in unique_years) {
+  message("Processing year: ", yr)
+  
+  # Subset for the year
+  vals <- df_zonal_year %>% 
+    filter(year == yr) %>% 
+    select(okres_id, mean_spei)
+  
+  # Create lookup vector for classification
+  lookup <- rep(NA_real_, max(r_okres[], na.rm = TRUE))
+  lookup[vals$okres_id] <- vals$mean_spei
+  
+  # Map okres_id values in raster to mean SPEI values
+  r_out <- classify(r_okres, 
+                    matrix(c(seq_along(lookup), lookup), ncol = 2))
+  
+  # Output file path
+  out_path <- sprintf("outData/SPEI12_zonal/spei12_year_mean_%04d.tif", yr)
+  writeRaster(r_out, out_path, overwrite = TRUE)
+}
+
+
+
+
+
 
 
 # make a gif from zonal stats ---------------------------
