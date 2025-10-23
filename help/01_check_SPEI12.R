@@ -10,7 +10,7 @@ library(tibble)
 library(data.table)
 
 # --- auto-detect candidate subfolders under raw_SPEI12 ----------------------
-base_dir <- "raw/SPEI12"
+base_dir <- "raw/SPEI12_new"
 
 # If you want to force specific names, set them here (comment out auto-detect)
 # folders <- c(file.path(base_dir, "spei12_harg1_split"),
