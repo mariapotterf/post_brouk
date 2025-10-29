@@ -1,0 +1,174 @@
+# Forest Recovery Report: R Notebook Skeleton
+
+---
+title: "Forest Structure & Composition Recovery Analysis"
+author: "Your Name"
+date: "`r Sys.Date()`"
+output:
+  html_notebook:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    theme: readable
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+# Load Libraries
+```{r load-libs}
+library(data.table)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggpubr)
+library(mgcv)
+library(gratia)
+library(vegan)
+library(RColorBrewer)
+```
+
+# Load Data & set theme
+```{r load-data}
+
+theme_set(theme_classic2(base_size = 10) +
+            theme(axis.title = element_text(size = 10),
+                  axis.text  = element_text(size = 10)))
+
+
+dat_overlap <- fread("outData/full_table_overlap_23_25.csv")
+```
+
+# Summary: Sites & Structure
+```{r summary-sites}
+dat_master_subplot <- dat_overlap %>% 
+  dplyr::select(plot, subplot, year) %>% 
+  distinct()
+
+n_plots_total <- n_distinct(dat_master_subplot$plot)
+n_subplots_total <- n_distinct(dat_master_subplot$subplot)
+
+cat("Total plots:", n_plots_total, "\n")
+cat("Total subplots:", n_subplots_total)
+
+```
+
+## investigate indiviidual subplots 
+
+Is it correct if CV = 0 if a single tree species has several stems?
+
+```{r investigate_cubplots, echo=FALSE}
+
+# Identify subplots where the same species appears in multiple vegtypes
+df_distinct_vegtypes <- dat_overlap %>%
+  filter(n>0) %>% 
+  group_by(subplot, species) %>%
+  summarize(n_vegtypes = n_distinct(vegtype), .groups = "drop") %>%
+  filter(n_vegtypes > 1)
+
+# Extract just the subplot IDs
+unique_subplots_two_layers <- unique(df_distinct_vegtypes$subplot) # 110 from 1250~ 9%
+
+# Optional: View full records of the overlaps
+overlap_records <- dat_overlap %>%
+  filter(n>0) %>%
+  filter(subplot %in% unique_subplots_two_layers) %>%
+  arrange(subplot, species, vegtype) %>% 
+  select(subplot, species, vegtype,     hgt,     n)
+
+# Print the results
+length(unique_subplots_two_layers)
+
+cat("Total # subplots with a one tree species over two vertical layers:", length(unique_subplots_two_layers))
+
+```
+
+# Stem Counts & Species Richness
+```{r stem-richness}
+ field_sub_summ <- dat_overlap %>%
+   mutate(n = coalesce(n, 0L)) %>%
+  group_by(plot, subplot, year, time_snc_full_disturbance) %>%
+   summarise(
+     stems_total = sum(n, na.rm = TRUE),
+     sp_richness = if (stems_total > 0) n_distinct(species[n > 0]) else 0,
+     shannon_sp  = if (stems_total > 0) vegan::diversity(n, index = "shannon") else 0,
+     evenness_sp = if (sp_richness > 1) shannon_sp / log(sp_richness) else 0,
+     effective_numbers = ifelse(stems_total > 0, exp(shannon_sp), NA_real_),
+     mean_hgt = if (stems_total > 0) weighted.mean(hgt_est[n > 0], n[n > 0]) else NA_real_,
+     .groups = "drop"
+   )
+
+head(field_sub_summ)
+```
+
+#  Trait CWMs
+```{r trait-cwms}
+wvar <- "n"
+wfun <- function(x) ifelse(is.na(x) | x < 0, 0, x)
+
+cwm_subplot <- dat_overlap %>%
+  mutate(w = wfun(.data[[wvar]])) %>%
+  filter(w > 0) %>%
+  group_by(plot, subplot, year, time_snc_full_disturbance) %>%
+  summarise(
+    stems_with_traits = sum(w[!is.na(Shade_tolerance) & !is.na(Drought_tolerance)], na.rm = TRUE),
+    stems_total       = sum(w, na.rm = TRUE),
+    CWM_shade   = ifelse(stems_with_traits > 0,
+                         sum(w * Shade_tolerance, na.rm = TRUE) / stems_with_traits, NA_real_),
+    CWM_drought = ifelse(stems_with_traits > 0,
+                         sum(w * Drought_tolerance, na.rm = TRUE) / stems_with_traits, NA_real_),
+    .groups = "drop"
+  )
+```
+
+
+# GAM Models
+```{r gam-models}
+# m_cv_tw <- gam(
+#   cv_hgt ~ level + 
+#     s(time_snc_full_disturbance, by = level, k = 5, bs = "cs") +
+#     s(plot_id, bs = "re"),
+#   data = filter(both_levels_re2, cv_hgt > 0)
+# )
+# 
+# summary(m_cv_tw)
+```
+
+#  Seral Stages
+```{r seral-stage-share}
+# Insert stacked barplot code for early vs late
+```
+
+# Summary Tables
+```{r summary-tables}
+# subplot_summary_tbl <- field_sub_summ %>%
+#   ungroup() %>%
+#   select(year, mean_hgt, cv_hgt, shannon_sp, sp_richness) %>%
+#   pivot_longer(-year, names_to = "metric", values_to = "value") %>%
+#   group_by(metric, year) %>%
+#   summarise(
+#     n = n(),
+#     mean = mean(value, na.rm = TRUE),
+#     sd = sd(value, na.rm = TRUE),
+#     median = median(value, na.rm = TRUE),
+#     IQR = IQR(value, na.rm = TRUE),
+#     .groups = "drop"
+#   )
+```
+
+#  Visuals: Combined Panel Plots
+```{r panel-plots}
+#ggarrange(p_cv_hgt, p_mean_hgt, common.legend = TRUE)
+```
+
+# 🧩 Appendix: Species Stats
+```{r appendix-species}
+# Insert code for species totals, stem share, and occurrence
+```
+
+# 📎 Notes
+- CV uses Bessel correction (n - 1).
+- Plots are faceted by metric and scaled freely.
+- Trait CWMs use stem counts as weights.
