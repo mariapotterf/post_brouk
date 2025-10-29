@@ -222,13 +222,13 @@ applied_order <- management_proportions %>%
   arrange(desc(proportion)) %>%
   pull(activity)
 
-
+management_activity <- levels(mng_sub_conv$activity)[1]
 # Prepare data for diverging bar plot
 mng_sub_conv <-  management_proportions %>%
   mutate(proportion = ifelse(applied == 0, -proportion, proportion),
          applied = ifelse(applied == 1, "Presence", "Absence")) %>% 
   arrange(desc(proportion)) %>% 
-  mutate(activity = factor(activity, levels = rev(applied_order))) #%>%
+  mutate(activity = factor(activity, levels = rev(management_activity))) #%>%
 
 #library(forcats)
 
@@ -241,7 +241,7 @@ activity_labels <- c(
 )
 # mng_sub_conv <- mng_sub_conv %>%
 #   mutate(activity = recode(activity, !!!activity_labels))
-top_activity <- levels(mng_sub_conv$activity)[1]
+
 # Create diverging bar plot
 ggplot(mng_sub_conv, aes(x = proportion, y = activity, fill = applied)) +
   geom_col(width = 0.2, col = 'black') +
