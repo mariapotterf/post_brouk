@@ -512,25 +512,31 @@ mng_subplot_scores <- dat_subplot_mng %>%
   )
 
 # --- 3) Plot-level intensities (scaled 0–1)
+# continue here to get proper intensities!!! note that i have duplicated values in dat-overlap
 mng_plot_intensity <- mng_subplot_scores %>%
   group_by(plot) %>%
   summarise(
-    n_subplots          = n_distinct(subplot),
-    salvage_sum         = sum(salvage_sub),
-    protection_sum      = sum(protection_sub),
-    planting_sum        = sum(planting),
-    management_sum      = sum(management_sub),
-    planting_intensity = planting_sum / n_subplots,
-    salvage_intensity   = salvage_sum    / (3 * n_subplots),
-    protection_intensity= protection_sum / (2 * n_subplots),
-    management_intensity= management_sum / (5 * n_subplots),
+    n_subplots           = n_distinct(subplot),
+    salvage_sum          = sum(salvage_sub),
+    protection_sum       = sum(protection_sub),
+    
+    clear_sum            = sum(clear),
+    grndwrk_sum          = sum(grndwrk),
+    logging_trail_sum    = sum(logging_trail),
+    planting_sum         = sum(planting),
+    anti_browsing_sum    = sum(anti_browsing),
+    management_sum       = sum(management_sub),
+    planting_intensity   = planting_sum / n_subplots,
+    salvage_intensity    = salvage_sum    / (3 * n_subplots),
+    protection_intensity = protection_sum / (2 * n_subplots),
+    management_intensity = management_sum / (5 * n_subplots),
     .groups = "drop"
   ) %>%
   mutate(
     planting_intensity    = pmin(pmax(planting_intensity, 0), 1),
-    salvage_intensity    = pmin(pmax(salvage_intensity, 0), 1),
-    protection_intensity = pmin(pmax(protection_intensity, 0), 1),
-    management_intensity = pmin(pmax(management_intensity, 0), 1)
+    salvage_intensity     = pmin(pmax(salvage_intensity, 0), 1),
+    protection_intensity  = pmin(pmax(protection_intensity, 0), 1),
+    management_intensity  = pmin(pmax(management_intensity, 0), 1)
   ) %>% 
   select(-n_subplots)
 
