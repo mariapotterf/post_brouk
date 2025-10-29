@@ -57,6 +57,78 @@ n_plots_total
 n_subplots_total <-length(unique(dat_master_subplot$subplot))  # 1250
 n_subplots_total
 
+
+# identify how is CV calculated if I have same species across two vertical layers?
+
+# Identify subplots where the same species appears in multiple vegtypes
+df_distinct_vegtypes <- dat_overlap %>%
+  filter(n>0) %>% 
+  group_by(subplot, species) %>%
+  summarize(n_vegtypes = n_distinct(vegtype), .groups = "drop") %>%
+  filter(n_vegtypes > 1)
+
+# Extract just the subplot IDs
+unique_subplots_distinct <- unique(df_distinct_vegtypes$subplot) # 110 from 1250~ 9%
+
+# Optional: View full records of the overlaps
+overlap_records <- dat_overlap %>%
+  filter(n>0) %>%
+  filter(subplot %in% unique_subplots_distinct) %>%
+  arrange(subplot, species, vegtype) %>% 
+  select(subplot, species, vegtype,     hgt,     n)
+
+# Print the results
+print(overlap_records)
+View(overlap_records)
+
+# check 613_T2_AH_20250827 - seems to have very many trees!! ()
+
+# identify subplots where i have  single tree species but but several stems
+# what happend at the subplot/plot scale? are they heterogenous/homogenous from photos?
+# how many subplots have only 1 tree species?
+# Identify subplots with only one species present (with at least 1 individual)
+single_species_subplots <- dat_overlap %>%
+  filter(!is.na(n), n > 0) %>%
+  group_by(subplot) %>%
+  summarize(n_species = n_distinct(species), .groups = "drop") %>%
+  filter(n_species == 1)
+
+# View detailed records from those subplots
+single_species_sub_details <- dat_overlap %>%
+  filter(subplot %in% single_species_subplots$subplot,
+         !is.na(n), n > 0) %>%
+  select(plot, subplot, species, vegtype, n) %>%
+  arrange(subplot)
+
+# Print or View
+print(single_species_sub_details)
+length(unique(single_species_sub_details$subplot))  # 540!!
+
+
+# single species per plot ---------------------
+single_species_plots <- dat_overlap %>%
+  filter(!is.na(n), n > 0) %>%
+  group_by(plot) %>%
+  summarize(n_species = n_distinct(species), .groups = "drop") %>%
+  filter(n_species == 1)
+
+# View detailed records from those subplots
+single_species_plot_details <- dat_overlap %>%
+  filter(subplot %in% single_species_plots$plot,
+         !is.na(n), n > 0) %>%
+  select(plot, species, vegtype, n) %>%
+  arrange(plot)
+
+# Print or View
+print(single_species_plot_details)
+length(unique(single_species_sub_details$subplot))  # 540!!
+
+
+
+
+
+
+
 # histogram of stem denisty per vertcal class:
 dat_overlap %>% 
   dplyr::filter(n > 0) %>% 
@@ -106,6 +178,21 @@ ggarrange(p_hist_dist_year, p_hist_dist_length, p_hist_time_since_dist,
           ncol = 3)
 
 
+table(plot_disturb_chars$disturbance_year)
+# 
+# 2012 2018 2019 2020 2021 2022 2023 
+# 2    8   24  117   46   47    6 
+prop.table(table(plot_disturb_chars$disturbance_year))
+
+
+table(plot_disturb_chars$disturbance_length)
+# 
+# 2012 2018 2019 2020 2021 2022 2023 
+# 2    8   24  117   46   47    6 
+prop.table(table(plot_disturb_chars$disturbance_length))
+
+
+
 # Clean up management - if site has been mamaged in 2023, it needs to be managemt (cleared)
 # in 2025 as well!!
 df_master_mng <- dat_overlap %>% 
@@ -117,11 +204,69 @@ df_master_mng <- dat_overlap %>%
            planting,
            anti_browsing)
 
-prop.table(table(df_master_mng$clear ))
-prop.table(table(df_master_mng$grndwrk))
-prop.table(table(df_master_mng$logging_trail))
-prop.table(table(df_master_mng$planting))
-prop.table(table(df_master_mng$anti_browsing))
+management_proportions <- df_master_mng %>%
+  pivot_longer(cols = c(clear, grndwrk, logging_trail, planting, anti_browsing),
+               names_to = "activity",
+               values_to = "applied") %>%
+  group_by(activity, applied) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  group_by(activity) %>%
+  mutate(proportion = n / sum(n)*100)
+
+management_proportions
+
+
+# First extract proportion for applied == 1 per activity
+applied_order <- management_proportions %>%
+  filter(applied == 1) %>%
+  arrange(desc(proportion)) %>%
+  pull(activity)
+
+
+# Prepare data for diverging bar plot
+mng_sub_conv <-  management_proportions %>%
+  mutate(proportion = ifelse(applied == 0, -proportion, proportion),
+         applied = ifelse(applied == 1, "Presence", "Absence")) %>% 
+  arrange(desc(proportion)) %>% 
+  mutate(activity = factor(activity, levels = rev(applied_order))) #%>%
+
+#library(forcats)
+
+activity_labels <- c(
+  "clear" = "Salvage logging",
+  "grndwrk" = "Soil preparation",
+  "planting" = "Planting",
+  "anti_browsing" = "Browsing protection",
+  "logging_trail" = "Logging trail"
+)
+# mng_sub_conv <- mng_sub_conv %>%
+#   mutate(activity = recode(activity, !!!activity_labels))
+top_activity <- levels(mng_sub_conv$activity)[1]
+# Create diverging bar plot
+ggplot(mng_sub_conv, aes(x = proportion, y = activity, fill = applied)) +
+  geom_col(width = 0.2, col = 'black') +
+  scale_x_continuous(#labels = scales::percent_format(accuracy = 1),
+                     breaks = seq(-100, 100, 50),
+                     limits = c(-100, 100),
+                     labels = function(x) paste0(abs(x), "%")) +
+  scale_fill_manual(values = c("Presence" = "red", 
+                               "Absence" = "darkgreen")) +
+  scale_y_discrete(labels = activity_labels) +
+  geom_vline(xintercept = 0, color = 'darkgrey', lty = 'dashed')+
+  labs(x = "Share of subplots [%]", 
+       y = "",
+       title = "",
+       fill = "") +
+  theme_classic2() +
+  annotate("text", x = -80, y = 5.5, label = "Absence", hjust = 0, size = 2.5, fontface = "bold") +
+  annotate("text", x =  80, y = 5.5, label = "Presence",     hjust = 1, size = 2.5, fontface = "bold") +
+  theme(panel.grid.major.y = element_blank(),
+        axis.text.y = element_text(size = 10, face = "italic"),
+        legend.position = "none",
+        text = element_text(size = 10))
+
+
+
 
 # > table(df_master_mng$clear )
 # 0   1 
@@ -1140,7 +1285,9 @@ both_levels_re2 <- bind_rows(sub_df, plot_df) %>%
     w       = pmin(pmax(w, 1), 50)   # cap weights so a few dense plots don't dominate
   ) %>% 
   mutate(time_since_f = ifelse(time_snc_full_disturbance <= 2, "early", "later") %>% 
-           factor(levels = c("early", "later")))
+           factor(levels = c("early", "later")),
+         dist_length_f = ifelse(disturbance_length <= 2, "abrupt", "continuous") %>% 
+           factor(levels = c( "abrupt", "continuous")))
 
 table(both_levels_re2$trait_class)
 
@@ -1179,6 +1326,65 @@ both_levels_re2 %>%
   ggplot(aes(x = factor(time_snc_full_disturbance), y = cv_hgt)) +
   geom_boxplot() +
   geom_jitter() + facet_grid(.~level)
+
+hist(both_levels_re2$area_m2, breaks = 50)
+
+# how did disturbnace lenght affected post-dsiturbance recovery? ---------------
+# List of response variables to pivot
+response_vars <- c(#"dens_m2", 
+                   "cv_hgt", "mean_hgt", 
+                   "sp_richness", #"shannon_sp", 
+                   "evenness_sp",
+                   "effective_numbers", 
+                   "dens_ha")
+
+# Pivot to long format
+both_levels_long <- both_levels_re2 %>%
+  pivot_longer(cols = all_of(response_vars),
+               names_to = "variable",
+               values_to = "value")
+
+# how does the disturbnac elength affects structure and composition?
+both_levels_long %>% 
+  filter(level == 'plot') %>% 
+  ggplot(aes(x = factor(disturbance_length), y = value)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(width = 0.2, alpha = 0.2, size = 0.3) +
+  facet_wrap(variable ~ . , scales = "free_y") +
+  ggtitle("Disturbance length")
+
+# how does time since stand replacing disturbnace affects str & composition?
+both_levels_long %>% 
+  filter(level == 'plot') %>% 
+  ggplot(aes(x = factor(time_snc_full_disturbance), y = value)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(width = 0.2, alpha = 0.2, size = 0.3) +
+  facet_wrap(variable ~ . , scales = "free_y") +
+  ggtitle("Time since stand replacing disturb.")
+
+# time since disturbance start 
+both_levels_long %>% 
+  filter(level == 'plot') %>% 
+  ggplot(aes(x = factor(time_snc_part_disturbance), y = value)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(width = 0.2, alpha = 0.2, size = 0.3) +
+  facet_wrap(variable ~ . , scales = "free_y") +
+  ggtitle("Time since disturbnace start")
+
+
+
+
+# do time over axis, length as point size
+both_levels_long %>% 
+  filter(level == 'plot') %>% 
+  ggplot(aes(x = factor(time_snc_full_disturbance), 
+             y = factor(time_snc_part_disturbance),
+             size = disturbance_length)) +
+ geom_point()
+
+
+
+
 
 # create species data only for Cv_heights testing - becaue i have many zeros 
 # if i have only one tree species present!
@@ -1221,7 +1427,7 @@ summary(m0)
 
 # add time since disturbance as a fector
 m1 <- gam(cv_hgt_pos ~ s(disturbance_length, by = level, k = 3) + 
-            level + time_since_f +
+            level + #time_since_f +
             s(plot_id, bs = "re"),
           #family = tw(),
           #family = Gamma(link = "log"),
@@ -1340,6 +1546,89 @@ p <- predict_response(m_cv_cont, terms = c("time_snc_full_disturbance [all]"))
 
 plot(p, one_plot = TRUE)
 
+
+# HUrdle: Cv vs time since disturbances -----------------------
+##### CV x time since disturbnace ------------------------------------
+
+# add interaction between level and time since disturbance
+m_cv_hgt1 <- gam(cv_hgt ~ 
+                   s(time_snc_full_disturbance , by = level, k = 3) +
+                   s(plot_id, bs = "re"),
+                 weigths = w,
+                 
+                 family = tw(),
+                 #family = Gamma(link = "log"),
+                 data = both_levels_re2 , #%>% filter(stems_total > 0),
+                 method = "REML")
+
+
+summary(m_cv_hgt1)
+appraise(m_cv_hgt1)
+
+library(gamlss)
+
+# Fit a hurdle model (zero-adjusted Gamma)
+m_hurdle <- gamlss(
+  cv_hgt ~ cs(time_snc_full_disturbance, by = level),
+  sigma.formula = ~ 1,  # Dispersion
+  nu.formula = ~ 1,     # Zero-inflation probability
+  family = ZAGA,
+  data = both_levels_re2
+)
+
+summary(m_hurdle)
+
+
+# split model in two formulas: 
+# Add binary flag and filter positive CVs
+dat_cv_hgt2 <- both_levels_re2 %>%
+  mutate(
+    cv_hgt_bin = as.integer(cv_hgt > 0),  # For part 1
+    cv_hgt_pos = ifelse(cv_hgt > 0, cv_hgt, NA)  # For part 2
+  )
+
+m_bin <- gam(
+  cv_hgt_bin ~ s(time_snc_full_disturbance, by = level, k = 5) +
+    level +
+    s(plot_id, bs = "re"),
+  weights = w,
+  family = binomial(),
+  data = dat_cv_hgt2
+)
+
+summary(m_bin)
+appraise(m_bin)
+
+m_pos <- gam(
+  cv_hgt_pos ~ s(time_snc_full_disturbance, by = level, k = 3) +
+    level +
+    s(plot_id, bs = "re"),
+  family = tw(link = "log"),
+  weights = w,
+  data = dat_cv_hgt2 %>% filter(cv_hgt > 0)
+)
+
+summary(m_pos)
+appraise(m_pos)
+
+# 
+p <- predict_response(
+  m_pos,
+  terms = c("time_snc_full_disturbance [all]",    # x-sequence
+            "level [all]"
+            #"early_class")                    # fix level (or drop to average)
+  ))
+#p_mean_hgt <- 
+plot(p, one_plot = TRUE)
+
+  p <- predict_response(
+    m_bin,
+    terms = c("time_snc_full_disturbance [all]",    # x-sequence
+              "level [all]"
+              #"early_class")                    # fix level (or drop to average)
+    ))
+  #p_mean_hgt <- 
+  plot(p, one_plot = TRUE)
 
 
 
