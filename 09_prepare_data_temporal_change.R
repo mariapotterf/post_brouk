@@ -454,41 +454,6 @@ dat_subplot_recode <- dat_subplots_merged %>%
   left_join(traits_full)  # add trait table to identify early vs late seral
 
 
-# define recovery type: based on species that are likely planted/pioneer
-# dat_subplot_recode <- dat_subplot_recode %>%
-#   mutate(
-#     seral_stage = if_else(Shade_tolerance < 3, "early", "late") # low value are less totalera = sun loving, high values are 
-#   )
-  # mutate(recovery_type = case_when(
-  #   # --- Planted / late-successional / non-native ---
-  #   species %in% c("piab","pisy","absp","lade","psme","taba",
-  #                  "fasy","qusp","acca","acpl","acps","frex",
-  #                  "casa","aehi","saca","rops") ~ "late",
-  #   
-  #   # --- Pioneer / early successional ---
-  #   species %in% c("besp","alin","algl","alvi","potr","posp","prav",
-  #                  "tisp","soau","soto","soar","cabe","ulsp","aial",
-  #                  "fror","juni","jure","sasp","osca") ~ "early",
-  #   
-  #   # --- Everything else / not clearly one of the two ---
-  #   TRUE ~ "other"
-  # )) %>% # should be done based on shade tolerance!
-  # # possoble to classify based on shade tolerance into early/late
-  # mutate(recovery_type3 = case_when(
-  #   # LATE (shade-tolerant)
-  #   species %in% c("piab","absp","fasy","taba","tisp","cabe","osca") ~ "late",
-  #   
-  #   # EARLY (light-demanding / pioneers)
-  #   species %in% c("pisy","lade","alin","algl","alvi","potr","posp","prav",
-  #                  "soto","soar","aial","saca","rops","juni","sasp","besp") ~ "early",
-  #   
-  #   # INTERMEDIATE / AMBIGUOUS -> other
-  #   species %in% c("psme","acca","acpl","acps","frex","casa","aehi",
-  #                  "ulsp","soau","jure","fror","qusp") ~ "intermediate",
-  #   
-  #   TRUE ~ "other"
-  # ))
-
 
 ## Clean up management type ------------------
 dat_subplot_mng <- dat_subplot_recode %>%
