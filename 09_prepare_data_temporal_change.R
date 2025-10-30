@@ -461,7 +461,7 @@ dat_subplot_mng <- dat_subplot_recode %>%
 
 # --- 2) Subplot-level scores (use max within subplot to avoid duplicates)
 mng_subplot_scores <- dat_subplot_mng %>%
-  group_by(plot, subplot) %>%
+  group_by(year, plot, subplot) %>%
   summarise(
     clear          = max(clear),
     grndwrk        = max(grndwrk),
@@ -471,7 +471,7 @@ mng_subplot_scores <- dat_subplot_mng %>%
     .groups = "drop"
   ) %>%
   mutate(
-    salvage_sub    = clear + grndwrk + logging_trail,          # 0..3
+    salvage_sub    = clear + grndwrk + logging_trail,          # 0..3 - 
     protection_sub = planting + anti_browsing,                  # 0..2
     management_sub = salvage_sub + protection_sub               # 0..5
   )
@@ -485,20 +485,34 @@ mng_plot_intensity <- mng_subplot_scores %>%
     salvage_sum          = sum(salvage_sub),
     protection_sum       = sum(protection_sub),
     
+    # get sums
     clear_sum            = sum(clear),
     grndwrk_sum          = sum(grndwrk),
     logging_trail_sum    = sum(logging_trail),
     planting_sum         = sum(planting),
     anti_browsing_sum    = sum(anti_browsing),
+    
     management_sum       = sum(management_sub),
-    planting_intensity   = planting_sum / n_subplots,
-    salvage_intensity    = salvage_sum    / (3 * n_subplots),
-    protection_intensity = protection_sum / (2 * n_subplots),
-    management_intensity = management_sum / (5 * n_subplots),
+    
+    clear_intensity           = clear_sum / n_subplots,
+    grndwrk_intensity         = grndwrk_sum / n_subplots,
+    logging_trail_intensity   = logging_trail_sum / n_subplots,
+    planting_intensity        = planting_sum / n_subplots,
+    anti_browsing_intensity   = anti_browsing_sum / n_subplots,
+    
+    salvage_intensity    = salvage_sum    / (3 * n_subplots), # 3 types
+    protection_intensity = protection_sum / (2 * n_subplots), # 2 types
+    management_intensity = management_sum / (5 * n_subplots), # 5 types
     .groups = "drop"
   ) %>%
+  # make sure the ranges are teh same
   mutate(
-    planting_intensity    = pmin(pmax(planting_intensity, 0), 1),
+    clear_intensity           = pmin(pmax(clear_intensity, 0), 1),
+    grndwrk_intensity         = pmin(pmax(grndwrk_intensity, 0), 1),
+    logging_trail_intensity   = pmin(pmax(logging_trail_intensity, 0), 1),
+    planting_intensity        = pmin(pmax(planting_intensity, 0), 1),
+    anti_browsing_intensity   = pmin(pmax(anti_browsing_intensity, 0), 1),
+   
     salvage_intensity     = pmin(pmax(salvage_intensity, 0), 1),
     protection_intensity  = pmin(pmax(protection_intensity, 0), 1),
     management_intensity  = pmin(pmax(management_intensity, 0), 1)
@@ -521,7 +535,7 @@ hist(traits_full$Shade_tolerance)
 ### export important tables ---------------
 
 fwrite(dat_subplot_mng2, 'outData/full_table_23_25.csv')
-
+fwrite(dat_overlap, 'outData/full_table_overlap_23_25.csv')
 
 
 
