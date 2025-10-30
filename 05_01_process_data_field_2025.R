@@ -535,6 +535,7 @@ st_write(subplot_all, "outData/google_my_map/subplot_with_clusters_2025.kml", dr
 # clean up and recode
 # keep empty subplots & plots
 # export final veg data and gpkg
+# keep all records (even with missing information) as the damage can still be recorded!
 
 gc()
 
