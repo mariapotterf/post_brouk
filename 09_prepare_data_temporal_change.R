@@ -505,7 +505,7 @@ mng_plot_intensity <- mng_subplot_scores %>%
     management_intensity = management_sum / (5 * n_subplots), # 5 types
     .groups = "drop"
   ) %>%
-  # make sure the ranges are teh same
+  # make sure the ranges are teh same: 0-1 
   mutate(
     clear_intensity           = pmin(pmax(clear_intensity, 0), 1),
     grndwrk_intensity         = pmin(pmax(grndwrk_intensity, 0), 1),
@@ -535,7 +535,7 @@ hist(traits_full$Shade_tolerance)
 ### export important tables ---------------
 
 fwrite(dat_subplot_mng2, 'outData/full_table_23_25.csv')
-fwrite(dat_overlap, 'outData/full_table_overlap_23_25.csv')
+fwrite(dat_overlap,      'outData/full_table_overlap_23_25.csv')
 
 
 
