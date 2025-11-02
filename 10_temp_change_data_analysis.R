@@ -202,7 +202,13 @@ df_master_mng <- dat_overlap %>%
            grndwrk,
            logging_trail,
            planting,
-           anti_browsing)
+           anti_browsing,
+           
+           # intensities
+           clear_intensity,           grndwrk_intensity,         logging_trail_intensity,  
+           planting_intensity ,       anti_browsing_intensity,   salvage_intensity,         protection_intensity,      management_intensity
+           
+           )
 
 management_proportions <- df_master_mng %>%
   pivot_longer(cols = c(clear, grndwrk, logging_trail, planting, anti_browsing),
@@ -264,6 +270,126 @@ ggplot(mng_sub_conv, aes(x = proportion, y = activity, fill = applied)) +
         axis.text.y = element_text(size = 10, face = "italic"),
         legend.position = "none",
         text = element_text(size = 10))
+
+
+# get management intensities on plot level: qantify for low vs high level intensity
+
+# TEST START
+
+# plot level, so have only intensities
+df_master_mng_intensity <- dat_overlap %>% 
+  dplyr::filter(year == "2023") %>% # keep management oionly frm 2023 for consistency
+  distinct(plot, year,
+           # clear,
+           # grndwrk,
+           # logging_trail,
+           # planting,
+           # anti_browsing,
+           # 
+           # intensities
+           clear_intensity,           grndwrk_intensity,         logging_trail_intensity,  
+           planting_intensity ,       anti_browsing_intensity,   salvage_intensity,         protection_intensity,      management_intensity
+           
+  )
+nrow(df_master_mng_intensity)
+
+mng_intensity_props <- 
+  df_master_mng_intensity %>%
+  pivot_longer(cols = c(clear_intensity,           
+                        grndwrk_intensity,         
+                        logging_trail_intensity,  
+                        planting_intensity ,       
+                        anti_browsing_intensity
+                        #,   
+                        # salvage_intensity,         
+                        # protection_intensity,      
+                        # management_intensity
+                        ),
+               names_to = "activity",
+               values_to = "applied") %>%
+  group_by(activity, applied) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  group_by(activity) %>%
+  mutate(proportion = n / sum(n)*100)
+
+mng_intensity_props
+
+mng_intensity_props <- mng_intensity_props %>%
+  mutate(
+    prop_class = cut(
+      proportion,
+      breaks = c(-Inf, 0, 20, 40, 60, 80, 100, Inf),
+      labels = c("0", "1–20", "21–40", "41–60", "61–80", "81–100", "100+"),
+      right = TRUE
+    )
+  )
+
+mng_intensity_props <- mng_intensity_props %>%
+  mutate(proportion_shifted = proportion - 40)
+
+
+
+# First extract proportion for applied == 1 per activity
+applied_mng_intens_order <- c(
+  "clear_intensity",           
+  "grndwrk_intensity",         
+  "logging_trail_intensity",  
+  "planting_intensity",       
+  "anti_browsing_intensity"#,   
+  #"salvage_intensity",         
+  #"protection_intensity",      
+  #"management_intensity"
+)
+
+management_intens_activity <- levels(mng_intensity_props$activity)
+# Prepare data for diverging bar plot
+mng_sub_conv <-  mng_intensity_props %>%
+  # mutate(proportion = ifelse(applied == 0, -proportion, proportion),
+  #        applied = ifelse(applied == 1, "Presence", "Absence")) %>% 
+  # arrange(desc(proportion)) %>% 
+  mutate(activity = factor(activity, levels = applied_mng_intens_order)) #%>%
+
+#library(forcats)
+
+activity_labels <- c(
+  "clear" = "Salvage logging",
+  "grndwrk" = "Soil preparation",
+  "planting" = "Planting",
+  "anti_browsing" = "Browsing protection",
+  "logging_trail" = "Logging trail"
+)
+# mng_sub_conv <- mng_sub_conv %>%
+#   mutate(activity = recode(activity, !!!activity_labels))
+
+# Create color palette from green (low) to red (high), colorblind friendly
+n_colors <- length(unique(mng_intensity_props$applied))
+fill_colors <- colorRampPalette(brewer.pal(9, "RdYlGn"))(n_colors)
+
+ggplot(mng_intensity_props, aes(x = proportion, y = activity, fill = applied     )) +
+  geom_col(width = 0.6, color = 'black') #+
+  scale_x_continuous(
+    breaks = seq(-40, 60, 20),
+    labels = function(x) paste0(abs(x + 40), "%"),
+    limits = c(-40, 60)
+  ) #+
+  scale_fill_brewer(palette = "RdYlGn", direction = -1, name = "Proportion class") +
+  geom_vline(xintercept = 0, color = "darkgrey", linetype = "dashed") +
+  labs(
+    x = "Share of subplots [%]",
+    y = "",
+    title = "Management intensity distribution"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.y = element_text(size = 10, face = "italic"),
+    legend.position = "right",
+    text = element_text(size = 10)
+  )
+
+# TEST END
+
+
+
 
 
 
