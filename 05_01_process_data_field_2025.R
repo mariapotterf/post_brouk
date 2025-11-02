@@ -650,3 +650,343 @@ length(unique(dat25_subplot_recode$subplot))
 fwrite(dat25_subplot_recode, "outDataShare/dat25_subplot_recode.csv")
 sf::st_write(dat25_sf_min, "outDataShare/dat25_sf_min.gpkg", delete_dsn = TRUE)
 
+
+
+# Summarize infor for overall presentation ------------------------------------
+# Make sure the data is a data.table (should already be based on your structure)
+dat <- dat25_subplot_recode
+
+# Filter only valid tree records (non-NA and n > 0)
+dat_trees <- dat %>% 
+  filter(!is.na(n) & n > 0)
+
+# 1. How many trees do I have?
+total_trees <- sum(dat_trees$n, na.rm = TRUE)
+
+# 2. How many trees per species?
+trees_per_species <- dat_trees %>%
+  group_by(species) %>%
+  summarise(total_n = sum(n, na.rm = TRUE)) %>%
+  arrange(desc(total_n)) %>% 
+  mutate(share = round(total_n/total_trees*100,2))
+
+# 3. How many plots do not have any n > 0 (i.e., no trees present)?
+plots_no_trees <- dat %>%
+  group_by(plot) %>%
+  summarise(total_n = sum(n, na.rm = TRUE)) %>%
+  filter(total_n == 0) %>%
+  nrow()
+
+# 4. How many unique subplots?
+n_subplots <- dat %>%
+  distinct(subplot) %>%
+  nrow()
+
+# 5. How many unique plots?
+n_plots <- dat %>%
+  distinct(plot) %>%
+  nrow()
+
+# 6. Species richness per subplot (number of unique species per subplot)
+richness_per_subplot <- dat_trees %>%
+  group_by(subplot) %>%
+  summarise(species_richness = n_distinct(species))
+
+summary(richness_per_subplot$species_richness)
+
+
+# 7. Species richness per plot
+richness_per_plot <- dat_trees %>%
+  group_by(plot) %>%
+  summarise(species_richness = n_distinct(species))
+
+summary(richness_per_plot$species_richness)
+
+# Count number of subplots by richness category
+subplot_richness_freq <- richness_per_subplot %>%
+  count(species_richness) %>% 
+  mutate(share = round(n/n_subplots*100,1))
+
+# Count number of plots by richness category
+plot_richness_freq <- richness_per_plot %>%
+  count(species_richness) %>% 
+  mutate(share = round(n/n_plots*100,1))
+
+
+# 8. management summary
+
+# Select management-related columns
+mgmt_cols <- c("clear", "grndwrk", "logging_trail", "windthrow", "standing_deadwood", "planting", "anti_browsing")
+
+# Summarize presence/absence/NA of management types per subplot
+management_summary <- dat25_subplot_recode %>%
+  distinct(subplot, .keep_all = TRUE) %>%  # One row per subplot
+  select(subplot, all_of(mgmt_cols)) %>%
+  pivot_longer(cols = all_of(mgmt_cols), names_to = "management_type", values_to = "value") %>%
+  mutate(value = replace_na(value, 0),  # Treat NA as 0
+         status = ifelse(value == 1, "present", "absent")) %>%
+  group_by(management_type, status) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  arrange(management_type, status) %>% 
+  mutate(share = round(n/n_subplots*100, 1))
+
+
+management_summary
+
+
+# 9. species per plot 
+
+species_plot_counts <- dat25_subplot_recode %>%
+  filter(!is.na(n) & n > 0) %>%
+  distinct(plot, species) %>%
+  group_by(species) %>%
+  summarise(n = n(), .groups = "drop") %>% 
+  mutate(share = round(n/n_plots*100)) %>% 
+  arrange(desc(share)) %>% 
+  slice_max(share, n = 10) %>% 
+  mutate(species = factor(species, levels = rev(species))) 
+
+
+
+
+
+
+
+
+## Make plots --------------------------------------------
+
+### Tree species composition ---------------------
+# Czech labels for species
+species_labels_cz <- c(
+  "piab" = "Smrk ztepilý",
+  "besp" = "Bříza",
+  "pisy" = "Borovice lesní",
+  "quru" = "Dub",
+  "fasy" = "Buk lesní",
+  "lade" = "Modřín opadavý",
+  "saca" = "Vrba jíva", # mléč
+  "acps" = "Javor klen",
+  "soau" = "Jeřáb ptačí",
+  "potr" = "Topol osika"
+)
+
+# Take top 10 species
+top_species <- trees_per_species %>%
+  slice_max(share, n = 10) %>%
+  mutate(species = factor(species, levels = rev(species)))# %>%   # Reverse for top-down order
+  
+# Plot
+
+my_greens <- colorRampPalette(RColorBrewer::brewer.pal(9, "Greens"))(nrow(top_species))
+
+p_species_share_stems <- ggplot(top_species, aes(x = share, y = species, fill = species)) +
+  geom_col(color = "black", width = 0.6) +
+  scale_fill_manual(values = my_greens) +
+  scale_y_discrete(labels = species_labels_cz) +
+  scale_x_continuous(labels = function(x) paste0(x, "%"), expand = c(0, 0)) +
+  labs(
+    x = "Podíl jedinců [%]",
+    y = "",
+    title = "Dřeviny podle zastoupení"
+  ) +
+  theme_classic() +
+  theme(
+    legend.position = "none",
+    axis.text.y = element_text(size = 10, face = "italic"),
+    text = element_text(size = 11)
+  )
+
+
+p_species_share_plots <- species_plot_counts %>% 
+  ggplot(aes(x = share, y = species, fill = species)) +
+  geom_col(color = "black", width = 0.6) +
+  scale_fill_manual(values = my_greens) +
+  scale_y_discrete(labels = species_labels_cz) +
+  scale_x_continuous(labels = function(x) paste0(x, "%"), expand = c(0, 0)) +
+  labs(
+    x = "Podíl ploch [%]",
+    y = "",
+    title = "Výskyt na plochách"
+  ) +
+  theme_classic() +
+  theme(
+    legend.position = "none",
+    axis.text.y = element_text(size = 10, face = "italic"),
+    text = element_text(size = 11)
+  )
+
+ggarrange(p_species_share_stems, p_species_share_plots,
+          labels = "auto")
+
+
+
+### Species richness ---------------------------------------
+
+p_rich_plot <- ggplot(subplot_richness_freq, aes(x = factor(species_richness), y = share)) +
+  geom_col(fill = "darkolivegreen3", color = "black") +
+  labs(
+    x = "Počet druhů \n(ploška)",
+    y = "Podíl plošek [%]",
+    title = ""
+  ) +
+  theme_classic()
+
+
+p_rich_sub <- ggplot(plot_richness_freq, aes(x = factor(species_richness), y = share)) +
+  geom_col(fill = "darkseagreen4", color = "black") +
+  labs(
+    x = "Počet druhů \n(plocha)",
+    y = "Podíl ploch [%]",
+    title = ""
+  ) +
+  theme_classic()
+ggarrange(p_rich_plot,p_rich_sub)
+
+
+### Management ---------------------------------------------
+
+
+# Czech labels for activities
+activity_labels <- c(
+  "clear" = "Sanitárni těžba",
+  "grndwrk" = "Příprava půdy",
+  "planting" = "Výsadba",
+  "anti_browsing" = "Ochrana proti zvěři",
+  "logging_trail" = "Vyklizovací linka",
+  "windthrow" = "Vývrat",
+  "standing_deadwood" = "Stojící mrtvé dřevo"
+)
+
+# Convert management_summary to plotting format
+mng_sub_conv <- management_summary %>%
+  rename(activity = management_type) %>%
+  mutate(applied = ifelse(status == "present", 1, 0),
+         proportion = ifelse(applied == 1, share, -share),
+         applied = ifelse(applied == 1, "Presence", "Absence")) %>%
+  mutate(activity = factor(activity, levels = names(activity_labels))) #%>%
+  #mutate(activity = fct_relabel(activity, ~ activity_labels[.]))  # relabel to Czech
+
+# Order activities by proportion of presence
+activity_order <- mng_sub_conv %>%
+  filter(applied == "Presence") %>%
+  arrange(desc(proportion)) %>%
+  pull(activity)
+
+mng_sub_conv <- mng_sub_conv %>%
+  mutate(activity = factor(activity, levels = rev(activity_order)))
+
+# Plot
+ggplot(mng_sub_conv, aes(x = proportion, y = activity, fill = applied)) +
+  geom_col(width = 0.2, color = 'black') +
+  scale_x_continuous(
+    breaks = seq(-100, 100, 50),
+    limits = c(-100, 100),
+    labels = function(x) paste0(abs(x), "%")
+  ) +
+  scale_fill_manual(values = c("Presence" = "red", "Absence" = "darkgreen")) +
+  geom_vline(xintercept = 0, color = 'darkgrey', lty = 'dashed') +
+  labs(
+    x = "Podíl plošek [%]",
+    y = "",
+    title = "",
+    fill = ""
+  ) +
+  scale_y_discrete(labels = activity_labels) +
+  annotate("text", x = -80, y = length(activity_order) + 0.5, label = "Nevyskytuje se", hjust = 0, size = 3, fontface = "bold") +
+  annotate("text", x =  80, y = length(activity_order) + 0.5, label = "Vyskytuje se", hjust = 1, size = 3, fontface = "bold") +
+  theme_classic() +
+  theme(
+    panel.grid.major.y = element_blank(),
+    axis.text.y = element_text(size = 10, face = "italic"),
+    legend.position = "none",
+    text = element_text(size = 10)
+  )
+
+
+
+
+## Heigh distribution -------------------------
+hist(dat25_subplot_recode$hgt_est, breaks = 60 )
+
+# Expand dataset by n (each row = 1 individual)
+hgt_expanded <- dat25_subplot_recode %>%
+  filter(!is.na(n) & n > 0, !is.na(hgt_est)) %>%
+  select(hgt_est, n) %>%
+  tidyr::uncount(n)
+
+summary(hgt_expanded)
+# Calculate 90% quantile
+q90 <- quantile(hgt_expanded$hgt_est, 0.9)
+
+# Plot CDF with 90% quantile line
+ggplot(hgt_expanded, aes(x = hgt_est)) +
+  stat_ecdf(geom = "step", color = "steelblue", size = 1) +
+  geom_vline(xintercept = q90, linetype = "dashed", color = "red") +
+  annotate("text", x = q90, y = 0.92, label = paste0("90 % < ", round(q90, 2), " m"),
+           hjust = 0, vjust = 0, color = "red", size = 4) +
+  labs(
+    title = "Kumulativní distribuce výšek stromků",
+    x = "Výška (m)",
+    y = "Kumulativní podíl jedinců"
+  ) +
+  theme_classic()
+
+dat25_subplot_recode %>%
+  filter(!is.na(n) & n > 0) %>%
+  ggplot(aes(x = hgt_est)) +
+  geom_histogram(binwidth = 0.3, fill = "grey", color = "black") +
+  labs(
+    title = "Distribuce výšek",
+    x = "Odhadovaná výška (m)",
+    y = "Počet jedinců"
+  ) +
+  geom_vline(xintercept = q90+0.2, linetype = "dashed", 
+             color = "red") +
+  annotate("text", x = q90+2, y = 400, label = paste0("90 % < ", round(q90, 2), " m"),
+           hjust = 0, vjust = 0, color = "red", size = 4) +
+  theme_classic2()
+
+
+dat25_subplot_recode %>%
+  filter(!is.na(n) & n > 0, !is.na(hgt_est), hgt_est > 5) %>%
+  summarise(total_individuals = sum(n))
+
+
+# 2. Boxplot of heights per species
+library(forcats)
+dat25_subplot_recode %>%
+  filter(!is.na(n) & n > 0) %>%
+  filter(species %in% top_species$species) %>% 
+  ggplot(aes(x = fct_reorder(species, -hgt_est, .fun = median, na.rm = TRUE), y = hgt_est,
+             fill = species)) +
+  scale_x_discrete(labels = species_labels_cz) +
+  geom_boxplot(alpha = 0.6, outlier.shape = NA) +
+  geom_hline(yintercept = 1, lty = 'dashed', col = 'grey') +
+  #geom_violin() +
+  labs(
+    title = "Boxplot výšek stromků podle druhu",
+    x = "Druh (seřazeno podle výšky)",
+    y = "Odhadovaná výška (m)"
+  ) +
+  scale_fill_manual(values = my_greens) +
+  coord_cartesian(y = c(0,10))+
+  theme_classic2() +
+  theme(legend.position = 'none',
+        axis.text.x = element_text(angle = 45, hjust = 1))
+  
+
+# Summary table of median heights by species (only top species)
+summary_medians <- dat25_subplot_recode %>%
+  filter(!is.na(n) & n > 0) %>%
+  filter(species %in% top_species$species) %>%
+  group_by(species) %>%
+  summarise(
+    median_hgt = median(hgt_est, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(median_hgt)) %>%
+  mutate(species_cz = species_labels_cz[species]) %>%
+  select(species, species_cz, median_hgt)
+
+summary_medians
+  
