@@ -63,6 +63,28 @@ n_subplots_total <-length(unique(dat_master_subplot$subplot))  # 1250
 n_subplots_total # 1665
 
 
+# Calculate species richness per subplot
+richness_per_subplot <- dat_overlap %>%
+  filter(n>0) %>% 
+  group_by(plot, subplot, year) %>%
+  summarize(
+    species_richness = n_distinct(species),
+    planting = first(planting)  # assuming consistent per subplot/year
+  ) %>%
+  ungroup()
+
+# Convert planting to factor for clarity
+richness_per_subplot <- richness_per_subplot %>%
+  mutate(planting = factor(planting, levels = c(0,1), labels = c("no planting", "planted")))
+
+# Quick plot
+ggplot(richness_per_subplot, aes(x = planting, y = species_richness)) +
+  geom_boxplot() +
+  labs(title = "Species Richness by Planting",
+       x = "Planting",
+       y = "Species Richness") +
+  theme_minimal()
+
 # identify how is CV calculated if I have same species across two vertical layers?
 # yep
 
@@ -223,6 +245,16 @@ df_master_mng <- dat_overlap %>%
            
            )
 
+
+df_master_mng_plot <- df_master_mng %>% 
+  select(plot, clear_intensity,           
+         grndwrk_intensity,         
+         logging_trail_intensity,  
+         planting_intensity ,       
+         anti_browsing_intensity) %>% 
+  distinct()
+
+
 management_proportions <- df_master_mng %>%
   # group by year???
   pivot_longer(cols = c(clear, grndwrk, logging_trail, planting, anti_browsing),
@@ -360,24 +392,6 @@ mng_sub_conv <- mng_intensity_props %>%
   group_by(activity, intensity_class) %>% 
   summarise(proportion = sum(proportion, na.rm = T))
 
-# Generate color palette (YlOrRd: yellow to red)
-n_colors <- length(intensity_levels)
-fill_colors <- brewer.pal(n_colors, "YlOrRd")
-
-# Plot
-ggplot(mng_sub_conv, aes(x = proportion, y = activity, fill = intensity_class)) +
-  geom_col(width = 0.6, color = 'black') +
-  scale_fill_manual(values = fill_colors, name = "Intensity class") +
-  labs(
-    x = "Podíl ploch [%]",
-    y = NULL
-  ) +
-  theme_minimal() +
-  theme(
-    legend.position = "right",
-    axis.text.y = element_text(size = 10),
-    panel.grid.major.y = element_blank()
-  )
 
 
 ###  Define which classes are on the "left"----------------------
@@ -418,27 +432,19 @@ ggplot(mng_shifted, aes(x = proportion_shifted, y = activity,
   geom_col(width = 0.6, color = "black") +
   scale_fill_manual(values = fill_colors, name = "Intensity class",
                     breaks = intensity_levels) +
-  geom_vline(xintercept = 0, color = "grey", linewidth = 0.5) +
+  geom_vline(xintercept = 0, color = "grey", 
+             linewidth = 0.8, lty = 'solid') +
+  ylab('') +
   scale_y_discrete(labels = activity_intens_labels) +   # 👈 this does the relabeling
-  scale_x_continuous(labels = abs, name = "Podíl ploch [%]") +
+  scale_x_continuous(labels = abs, name = "Plots share [%]") +
   annotate("text", x = -80, y = 5.5, label = "Low intensity", hjust = 0, size = 2.5, fontface = "bold") +
   annotate("text", x =  80, y = 5.5, label = "High intensity",     hjust = 1, size = 2.5, fontface = "bold") +
-  
-  
   theme_classic2() +
   theme(
     legend.position = "right",
     axis.text.y = element_text(size = 10),
     panel.grid.major.y = element_blank()
   )
-# !!!!
-
-
-# TEST END
-
-
-
-
 
 
 
@@ -1328,7 +1334,8 @@ plot_metrics_mean <- field_sub_summ %>%
     #mean_range_hgt   = mean(range_hgt,   na.rm = TRUE),
     .groups = "drop"
   ) %>% 
-  left_join(cwm_plot)
+  left_join(cwm_plot) %>% 
+  left_join(df_master_mng_plot)#
 
 
 # --- pooled CV directly from dat23_subplot_recode ---
@@ -1360,7 +1367,8 @@ plot_metrics_pooled  <- dat_overlap %>%
         if (stems_total > 1 && is.finite(mean_hgt) && mean_hgt > 0) 0 else NA_real_,
     .groups = "drop" 
   ) %>%
-  left_join(cwm_plot)
+  left_join(cwm_plot) %>% 
+  left_join(df_master_mng_plot)#
 #mutate(cv_hgt = ifelse(is.na(cv_hgt), 0L, cv_hgt)) # replace NA by 0 if stems are missing
 
 # get only context and disturbance information on plot level
@@ -1399,7 +1407,9 @@ sub_df <- field_sub_summ %>%
   left_join(cwm_subplot, by = c("plot_id" = "plot",
                                 "year" = "year",
                                 "ID" = 'subplot',
-                                "time_snc_full_disturbance" = "time_snc_full_disturbance") )
+                                "time_snc_full_disturbance" = "time_snc_full_disturbance") ) %>% 
+  left_join(df_master_mng_plot, by = c("plot_id" = "plot"))# %>%  # need to separate here by year?
+  
 
 nrow(sub_df)
 hist(sub_df$cv_hgt, breaks = 80)
@@ -1435,24 +1445,25 @@ plot_df <- plot_metrics_pooled %>%
                                     "year" = "year")) %>% 
   left_join(cwm_plot, by = c("plot_id" = "plot",
                              "year" = "year",
-                             "time_snc_full_disturbance" = "time_snc_full_disturbance") )
+                             "time_snc_full_disturbance" = "time_snc_full_disturbance") ) %>% 
+  left_join(df_master_mng_plot, by = c("plot_id" = "plot"))#
 
 
 #  3) Bind & clean final table with both levels
 both_levels_re2 <- bind_rows(sub_df, plot_df) %>%
-  left_join(df_plot_share_early, 
-            by = c('plot_id' = 'plot',
-                   "year" = "year",
-                   "time_snc_full_disturbance" = "time_snc_full_disturbance")) %>% 
-  mutate(early_class = case_when(
-    share_early >= 60 ~ "early_dom",
-    share_early <= 20 ~ "late_dom",
-    TRUE              ~ "mixed"
-  )) |> 
-  mutate(trait_class = factor(early_class, 
-                              levels = c("late_dom",
-                                         "mixed",
-                                         "early_dom"))) %>% 
+  # left_join(df_plot_share_early, 
+  #           by = c('plot_id' = 'plot',
+  #                  "year" = "year",
+  #                  "time_snc_full_disturbance" = "time_snc_full_disturbance")) %>% 
+  # mutate(early_class = case_when(
+  #   share_early >= 60 ~ "early_dom",
+  #   share_early <= 20 ~ "late_dom",
+  #   TRUE              ~ "mixed"
+  # )) |> 
+  # mutate(trait_class = factor(early_class, 
+  #                             levels = c("late_dom",
+  #                                        "mixed",
+  #                                        "early_dom"))) %>% 
   mutate(
     level   = factor(level, levels = c("subplot","plot")),
     plot_id = factor(plot_id),
@@ -1461,13 +1472,9 @@ both_levels_re2 <- bind_rows(sub_df, plot_df) %>%
   mutate(time_since_f = ifelse(time_snc_full_disturbance <= 2, "early", "later") %>% 
            factor(levels = c("early", "later")),
          dist_length_f = ifelse(disturbance_length <= 2, "abrupt", "continuous") %>% 
-           factor(levels = c( "abrupt", "continuous")))
-
-table(both_levels_re2$trait_class)
-
-hist(both_levels_re2$stems_total, breaks = 150)
-range(both_levels_re2$stems_total, na.rm = T)
-
+           factor(levels = c( "abrupt", "continuous")),
+         plant_intens_f = ifelse(planting_intensity <= 0.2, "low", "high") %>% 
+           factor(levels = c("low", "high")))
 
 
 # add small value to CV = 0
@@ -1477,15 +1484,87 @@ both_levels_re2 <- both_levels_re2 %>%
   ) %>% 
   filter(!is.na(mean_hgt), !is.na(w), !is.na(cv_hgt), !is.na(dens_m2))
 
+table(both_levels_re2$trait_class)
+
+hist(both_levels_re2$stems_total, breaks = 150)
+range(both_levels_re2$stems_total, na.rm = T)
+
+
+
+
 
 
 # check the distribution oof weights
-ggplot(both_levels_re2, aes(x = w)) +
-  geom_histogram(binwidth = 1, fill = "grey", color = "black") +
-  labs(x = "Weight (capped stem count)", y = "Frequency") +
-  theme_minimal()
+# ggplot(both_levels_re2, aes(x = w)) +
+#   geom_histogram(binwidth = 1, fill = "grey", color = "black") +
+#   labs(x = "Weight (capped stem count)", y = "Frequency") +
+#   theme_minimal()
+# 
+
+# check richness by planting? - need to be on plot level!! ------------------
+both_levels_re2 %>% 
+  filter(level == 'plot') %>% 
+  ggplot(aes(x = plant_intens_f,
+             y = sp_richness,
+             fill = plant_intens_f)) + 
+  geom_boxplot(notch = T) +
+  geom_jitter(alpha = 0.2) +
+  facet_grid(.~level)
 
 
+
+
+
+# check richness by planting?
+both_levels_re2 %>% 
+  filter(level == 'plot') %>% 
+  ggplot(aes(x = factor(time_snc_full_disturbance),
+             y = sp_richness,
+             fill = plant_intens_f))  +
+  geom_boxplot() #+
+  geom_smooth(method = "lm") +
+  #geom_boxplot() + 
+  facet_grid(.~plant_intens_f)
+  #geom_jitter() +
+  
+
+  
+  both_levels_re2 %>% 
+    filter(level == 'plot') %>% 
+    ggplot(aes(x = time_snc_full_disturbance,
+               y = sp_richness,
+               fill = plant_intens_f,
+               col = plant_intens_f))  +
+   # geom_jitter(alpha = 0.5) +
+  geom_smooth(method = "gam")
+  #geom_jitter() +
+    
+    
+both_levels_re2 %>% 
+  filter(level == 'plot') %>% 
+      ggplot(aes(x = disturbance_length,
+                 y = sp_richness,
+                 fill = plant_intens_f,
+                 col = plant_intens_f))  +
+      geom_jitter(alpha = 0.5) +
+      geom_smooth(method = "lm")
+  
+
+
+
+
+# check richness by planting?
+both_levels_re2 %>% 
+  ggplot(aes(x = planting_intensity,
+             y = sp_richness)) + 
+  geom_jitter() +
+  geom_smooth()
+
+both_levels_re2 %>% 
+  ggplot(aes(x = time_snc_full_disturbance,
+             y = sp_richness)) + 
+  geom_jitter() +
+  geom_smooth()
 
 
 both_levels_re2 %>% 
@@ -1503,11 +1582,19 @@ both_levels_re2 %>%
 
 hist(both_levels_re2$area_m2, breaks = 50)
 
+
+
+
+
+
+
+
 # how did disturbnace lenght affected post-dsiturbance recovery? ---------------
 # List of response variables to pivot
 response_vars <- c(#"dens_m2", 
                    "cv_hgt", "mean_hgt", 
-                   "sp_richness", #"shannon_sp", 
+                   "sp_richness", 
+                   "shannon_sp", 
                    "evenness_sp",
                    "effective_numbers", 
                    "dens_ha")
@@ -1517,6 +1604,61 @@ both_levels_long <- both_levels_re2 %>%
   pivot_longer(cols = all_of(response_vars),
                names_to = "variable",
                values_to = "value")
+
+
+# make lollipop plot: two levels
+plot_level_means <- both_levels_re2 %>%
+  group_by( level) %>%
+  summarize(
+    shannon_sp = mean(shannon_sp, na.rm = TRUE),
+    effect_n_sp = mean(effective_numbers, na.rm = TRUE),
+    richness = mean(sp_richness, na.rm = TRUE), # assuming w = effective species number
+    dens_m2 = mean(dens_m2, na.rm = TRUE),
+    cv_hgt = mean(cv_hgt, na.rm = TRUE),
+    mean_hgt = mean(mean_hgt, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+plot_level_long <- plot_level_means %>%
+  pivot_longer(cols = c(shannon_sp, 
+                        effect_n_sp,
+                        richness, 
+                        dens_m2, 
+                        cv_hgt, 
+                        mean_hgt),
+               names_to = "metric",
+               values_to = "value")
+
+
+ggplot(plot_level_long, aes(x = level, y = value)) +
+  geom_segment(aes(x = level, xend = level, y = 0, yend = value), linewidth = 1.2, color = "grey40") +
+  geom_point(size = 4, color = "steelblue") +
+  facet_wrap(~ metric, scales = "free_y") +
+  labs(title = "Lollipop Plot of Mean Values by Level",
+       x = "Level", y = "Mean Value") +
+  theme_minimal()
+
+# 1. Convert subplot values to negative
+level_means_diverged <- plot_level_long %>%
+  mutate(value = ifelse(level == "subplot", -value, value),
+         level = fct_relevel(level, "subplot", "plot"))
+
+# 2. Plot diverging lollipops
+ggplot(level_means_diverged, aes(x = value, y = fct_rev(metric), fill = level,
+                                 color = level)) +
+  geom_segment(aes(x = 0, xend = value, y = metric, yend = metric),
+               linewidth = 0.8, 
+               color = "grey",
+               lty = 'dashed'
+               ) +
+  geom_vline(xintercept = 0) +
+  geom_point(size = 4) +
+  scale_x_continuous(labels = abs) +  # show positive axis labels
+  labs(x = "Mean Value", y = "Metric",
+       title = "Diverging Lollipop Plot: Subplot vs Plot") +
+  theme_classic2() +
+  theme(legend.position = "top")
+
 
 # how does the disturbnac elength affects structure and composition?
 both_levels_long %>% 
