@@ -479,7 +479,7 @@ mng_subplot_scores <- dat_subplot_mng %>%
 # --- 3) Plot-level intensities (scaled 0–1)
 # continue here to get proper intensities!!! note that i have duplicated values in dat-overlap
 mng_plot_intensity <- mng_subplot_scores %>%
-  group_by(plot) %>%
+  group_by(plot, year) %>%
   summarise(
     n_subplots           = n_distinct(subplot),
     salvage_sum          = sum(salvage_sub),
@@ -521,7 +521,7 @@ mng_plot_intensity <- mng_subplot_scores %>%
 
 
 dat_subplot_mng2 <- dat_subplot_mng %>% 
-  left_join(mng_plot_intensity, by = c('plot'))
+  left_join(mng_plot_intensity, by = c('plot', 'year'))
 
 # keep only overlapping plots
 dat_overlap <- dat_subplot_mng2 %>% 
