@@ -41,10 +41,15 @@ theme_set(theme_classic2(base_size = 10) +
 
 
 # Read data -----------------------------
-dat_overlap  <- fread('outData/full_table_overlap_23_25.csv')
+#dat_overlap  <- fread('outData/full_table_overlap_23_25.csv')
+
+# test 2025/11/03 -> then needs to rename the layer to 'dat'!
+dat_overlap  <- fread('outData/full_table_23_25.csv')  # accound for all data points, not just the ovelapping ones
+# this can help me to benefit from all disturbnace history sites
 
 
-# get master table, having all unique plots and subplots
+# Analyze data: first check up ----------------------
+# get master table, having all unique plots and subplots - ven teh empty ones
 dat_master_subplot <- dat_overlap %>% 
   dplyr::select(plot, subplot, year) %>% 
   distinct()
@@ -52,13 +57,14 @@ dat_master_subplot <- dat_overlap %>%
 table(dat_overlap$year)  
 
 n_plots_total <- length(unique(dat_master_subplot$plot))     # 126
-n_plots_total
+n_plots_total # 208
 
 n_subplots_total <-length(unique(dat_master_subplot$subplot))  # 1250
-n_subplots_total
+n_subplots_total # 1665
 
 
 # identify how is CV calculated if I have same species across two vertical layers?
+# yep
 
 # Identify subplots where the same species appears in multiple vegtypes
 df_distinct_vegtypes <- dat_overlap %>%
@@ -105,7 +111,7 @@ print(single_species_sub_details)
 length(unique(single_species_sub_details$subplot))  # 540!!
 
 
-# single species per plot ---------------------
+## single species per plot ---------------------
 single_species_plots <- dat_overlap %>%
   filter(!is.na(n), n > 0) %>%
   group_by(plot) %>%
@@ -137,10 +143,11 @@ dat_overlap %>%
   facet_grid(year~vegtype, scales = 'free')
 
 
-# Clean up dat on subplot & plot level ---------------------------------
-## Get disturbance characteristics (plot) --------------
+## Clean up dat on subplot & plot level ---------------------------------
+### Get disturbance characteristics (plot) --------------
 plot_disturb_chars <- dat_overlap %>% 
-  dplyr::select(plot, year, 
+  dplyr::select(plot, year,
+                status,
                 disturbance_year, 
                 forest_year, 
                 disturbance_length, 
@@ -196,7 +203,7 @@ prop.table(table(plot_disturb_chars$disturbance_length))
 # Clean up management - if site has been mamaged in 2023, it needs to be managemt (cleared)
 # in 2025 as well!!
 df_master_mng <- dat_overlap %>% 
-  dplyr::filter(year == "2023") %>% # keep management oionly frm 2023 for consistency
+  #dplyr::filter(year == "2023") %>% # keep management oionly frm 2023 for consistency
   distinct(plot, subplot,year,
            clear,
            grndwrk,
@@ -204,13 +211,20 @@ df_master_mng <- dat_overlap %>%
            planting,
            anti_browsing,
            
-           # intensities
-           clear_intensity,           grndwrk_intensity,         logging_trail_intensity,  
-           planting_intensity ,       anti_browsing_intensity,   salvage_intensity,         protection_intensity,      management_intensity
+           # intensities = % of subplots with that activity
+           clear_intensity,           
+           grndwrk_intensity,         
+           logging_trail_intensity,  
+           planting_intensity ,       
+           anti_browsing_intensity,   
+           salvage_intensity,         
+           protection_intensity,      
+           management_intensity
            
            )
 
 management_proportions <- df_master_mng %>%
+  # group by year???
   pivot_longer(cols = c(clear, grndwrk, logging_trail, planting, anti_browsing),
                names_to = "activity",
                values_to = "applied") %>%
@@ -228,7 +242,8 @@ applied_order <- management_proportions %>%
   arrange(desc(proportion)) %>%
   pull(activity)
 
-management_activity <- levels(mng_sub_conv$activity)[1]
+management_activity <- unique(management_proportions$activity)
+
 # Prepare data for diverging bar plot
 mng_sub_conv <-  management_proportions %>%
   mutate(proportion = ifelse(applied == 0, -proportion, proportion),
@@ -248,7 +263,7 @@ activity_labels <- c(
 # mng_sub_conv <- mng_sub_conv %>%
 #   mutate(activity = recode(activity, !!!activity_labels))
 
-# Create diverging bar plot
+# Create diverging bar plot - need to check for divide where site is salvage logging = 1 in 2023 but 0 in 2025
 ggplot(mng_sub_conv, aes(x = proportion, y = activity, fill = applied)) +
   geom_col(width = 0.2, col = 'black') +
   scale_x_continuous(#labels = scales::percent_format(accuracy = 1),
@@ -264,6 +279,7 @@ ggplot(mng_sub_conv, aes(x = proportion, y = activity, fill = applied)) +
        title = "",
        fill = "") +
   theme_classic2() +
+  facet_grid(.~year) +
   annotate("text", x = -80, y = 5.5, label = "Absence", hjust = 0, size = 2.5, fontface = "bold") +
   annotate("text", x =  80, y = 5.5, label = "Presence",     hjust = 1, size = 2.5, fontface = "bold") +
   theme(panel.grid.major.y = element_blank(),
@@ -274,21 +290,18 @@ ggplot(mng_sub_conv, aes(x = proportion, y = activity, fill = applied)) +
 
 # get management intensities on plot level: qantify for low vs high level intensity
 
-# TEST START
+# TEST START - neneeds more work!!!
 
 # plot level, so have only intensities
 df_master_mng_intensity <- dat_overlap %>% 
   dplyr::filter(year == "2023") %>% # keep management oionly frm 2023 for consistency
   distinct(plot, year,
-           # clear,
-           # grndwrk,
-           # logging_trail,
-           # planting,
-           # anti_browsing,
-           # 
-           # intensities
-           clear_intensity,           grndwrk_intensity,         logging_trail_intensity,  
-           planting_intensity ,       anti_browsing_intensity,   salvage_intensity,         protection_intensity,      management_intensity
+             # intensities
+           clear_intensity,           
+           grndwrk_intensity,         
+           logging_trail_intensity,  
+           planting_intensity ,      
+           anti_browsing_intensity,   salvage_intensity,         protection_intensity,      management_intensity
            
   )
 nrow(df_master_mng_intensity)
@@ -316,16 +329,13 @@ mng_intensity_props
 
 mng_intensity_props <- mng_intensity_props %>%
   mutate(
-    prop_class = cut(
-      proportion,
-      breaks = c(-Inf, 0, 20, 40, 60, 80, 100, Inf),
-      labels = c("0", "1–20", "21–40", "41–60", "61–80", "81–100", "100+"),
+    intensity_class = cut(
+      applied,
+      breaks = c(-Inf, 0.2, 0.4, 0.6, 0.8, Inf),
+      labels = c("0–20", "21–40", "41–60", "61–80", "81–100"),
       right = TRUE
     )
   )
-
-mng_intensity_props <- mng_intensity_props %>%
-  mutate(proportion_shifted = proportion - 40)
 
 
 
@@ -341,50 +351,88 @@ applied_mng_intens_order <- c(
   #"management_intensity"
 )
 
-management_intens_activity <- levels(mng_intensity_props$activity)
-# Prepare data for diverging bar plot
-mng_sub_conv <-  mng_intensity_props %>%
-  # mutate(proportion = ifelse(applied == 0, -proportion, proportion),
-  #        applied = ifelse(applied == 1, "Presence", "Absence")) %>% 
-  # arrange(desc(proportion)) %>% 
-  mutate(activity = factor(activity, levels = applied_mng_intens_order)) #%>%
+# igroup into classes
+mng_sub_conv <- mng_intensity_props %>%
+  mutate(
+    intensity_class = factor(intensity_class, levels = intensity_levels),
+    activity = factor(activity, levels = applied_mng_intens_order)
+  ) %>% 
+  group_by(activity, intensity_class) %>% 
+  summarise(proportion = sum(proportion, na.rm = T))
 
-#library(forcats)
+# Generate color palette (YlOrRd: yellow to red)
+n_colors <- length(intensity_levels)
+fill_colors <- brewer.pal(n_colors, "YlOrRd")
 
-activity_labels <- c(
-  "clear" = "Salvage logging",
-  "grndwrk" = "Soil preparation",
-  "planting" = "Planting",
-  "anti_browsing" = "Browsing protection",
-  "logging_trail" = "Logging trail"
-)
-# mng_sub_conv <- mng_sub_conv %>%
-#   mutate(activity = recode(activity, !!!activity_labels))
-
-# Create color palette from green (low) to red (high), colorblind friendly
-n_colors <- length(unique(mng_intensity_props$applied))
-fill_colors <- colorRampPalette(brewer.pal(9, "RdYlGn"))(n_colors)
-
-ggplot(mng_intensity_props, aes(x = proportion, y = activity, fill = applied     )) +
-  geom_col(width = 0.6, color = 'black') #+
-  scale_x_continuous(
-    breaks = seq(-40, 60, 20),
-    labels = function(x) paste0(abs(x + 40), "%"),
-    limits = c(-40, 60)
-  ) #+
-  scale_fill_brewer(palette = "RdYlGn", direction = -1, name = "Proportion class") +
-  geom_vline(xintercept = 0, color = "darkgrey", linetype = "dashed") +
+# Plot
+ggplot(mng_sub_conv, aes(x = proportion, y = activity, fill = intensity_class)) +
+  geom_col(width = 0.6, color = 'black') +
+  scale_fill_manual(values = fill_colors, name = "Intensity class") +
   labs(
-    x = "Share of subplots [%]",
-    y = "",
-    title = "Management intensity distribution"
+    x = "Podíl ploch [%]",
+    y = NULL
   ) +
-  theme_classic() +
+  theme_minimal() +
   theme(
-    axis.text.y = element_text(size = 10, face = "italic"),
     legend.position = "right",
-    text = element_text(size = 10)
+    axis.text.y = element_text(size = 10),
+    panel.grid.major.y = element_blank()
   )
+
+
+###  Define which classes are on the "left"----------------------
+# Define the factor levels in correct order
+intensity_levels <- c("0–20", "21–40", "41–60", "61–80", "81–100")
+low_classes <- c("0–20", "21–40")
+
+fill_colors <- brewer.pal(length(intensity_levels), "YlOrRd")
+library(forcats)
+mng_shifted <- mng_sub_conv %>%
+  mutate(
+    intensity_class = factor(intensity_class, levels = intensity_levels),
+    proportion_shifted = if_else(intensity_class %in% low_classes, -proportion, proportion),
+    # reverse class order for right-hand side only
+    intensity_class_plot = fct_relevel(
+      intensity_class,
+      c("81–100","61–80", "41–60","0–20","21–40" )
+    ),
+    activity = factor(activity, levels = rev(c(
+      "clear_intensity",
+      "grndwrk_intensity",      
+      "planting_intensity",     
+      "anti_browsing_intensity",
+      "logging_trail_intensity"
+    )))
+  )
+
+activity_intens_labels <- c(
+  "clear_intensity" = "Salvage logging",
+  "grndwrk_intensity" = "Soil preparation",
+  "planting_intensity" = "Planting",
+  "anti_browsing_intensity" = "Browsing protection",
+  "logging_trail_intensity" = "Logging trail"
+)
+
+ggplot(mng_shifted, aes(x = proportion_shifted, y = activity,
+                        fill = intensity_class_plot)) +
+  geom_col(width = 0.6, color = "black") +
+  scale_fill_manual(values = fill_colors, name = "Intensity class",
+                    breaks = intensity_levels) +
+  geom_vline(xintercept = 0, color = "grey", linewidth = 0.5) +
+  scale_y_discrete(labels = activity_intens_labels) +   # 👈 this does the relabeling
+  scale_x_continuous(labels = abs, name = "Podíl ploch [%]") +
+  annotate("text", x = -80, y = 5.5, label = "Low intensity", hjust = 0, size = 2.5, fontface = "bold") +
+  annotate("text", x =  80, y = 5.5, label = "High intensity",     hjust = 1, size = 2.5, fontface = "bold") +
+  
+  
+  theme_classic2() +
+  theme(
+    legend.position = "right",
+    axis.text.y = element_text(size = 10),
+    panel.grid.major.y = element_blank()
+  )
+# !!!!
+
 
 # TEST END
 
