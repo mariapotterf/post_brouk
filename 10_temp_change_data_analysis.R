@@ -50,8 +50,8 @@ theme_set(theme_classic2(base_size = 10) +
 dat_overlap  <- fread('outData/full_table_23_25.csv')  # accound for all data points, not just the ovelapping ones
 # this can help me to benefit from all disturbnace history sites
 
-
-# Analyze data: first check up ----------------------
+# Summary --------------------------------------
+## Analyze data: first check up ----------------------
 # get master table, having all unique plots and subplots - ven teh empty ones
 dat_master_subplot <- dat_overlap %>% 
   dplyr::select(plot, subplot, year) %>% 
@@ -66,51 +66,71 @@ n_subplots_total <-length(unique(dat_master_subplot$subplot))  # 1250
 n_subplots_total # 1665
 
 
-# Calculate species richness per subplot
-richness_per_subplot <- dat_overlap %>%
-  filter(n>0) %>% 
-  group_by(plot, subplot, year) %>%
+# filter only data with stem values 
+dat_overlap_populated <- dat_overlap %>% 
+  dplyr::filter(n>0)
+  
+# make a dataset where if n is NA, replace by 0
+dat_overlap_n0 <- dat_overlap %>% 
+  mutate(n = ifelse(is.na(n), 0, n))  
+
+
+### Subplot: Species richness per planting -----------------------
+richness_per_subplot <- dat_overlap_n0 %>%
+  group_by(plot, subplot, year, planting) %>% #
   summarize(
-    species_richness = n_distinct(species),
-    planting = first(planting)  # assuming consistent per subplot/year
+    species_richness = n_distinct(species[n > 0 & !is.na(n)])#,
+    #planting = first(planting)   # first(planting) assuming consistent per subplot/year
   ) %>%
   ungroup()
 
 # Convert planting to factor for clarity
 richness_per_subplot <- richness_per_subplot %>%
-  mutate(planting = factor(planting, levels = c(0,1), labels = c("no planting", "planted")))
+  mutate(planting = factor(planting, levels = c(0,1), 
+                           labels = c("no planting", "planted")))
 
 # Quick plot
-ggplot(richness_per_subplot, aes(x = planting, y = species_richness)) +
+ggplot(richness_per_subplot, 
+       aes(x = planting, y = species_richness)) +
   geom_boxplot() +
   labs(title = "Species Richness by Planting",
        x = "Planting",
        y = "Species Richness") +
-  theme_minimal()
+  theme_classic2()
 
-# identify how is CV calculated if I have same species across two vertical layers?
-# yep
 
-# Identify subplots where the same species appears in multiple vegtypes
-df_distinct_vegtypes <- dat_overlap %>%
-  filter(n>0) %>% 
-  group_by(subplot, species) %>%
-  summarize(n_vegtypes = n_distinct(vegtype), .groups = "drop") %>%
-  filter(n_vegtypes > 1)
+### Plot: Species richness per planting intensity ---------------------------------------
 
-# Extract just the subplot IDs
-unique_subplots_distinct <- unique(df_distinct_vegtypes$subplot) # 110 from 1250~ 9%
+### Calculate species richness per subplot -----------------------
+richness_per_plot <- dat_overlap_n0 %>%
+  group_by(plot, year, planting_intensity) %>% #
+  summarize(
+    species_richness = n_distinct(species[n > 0 & !is.na(n)])#,
+   # planting = first(planting)   # first(planting) assuming consistent per subplot/year
+  ) %>%
+  ungroup()
 
-# Optional: View full records of the overlaps
-overlap_records <- dat_overlap %>%
-  filter(n>0) %>%
-  filter(subplot %in% unique_subplots_distinct) %>%
-  arrange(subplot, species, vegtype) %>% 
-  select(subplot, species, vegtype,     hgt,     n)
 
-# Print the results
-print(overlap_records)
-View(overlap_records)
+# Quick plot
+ggplot(richness_per_plot, 
+       aes(x = planting_intensity, 
+           y = species_richness,
+           group = planting_intensity)) +
+  geom_boxplot() +
+  labs(title = "Plot: Species Richness by Planting",
+       x = "Planting",
+       y = "Species Richness") +
+  theme_classic2()
+
+
+ggplot(richness_per_plot, 
+       aes(x = planting_intensity, 
+           y = species_richness)) +
+  geom_jitter(size = 0.5) +
+  geom_smooth()
+
+
+#### Get single tree species per subplot/plot ----------------------------------------
 
 # check 613_T2_AH_20250827 - seems to have very many trees!! ()
 
@@ -120,7 +140,7 @@ View(overlap_records)
 # Identify subplots with only one species present (with at least 1 individual)
 single_species_subplots <- dat_overlap %>%
   filter(!is.na(n), n > 0) %>%
-  group_by(subplot) %>%
+  group_by(subplot, year) %>%
   summarize(n_species = n_distinct(species), .groups = "drop") %>%
   filter(n_species == 1)
 
@@ -128,79 +148,64 @@ single_species_subplots <- dat_overlap %>%
 single_species_sub_details <- dat_overlap %>%
   filter(subplot %in% single_species_subplots$subplot,
          !is.na(n), n > 0) %>%
-  select(plot, subplot, species, vegtype, n) %>%
+  select(plot, subplot, species, n) %>%
   arrange(subplot)
 
 # Print or View
-print(single_species_sub_details)
-length(unique(single_species_sub_details$subplot))  # 540!!
+#print(single_species_sub_details)
+length(unique(single_species_sub_details$subplot))  # 709!!
 
 
 ## single species per plot ---------------------
 single_species_plots <- dat_overlap %>%
   filter(!is.na(n), n > 0) %>%
-  group_by(plot) %>%
+  group_by(plot, year, planting_intensity) %>%
   summarize(n_species = n_distinct(species), .groups = "drop") %>%
   filter(n_species == 1)
 
-# View detailed records from those subplots
-single_species_plot_details <- dat_overlap %>%
-  filter(subplot %in% single_species_plots$plot,
-         !is.na(n), n > 0) %>%
-  select(plot, species, vegtype, n) %>%
-  arrange(plot)
 
 # Print or View
-print(single_species_plot_details)
-length(unique(single_species_sub_details$subplot))  # 540!!
+#print(single_species_plot_details)
+length(unique(single_species_plots$plot))  # 30
+hist(single_species_plots$planting_intensity)
 
 
-
-
-
-
-
-# histogram of stem denisty per vertcal class:
-dat_overlap %>% 
-  dplyr::filter(n > 0) %>% 
-  ggplot(aes(n , fill = year)) +
-  geom_histogram() + 
-  facet_grid(year~vegtype, scales = 'free')
-
-
-## Clean up dat on subplot & plot level ---------------------------------
-### Get disturbance characteristics (plot) --------------
-plot_disturb_chars <- dat_overlap %>% 
+### Get context and disturbance characteristics (plot) --------------
+plot_context_chars <- dat_overlap %>% 
   dplyr::select(plot, year,
                 status,
                 disturbance_year, 
                 forest_year, 
                 disturbance_length, 
                 time_snc_full_disturbance, 
-                time_snc_part_disturbance #,
+                time_snc_part_disturbance,
+                planting_intensity,
+                clear_intensity,          
+                grndwrk_intensity,         
+                logging_trail_intensity,
+                planting_intensity,
+                anti_browsing_intensity,
+                salvage_intensity,
+                protection_intensity,
+                management_intensity  
                 #clear, grndwrk, logging_trail, planting, anti_browsing
   )  %>%  
   distinct()
 
-plot_disturb_chars %>% 
-  ggplot(aes(time_snc_full_disturbance)) + 
-  geom_histogram() + 
-  facet_grid(.~year)
 
-
-p_hist_dist_length <- plot_disturb_chars %>% 
+p_hist_dist_length <- plot_context_chars %>% 
  # filter(year == 2023) %>%  # to keep half of values
   ggplot(aes(disturbance_length)) + 
   geom_histogram(fill = 'grey90', color = 'black') 
 
-p_hist_dist_year <- plot_disturb_chars %>%
+p_hist_dist_year <- plot_context_chars %>%
   #filter(year == 2023) %>%  # to keep half of values
   filter(disturbance_year > 2012) %>% 
   ggplot(aes(disturbance_year)) + 
   geom_histogram(fill = 'grey90', color = 'black') 
 
 
-p_hist_time_since_dist <- plot_disturb_chars %>%
+p_hist_time_since_dist <- plot_context_chars %>%
  # filter(year == 2023) %>%  # to keep half of values
   filter(disturbance_year > 2012) %>% 
   ggplot(aes(time_snc_full_disturbance)) + 
@@ -209,19 +214,6 @@ p_hist_time_since_dist <- plot_disturb_chars %>%
 ggarrange(p_hist_dist_year, p_hist_dist_length, p_hist_time_since_dist,
           ncol = 3)
 
-
-table(plot_disturb_chars$disturbance_year)
-# 
-# 2012 2018 2019 2020 2021 2022 2023 
-# 2    8   24  117   46   47    6 
-prop.table(table(plot_disturb_chars$disturbance_year))
-
-
-table(plot_disturb_chars$disturbance_length)
-# 
-# 2012 2018 2019 2020 2021 2022 2023 
-# 2    8   24  117   46   47    6 
-prop.table(table(plot_disturb_chars$disturbance_length))
 
 
 
