@@ -75,7 +75,322 @@ dat_overlap_n0 <- dat_overlap %>%
   mutate(n = ifelse(is.na(n), 0, n))  
 
 
-### richness: Subplot: Species richness per planting -----------------------
+# Species composition --------------------------------------------------
+
+
+## Get summary across all trees and study sites --------------------------
+# find species with the highest share of stems overall
+# 0) Safe counts (treat NA counts as 0)
+df <- dat_overlap %>%
+  mutate(n = coalesce(n, 0L)) %>%
+  filter(!is.na(species) & species != "")
+
+# 1) Totals
+overall_totals <- df %>%
+  summarise(total_trees = sum(n),
+            n_plots = n_distinct(plot),
+            n_subplots = n_distinct(subplot))
+
+by_year_totals <- df %>%
+  group_by(year) %>%
+  summarise(total_trees = sum(n),
+            #n_plots = n_distinct(plot),
+            # n_subplots = n_distinct(subplot),
+            .groups = "drop")
+
+n_trees23 <- by_year_totals %>% 
+  filter(year == 2023) %>% 
+  pull()
+
+n_trees25 <- by_year_totals %>% 
+  filter(year == 2025) %>% 
+  pull()
+
+# 2) Species × year counts and presence
+species_stem_share_year <- 
+  df %>%
+  group_by(year, species) %>%
+  summarise(
+    stems = sum(n),                                   # number of trees
+    #plots_present = n_distinct(plot[n > 0]),          # plots where species occurs
+    .groups = "drop"
+  ) %>% 
+  tidyr::pivot_wider(
+    names_from  = year,
+    values_from = c(stems),
+    names_glue  = "{.value}_{year}",
+    values_fill = list(stems = 0L)
+  ) %>%
+  dplyr::arrange(species) %>% 
+  mutate(trees23 = n_trees23,
+         trees25 = n_trees25,
+         share23 = round(stems_2023/trees23*100,2),
+         share25 = round(stems_2025/trees25*100,2),
+         total_stems = stems_2023 + stems_2025,
+         total_trees = n_trees23 + n_trees25,
+         total_share = round(total_stems/total_trees * 100,2)) 
+
+# merge counst across 2 years:     
+top_overall_stem_share <- 
+  species_stem_share_year %>%
+  dplyr::select(species, total_stems, total_share) %>%
+  dplyr::slice_max(order_by = total_share, n = 10, with_ties = FALSE) %>%
+  dplyr::ungroup() 
+
+# get top 10 per each year (the order changes a bit)
+top_stems_by_year <- species_stem_share_year %>%
+  dplyr::select(species, share23, share25) %>%
+  tidyr::pivot_longer(
+    dplyr::starts_with("share"),
+    names_to = "year",
+    names_prefix = "share",
+    values_to = "share"
+  ) %>%
+  dplyr::mutate(year = factor(paste0("20", year), levels = c("2023", "2025"))) %>%
+  dplyr::group_by(year) %>%
+  dplyr::slice_max(order_by = share, n = 10, with_ties = FALSE) %>%
+  dplyr::ungroup()
+
+top_2023 <- top_stems_by_year %>% dplyr::filter(year == "2023") %>% dplyr::pull(species)
+top_2025 <- top_stems_by_year %>% dplyr::filter(year == "2025") %>% dplyr::pull(species)
+
+length(union(top_2023, top_2025))      # 11 (your result)
+length(intersect(top_2023, top_2025))  # 9  (overlap size)
+
+setdiff(top_2025, top_2023)  # species only in 2025's top10
+setdiff(top_2023, top_2025)  # species only in 2023's top10
+
+unique(top_stems_by_year$species)
+
+v_top_species_overall <- top_overall_stem_share %>% pull(species)
+
+
+# Reverse the color palette and map to the species in the desired order
+n_colors  <- length(v_top_species_overall)  # Number of species
+my_colors <- colorRampPalette(brewer.pal(11, "RdYlGn"))(n_colors)  # Generate colors
+# make / use a palette of exactly the needed length
+pal <- colorRampPalette(brewer.pal(11, "RdYlGn"))(length(v_top_species_overall))
+pal <- rev(pal)  # start with dark green
+
+# map colors to species automatically
+species_colors <- setNames(pal, v_top_species_overall)
+species_colors
+#
+
+# species_colors
+# piab      besp      pisy      qusp      fasy      lade      saca      soau      acps      potr      absp      sasp 
+# "#006837" "#17934D" "#58B65F" "#94D168" "#C6E77F" "#EDF7A7" "#FEF0A7" "#FDCD7B" "#FA9C58" "#EE613D" "#D22B26" "#A50026" 
+
+
+# Print the color assignments for confirmation
+print(species_colors)
+
+
+# update species labels
+species_labels <- c(
+  piab = "Picea abies",
+  besp = "Betula sp.",
+  pisy = "Pinus sylvestris",
+  qusp = "Quercus sp.",
+  fasy = "Fagus sylvatica",
+  lade = "Larix decidua",
+  saca = "Salix caprea",
+  soau = "Sorbus aucuparia",
+  acps = "Acer pseudoplatanus",
+  potr = "Populus tremula",
+  absp = "Abies sp.",
+  sasp = "Salix sp."
+)
+
+
+
+### get average stem density per species per top 10 species --------------------------------
+df_stem_dens_species <- df %>% 
+  group_by(plot, species, year, n_subplots ) %>%
+  summarize(sum_n = sum(n, na.rm =T)) %>% 
+  mutate(scaling_factor = 10000/(n_subplots * 4),
+         stem_dens = sum_n*scaling_factor) %>% 
+  mutate(log_sum_stem_density = log10(stem_dens + 1)) #%>%  # Adding 1 to avoid log(0)
+#ungroup()
+
+# get total sum and calculate as average value over all sites 
+df_stem_dens_species_sum <- 
+  df_stem_dens_species %>% 
+  group_by(species, year) %>% 
+  summarise(stem_dens = sum(stem_dens, na.rm = T),
+            log_sum_stem_density = sum(log_sum_stem_density, na.rm = T)) %>%
+  mutate(stem_dens_avg = stem_dens/n_plots_total,
+         log_sum_stem_density_avg = log_sum_stem_density/n_plots_total)
+
+
+df_stem_dens_species_year <- df_stem_dens_species %>% 
+  ungroup(.) %>% 
+  filter(sum_n >0) %>% 
+  filter(species %in% v_top_species_overall) %>% 
+  dplyr::group_by(species, year) %>%
+  dplyr::mutate(median_stem_density = median(stem_dens, na.rm = TRUE)) %>% 
+  dplyr::ungroup(.) %>%
+  mutate(species = factor(species, levels = rev(v_top_species_overall))) # Set custom order
+
+
+
+### Stem density per species -------------
+df_stem_dens_species_year2 <- df_stem_dens_species_year %>%
+  dplyr::filter(!is.na(log_sum_stem_density) & sum_n > 0) %>%
+  dplyr::mutate(year = factor(year, levels = c("2023","2025")),
+                # order by mean log density (ascending → highest ends up at the TOP after coord_flip)
+                species = forcats::fct_reorder(species, log_sum_stem_density, .fun = mean, na.rm = TRUE))
+
+# 
+p_density<-df_stem_dens_species_year2 %>% 
+  filter(!is.na(species)) %>% 
+  ggplot(aes(x = log_sum_stem_density, y = species,
+             fill = year)) +
+  geom_boxplot(
+    #aes(group = interaction(species, year), 
+    #   alpha = factor(year)),
+    position = position_dodge(width = 0.6),
+    outlier.shape = NA,
+    width = 0.45#,
+    # color = "black"
+  ) +
+  
+  # coord_flip() +
+  labs(
+    x = "log(sum stem density)",
+    y = "",  
+    fill = "Year"
+  ) +
+  # scale_fill_manual(values= species_colors) +
+  # scale_alpha_manual(
+  #   values = c("2023" = 0.5, "2025" = 1)#,  # 2023 = lighter
+  #   #guide = "none"  # hides alpha legend
+  # ) +
+  theme_classic(base_size = 10) +
+  scale_y_discrete(labels = species_labels) +
+  theme(axis.text.y = element_text(face = "italic", size = 8))
+
+
+p_density
+
+
+# barplot of change over years
+
+# Order species by their maximum share across years (nice stable ordering)
+order_levels <- top_stems_by_year %>%
+  group_by(species) %>%
+  summarise(max_share = max(share, na.rm = TRUE), .groups = "drop") %>%
+  arrange(desc(max_share)) %>%
+  pull(species)
+
+top_stems_by_year <- top_stems_by_year %>%
+  mutate(
+    species = factor(species, levels = order_levels),
+    year    = factor(year, levels = c("2023","2025"))
+  )
+
+# master mapping: code -> Latin name
+species_labels_all <- c(
+  piab = "Picea abies",
+  besp = "Betula sp.",
+  pisy = "Pinus sylvestris",
+  qusp = "Quercus sp.",
+  fasy = "Fagus sylvatica",
+  saca = "Salix caprea",
+  lade = "Larix decidua",
+  soau = "Sorbus aucuparia",
+  acps = "Acer pseudoplatanus",
+  potr = "Populus tremula",
+  absp = "Abies sp.",
+  sasp = "Salix sp.",
+  cabe = "Carpinus betulus"
+)
+
+p_bar <- ggplot(top_stems_by_year, aes(x = share, y = species, fill = year)) +
+  geom_col(aes(#group = interaction(species, year)#,
+    #alpha = factor(year)
+  ), 
+  position = position_dodge(width = 0.7), width = 0.6) +
+  # if 'share' is 0–100 already, just add a % suffix:
+  scale_x_continuous(labels = label_number(accuracy = 0.1, suffix = "")) +
+  scale_y_discrete(
+    limits = rev(names(species_labels)),
+    labels = species_labels,
+    drop = FALSE
+  ) +
+  # scale_alpha_manual(
+  #   values = c("2023" = 0.5, "2025" = 1.0)#,  # 2023 = lighter
+  #   #guide = "none"  # hides alpha legend
+  # ) +
+  # if you prefer proportions (0–1), use:
+  # scale_x_continuous(labels = label_percent()) 
+  labs(
+    x = "Share of stems",
+    y = "Species",
+    fill = "Year"#,
+    #title = "Top 12 species by share, by year"
+  ) +
+  # scale_fill_manual(values = species_colors) +
+  theme_classic2(base_size = 10) +
+  theme(axis.text.y = element_text(size = 8, face = "italic"))
+
+p_bar
+
+# Get species occurence from total number of plots 
+# Total number of unique plots
+total_plots <- df_stem_dens_species %>%
+  pull(plot) %>%
+  n_distinct()
+
+# Share of plots per species (where species has non-zero stems)
+species_occurence <- 
+  df_stem_dens_species %>%
+  ungroup(.) %>% 
+  dplyr::filter(sum_n > 0) %>%                 # Only where species occurred
+  distinct(year, species, plot) %>%           # Unique species × plot combos
+  count(year, species, name = "n_plots") %>%  # Count number of plots per species
+  mutate(share_of_plots = n_plots / total_plots*100) %>% 
+  arrange()
+
+species_occurence
+
+# Optional: order species by max share across years
+species_order <- species_occurence %>%
+  group_by(species) %>%
+  summarise(max_share = max(share_of_plots)) %>%
+  arrange(desc(max_share)) %>%
+  pull(species)
+
+species_plot_share <- species_occurence %>%
+  mutate(species = factor(species, levels = rev(species_order)))
+
+# Plot
+p_occurence <- species_plot_share %>% 
+  filter(species %in% v_top_species_overall ) %>% 
+  ggplot(aes(x = share_of_plots, y = species, fill = year)) +
+  geom_col(position = position_dodge(width = 0.7), width = 0.6) +
+  scale_x_continuous(labels = scales::label_number(accuracy = 1), expand = expansion(mult = c(0, 0.05))) +
+  labs(
+    x = "Species occurence over plots (%)",
+    y = "Species",
+    fill = "Year"
+  ) +
+  theme_classic(base_size = 10) +
+  theme(
+    axis.text.y = element_text(face = "italic", size = 9),
+    legend.position = "right"
+  )
+
+p_occurence
+
+
+
+ggarrange(p_bar, p_occurence, p_density,  
+          ncol = 3, common.legend = T)
+
+
+
+### Richness: Subplot: Species richness per planting -----------------------
 richness_per_subplot <- dat_overlap_n0 %>%
   group_by(plot, subplot, year, planting) %>% #
   summarize(
@@ -99,7 +414,7 @@ ggplot(richness_per_subplot,
   theme_classic2()
 
 
-### Plot: Species richness per planting intensity ---------------------------------------
+### Richnesss: Plot - per planting intensity ---------------------------------------
 
 ### Calculate species richness per subplot -----------------------
 richness_per_plot <- dat_overlap_n0 %>%
@@ -187,6 +502,31 @@ tree_summary <- dat_overlap %>%
   left_join(total_trees_per_year) %>% 
   mutate(share = n_trees_recovery /total_trees * 100)
 
+
+
+### Tree heights by species -------------------------------------------------------
+# get heights by species
+dat_overlap %>% 
+  dplyr::filter(hgt_est>0) %>% 
+  mutate(species = fct_reorder(species, hgt_est, .fun = median, .desc = TRUE)) %>%
+  ggplot(aes(x = species,
+             y = hgt_est,
+             fill = factor(year))) + 
+  geom_boxplot(outlier.shape = NA) +
+  coord_cartesian(ylim = c(0,7.5)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# compare change in feights pioneer vs late
+dat_overlap %>% 
+  dplyr::filter(seral_stage != "other") %>%
+  dplyr::filter(hgt_est>0) %>% 
+  #mutate(species = fct_reorder(species, hgt_est, .fun = median, .desc = TRUE)) %>%
+  ggplot(aes(x = seral_stage,
+             y = hgt_est,
+             fill = factor(year))) + 
+  geom_boxplot(outlier.shape = NA) +
+  coord_cartesian(ylim = c(0,6)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 
 
@@ -864,362 +1204,6 @@ subplot_summary_tbl
 
 
 
-# Species composition --------------------------------------------------
-
-
-## Get summary across all trees and study sites --------------------------
-# find species with the highest share of stems overall
-# 0) Safe counts (treat NA counts as 0)
-df <- dat_overlap %>%
-  mutate(n = coalesce(n, 0L)) %>%
-  filter(!is.na(species) & species != "")
-
-# 1) Totals
-overall_totals <- df %>%
-  summarise(total_trees = sum(n),
-            n_plots = n_distinct(plot),
-            n_subplots = n_distinct(subplot))
-
-by_year_totals <- df %>%
-  group_by(year) %>%
-  summarise(total_trees = sum(n),
-            #n_plots = n_distinct(plot),
-            # n_subplots = n_distinct(subplot),
-            .groups = "drop")
-
-n_trees23 <- by_year_totals %>% 
-  filter(year == 2023) %>% 
-  pull()
-
-n_trees25 <- by_year_totals %>% 
-  filter(year == 2025) %>% 
-  pull()
-
-# 2) Species × year counts and presence
-species_stem_share_year <- 
-  df %>%
-  group_by(year, species) %>%
-  summarise(
-    stems = sum(n),                                   # number of trees
-    #plots_present = n_distinct(plot[n > 0]),          # plots where species occurs
-    .groups = "drop"
-  ) %>% 
-  tidyr::pivot_wider(
-    names_from  = year,
-    values_from = c(stems),
-    names_glue  = "{.value}_{year}",
-    values_fill = list(stems = 0L)
-  ) %>%
-  dplyr::arrange(species) %>% 
-  mutate(trees23 = n_trees23,
-         trees25 = n_trees25,
-         share23 = round(stems_2023/trees23*100,2),
-         share25 = round(stems_2025/trees25*100,2),
-         total_stems = stems_2023 + stems_2025,
-         total_trees = n_trees23 + n_trees25,
-         total_share = round(total_stems/total_trees * 100,2)) 
-
-# merge counst across 2 years:     
-top_overall_stem_share <- 
-  species_stem_share_year %>%
-  dplyr::select(species, total_stems, total_share) %>%
-  dplyr::slice_max(order_by = total_share, n = 10, with_ties = FALSE) %>%
-  dplyr::ungroup() 
-
-# get top 10 per each year (the order changes a bit)
-top_stems_by_year <- species_stem_share_year %>%
-  dplyr::select(species, share23, share25) %>%
-  tidyr::pivot_longer(
-    dplyr::starts_with("share"),
-    names_to = "year",
-    names_prefix = "share",
-    values_to = "share"
-  ) %>%
-  dplyr::mutate(year = factor(paste0("20", year), levels = c("2023", "2025"))) %>%
-  dplyr::group_by(year) %>%
-  dplyr::slice_max(order_by = share, n = 10, with_ties = FALSE) %>%
-  dplyr::ungroup()
-
-top_2023 <- top_stems_by_year %>% dplyr::filter(year == "2023") %>% dplyr::pull(species)
-top_2025 <- top_stems_by_year %>% dplyr::filter(year == "2025") %>% dplyr::pull(species)
-
-length(union(top_2023, top_2025))      # 11 (your result)
-length(intersect(top_2023, top_2025))  # 9  (overlap size)
-
-setdiff(top_2025, top_2023)  # species only in 2025's top10
-setdiff(top_2023, top_2025)  # species only in 2023's top10
-
-unique(top_stems_by_year$species)
-
-v_top_species_overall <- top_overall_stem_share %>% pull(species)
-
-
-# Reverse the color palette and map to the species in the desired order
-n_colors  <- length(v_top_species_overall)  # Number of species
-my_colors <- colorRampPalette(brewer.pal(11, "RdYlGn"))(n_colors)  # Generate colors
-# make / use a palette of exactly the needed length
-pal <- colorRampPalette(brewer.pal(11, "RdYlGn"))(length(v_top_species_overall))
-pal <- rev(pal)  # start with dark green
-
-# map colors to species automatically
-species_colors <- setNames(pal, v_top_species_overall)
-species_colors
-#
-
-# species_colors
-# piab      besp      pisy      qusp      fasy      lade      saca      soau      acps      potr      absp      sasp 
-# "#006837" "#17934D" "#58B65F" "#94D168" "#C6E77F" "#EDF7A7" "#FEF0A7" "#FDCD7B" "#FA9C58" "#EE613D" "#D22B26" "#A50026" 
-
-
-# Print the color assignments for confirmation
-print(species_colors)
-
-
-# update species labels
-species_labels <- c(
-  piab = "Picea abies",
-  besp = "Betula sp.",
-  pisy = "Pinus sylvestris",
-  qusp = "Quercus sp.",
-  fasy = "Fagus sylvatica",
-  lade = "Larix decidua",
-  saca = "Salix caprea",
-  soau = "Sorbus aucuparia",
-  acps = "Acer pseudoplatanus",
-  potr = "Populus tremula",
-  absp = "Abies sp.",
-  sasp = "Salix sp."
-)
-
-### Overall stats --------------------------------------------------------
-#### Identify plots without any stems present ---------------------------------------------------------------------------------
-
-# Step 1: Summarise total stems per plot and year
-plot_year_summ <- df %>%
-  group_by(plot, year) %>%
-  summarise(total_stems = sum(n, na.rm = TRUE), .groups = "drop")
-
-# Step 2: Reshape to wide format
-plot_year_wide <- plot_year_summ %>%
-  tidyr::pivot_wider(names_from = year, values_from = total_stems, values_fill = 0)
-
-# Step 3: Filter based on presence in each year
-plots_empty23    <- plot_year_wide %>% filter(`2023` == 0) %>% pull(plot) # 6 ~ 4.7%
-plots_empty25    <- plot_year_wide %>% filter(`2025` == 0) %>% pull(plot) # 2 ~ 1.5%
-plots_empty_both <- plot_year_wide %>% filter(`2023` == 0 & `2025` == 0)  # zero
-
-plots_empty23
-plots_empty25
-
-
-
-### get average stem density per species per top 10 species --------------------------------
-df_stem_dens_species <- df %>% 
-  group_by(plot, species, year, n_subplots ) %>%
-  summarize(sum_n = sum(n, na.rm =T)) %>% 
-  mutate(scaling_factor = 10000/(n_subplots * 4),
-         stem_dens = sum_n*scaling_factor) %>% 
-  mutate(log_sum_stem_density = log10(stem_dens + 1)) #%>%  # Adding 1 to avoid log(0)
-#ungroup()
-
-# get total sum and calculate as average value over all sites 
-df_stem_dens_species_sum <- 
-  df_stem_dens_species %>% 
-  group_by(species, year) %>% 
-  summarise(stem_dens = sum(stem_dens, na.rm = T),
-            log_sum_stem_density = sum(log_sum_stem_density, na.rm = T)) %>%
-  mutate(stem_dens_avg = stem_dens/n_plots_total,
-         log_sum_stem_density_avg = log_sum_stem_density/n_plots_total)
-
-
-df_stem_dens_species_year <- df_stem_dens_species %>% 
-  ungroup(.) %>% 
-  filter(sum_n >0) %>% 
-  filter(species %in% v_top_species_overall) %>% 
-  dplyr::group_by(species, year) %>%
-  dplyr::mutate(median_stem_density = median(stem_dens, na.rm = TRUE)) %>% 
-  dplyr::ungroup(.) %>%
-  mutate(species = factor(species, levels = rev(v_top_species_overall))) # Set custom order
-
-
-
-### Boxplot for stem density -------------
-df_stem_dens_species_year2 <- df_stem_dens_species_year %>%
-  dplyr::filter(!is.na(log_sum_stem_density) & sum_n > 0) %>%
-  dplyr::mutate(year = factor(year, levels = c("2023","2025")),
-                # order by mean log density (ascending → highest ends up at the TOP after coord_flip)
-                species = forcats::fct_reorder(species, log_sum_stem_density, .fun = mean, na.rm = TRUE))
-
-# 
-p_density<-df_stem_dens_species_year2 %>% 
-  filter(!is.na(species)) %>% 
-  ggplot(aes(x = log_sum_stem_density, y = species,
-             fill = year)) +
-  geom_boxplot(
-    #aes(group = interaction(species, year), 
-    #   alpha = factor(year)),
-    position = position_dodge(width = 0.6),
-    outlier.shape = NA,
-    width = 0.45#,
-    # color = "black"
-  ) +
-  
-  # coord_flip() +
-  labs(
-    x = "log(sum stem density)",
-    y = "",  
-    fill = "Year"
-  ) +
-  # scale_fill_manual(values= species_colors) +
-  # scale_alpha_manual(
-  #   values = c("2023" = 0.5, "2025" = 1)#,  # 2023 = lighter
-  #   #guide = "none"  # hides alpha legend
-  # ) +
-  theme_classic(base_size = 10) +
-  scale_y_discrete(labels = species_labels) +
-  theme(axis.text.y = element_text(face = "italic", size = 8))
-
-
-p_density
-
-
-# barplot of change over years
-
-# Order species by their maximum share across years (nice stable ordering)
-order_levels <- top_stems_by_year %>%
-  group_by(species) %>%
-  summarise(max_share = max(share, na.rm = TRUE), .groups = "drop") %>%
-  arrange(desc(max_share)) %>%
-  pull(species)
-
-top_stems_by_year <- top_stems_by_year %>%
-  mutate(
-    species = factor(species, levels = order_levels),
-    year    = factor(year, levels = c("2023","2025"))
-  )
-
-# master mapping: code -> Latin name
-species_labels_all <- c(
-  piab = "Picea abies",
-  besp = "Betula sp.",
-  pisy = "Pinus sylvestris",
-  qusp = "Quercus sp.",
-  fasy = "Fagus sylvatica",
-  saca = "Salix caprea",
-  lade = "Larix decidua",
-  soau = "Sorbus aucuparia",
-  acps = "Acer pseudoplatanus",
-  potr = "Populus tremula",
-  absp = "Abies sp.",
-  sasp = "Salix sp.",
-  cabe = "Carpinus betulus"
-)
-
-p_bar <- ggplot(top_stems_by_year, aes(x = share, y = species, fill = year)) +
-  geom_col(aes(#group = interaction(species, year)#,
-    #alpha = factor(year)
-  ), 
-  position = position_dodge(width = 0.7), width = 0.6) +
-  # if 'share' is 0–100 already, just add a % suffix:
-  scale_x_continuous(labels = label_number(accuracy = 0.1, suffix = "")) +
-  scale_y_discrete(
-    limits = rev(names(species_labels)),
-    labels = species_labels,
-    drop = FALSE
-  ) +
-  # scale_alpha_manual(
-  #   values = c("2023" = 0.5, "2025" = 1.0)#,  # 2023 = lighter
-  #   #guide = "none"  # hides alpha legend
-  # ) +
-  # if you prefer proportions (0–1), use:
-  # scale_x_continuous(labels = label_percent()) 
-  labs(
-    x = "Share of stems",
-    y = "Species",
-    fill = "Year"#,
-    #title = "Top 12 species by share, by year"
-  ) +
-  # scale_fill_manual(values = species_colors) +
-  theme_classic2(base_size = 10) +
-  theme(axis.text.y = element_text(size = 8, face = "italic"))
-
-p_bar
-
-# Get species occurence from total number of plots 
-# Total number of unique plots
-total_plots <- df_stem_dens_species %>%
-  pull(plot) %>%
-  n_distinct()
-
-# Share of plots per species (where species has non-zero stems)
-species_occurence <- 
-  df_stem_dens_species %>%
-  ungroup(.) %>% 
-  dplyr::filter(sum_n > 0) %>%                 # Only where species occurred
-  distinct(year, species, plot) %>%           # Unique species × plot combos
-  count(year, species, name = "n_plots") %>%  # Count number of plots per species
-  mutate(share_of_plots = n_plots / total_plots*100) %>% 
-  arrange()
-
-species_occurence
-
-# Optional: order species by max share across years
-species_order <- species_occurence %>%
-  group_by(species) %>%
-  summarise(max_share = max(share_of_plots)) %>%
-  arrange(desc(max_share)) %>%
-  pull(species)
-
-species_plot_share <- species_occurence %>%
-  mutate(species = factor(species, levels = rev(species_order)))
-
-# Plot
-p_occurence <- species_plot_share %>% 
-  filter(species %in% v_top_species_overall ) %>% 
-  ggplot(aes(x = share_of_plots, y = species, fill = year)) +
-  geom_col(position = position_dodge(width = 0.7), width = 0.6) +
-  scale_x_continuous(labels = scales::label_number(accuracy = 1), expand = expansion(mult = c(0, 0.05))) +
-  labs(
-    x = "Species occurence over plots (%)",
-    y = "Species",
-    fill = "Year"
-  ) +
-  theme_classic(base_size = 10) +
-  theme(
-    axis.text.y = element_text(face = "italic", size = 9),
-    legend.position = "right"
-  )
-
-p_occurence
-
-
-
-ggarrange(p_bar, p_occurence, p_density,  
-          ncol = 3, common.legend = T)
-
-### heights by species -------------------------------------------------------
-# get heights by species
-dat_overlap %>% 
-  dplyr::filter(hgt_est>0) %>% 
-  mutate(species = fct_reorder(species, hgt_est, .fun = median, .desc = TRUE)) %>%
-  ggplot(aes(x = species,
-             y = hgt_est,
-             fill = factor(year))) + 
-  geom_boxplot(outlier.shape = NA) +
-  coord_cartesian(ylim = c(0,7.5)) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-
-# compare change in feights pioneer vs late
-dat_overlap %>% 
-  dplyr::filter(seral_stage != "other") %>%
-  dplyr::filter(hgt_est>0) %>% 
-  #mutate(species = fct_reorder(species, hgt_est, .fun = median, .desc = TRUE)) %>%
-  ggplot(aes(x = seral_stage,
-             y = hgt_est,
-             fill = factor(year))) + 
-  geom_boxplot(outlier.shape = NA) +
-  coord_cartesian(ylim = c(0,6)) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 
 # Drivers -----------------------------------------------------------------
@@ -1246,7 +1230,7 @@ plot_metrics_mean <- field_sub_summ %>%
     .groups = "drop"
   ) %>% 
   left_join(cwm_plot, by = join_by(plot, year)) %>% 
-  left_join(df_master_mng_plot,by = join_by(plot, year)) %>% 
+  left_join(df_mng_sub,by = join_by(plot, year)) %>% 
   left_join(spruce_share_plot, by = join_by(plot, year)) #%>% 
 
 
@@ -1280,7 +1264,7 @@ plot_metrics_pooled  <- dat_overlap %>%
     .groups = "drop" 
   ) %>% 
   left_join(cwm_plot, by = join_by(plot, year)) %>% 
-  left_join(df_master_mng_plot,by = join_by(plot, year)) %>% 
+  left_join(df_mng_sub,by = join_by(plot, year)) %>% 
   left_join(spruce_share_plot, by = join_by(plot, year)) #%>% 
 
 #mutate(cv_hgt = ifelse(is.na(cv_hgt), 0L, cv_hgt)) # replace NA by 0 if stems are missing
@@ -1326,7 +1310,7 @@ sub_df <- field_sub_summ %>%
                                 "year" = "year",
                                 "ID" = 'subplot',
                                 "time_snc_full_disturbance" = "time_snc_full_disturbance") ) %>% 
-  left_join(df_master_mng_plot, by = c("plot_id" = "plot",
+  left_join(df_mng_plot, by = c("plot_id" = "plot",
                                        "year" = "year")) %>%  # need to separate here by year?
   left_join(spruce_share_sub, by = c("plot_id" = "plot",
                                      "year" = "year",
@@ -1335,7 +1319,7 @@ sub_df <- field_sub_summ %>%
 nrow(sub_df)
 hist(sub_df$cv_hgt, breaks = 80)
 
-
+names(sub_df)
 # 2) Plot table (pooled metrics already computed)
 plot_df <- plot_metrics_pooled %>%
   transmute(
@@ -1360,28 +1344,18 @@ plot_df <- plot_metrics_pooled %>%
   left_join(cwm_plot, by = c("plot_id" = "plot",
                              "year" = "year",
                              "time_snc_full_disturbance" = "time_snc_full_disturbance") ) %>% 
-  left_join(df_master_mng_plot, by = c("plot_id" = "plot",
+  left_join(df_mng_plot, by = c("plot_id" = "plot",
                                        "year" = "year")) %>% 
   left_join(spruce_share_plot, by = c("plot_id" = "plot",
                                        "year" = "year"))#
 
 
+names(plot_df)
+
+
 #  3) Bind & clean final table with both levels
 both_levels_re2 <- bind_rows(sub_df, plot_df) %>%
-  # left_join(df_plot_share_early, 
-  #           by = c('plot_id' = 'plot',
-  #                  "year" = "year",
-  #                  "time_snc_full_disturbance" = "time_snc_full_disturbance")) %>% 
-  # mutate(early_class = case_when(
-  #   share_early >= 60 ~ "early_dom",
-  #   share_early <= 20 ~ "late_dom",
-  #   TRUE              ~ "mixed"
-  # )) |> 
-  # mutate(trait_class = factor(early_class, 
-  #                             levels = c("late_dom",
-  #                                        "mixed",
-  #                                        "early_dom"))) %>% 
-  mutate(
+    mutate(
     level   = factor(level, levels = c("subplot","plot")),
     plot_id = factor(plot_id),
     w       = pmin(pmax(w, 1), 50)   # cap weights so a few dense plots don't dominate
@@ -1390,8 +1364,8 @@ both_levels_re2 <- bind_rows(sub_df, plot_df) %>%
            factor(levels = c("early", "later")),
          dist_length_f = ifelse(disturbance_length <= 2, "abrupt", "continuous") %>% 
            factor(levels = c( "abrupt", "continuous")),
-         plant_intens_f = ifelse(planting_intensity < 0.2, "no", "high") %>% 
-           factor(levels = c("no", "high")))
+         plant_f = ifelse(planting_intensity < 0.2, "no", "yes") %>% 
+           factor(levels = c("no", "yes")))
 
 
 # add small value to CV = 0
@@ -1401,29 +1375,13 @@ both_levels_re2 <- both_levels_re2 %>%
   ) %>% 
   filter(!is.na(mean_hgt), !is.na(w), !is.na(cv_hgt), !is.na(dens_m2))
 
-table(both_levels_re2$trait_class)
 
-hist(both_levels_re2$stems_total, breaks = 150)
-range(both_levels_re2$stems_total, na.rm = T)
-
-
-
-
-
-
-# check the distribution oof weights
-# ggplot(both_levels_re2, aes(x = w)) +
-#   geom_histogram(binwidth = 1, fill = "grey", color = "black") +
-#   labs(x = "Weight (capped stem count)", y = "Frequency") +
-#   theme_minimal()
-# 
-
-# check richness by planting? - need to be on plot level!! ------------------
+### GAM: Richness by planting?  ------------------
 both_levels_re2 %>% 
   filter(level == 'plot') %>% 
-  ggplot(aes(x = plant_intens_f,
+  ggplot(aes(x = plant_f,
              y = sp_richness,
-             fill = plant_intens_f)) + 
+             fill = plant_f)) + 
   geom_boxplot(notch = T) +
   stat_compare_means(method = "wilcox.test", label.y = max(both_levels_re2$sp_richness, na.rm = TRUE) * 1.05) + 
   geom_jitter(alpha = 0.2) +
@@ -1431,12 +1389,115 @@ both_levels_re2 %>%
   theme(legend.position = 'none')
 
 
-# share spruce by planting
+
+p1<-both_levels_re2 %>% 
+  filter(level == 'plot') %>% 
+  ggplot(aes(x = factor(planting_intensity),
+             y = shannon_sp)) + 
+  geom_boxplot(notch = T) 
+
+
+# effective number sof species
+p2<-  both_levels_re2 %>% 
+    filter(level == 'plot') %>% 
+    ggplot(aes(x = factor(planting_intensity),
+               y = effective_numbers)) + 
+    geom_boxplot(notch = T) 
+
+p3<-  both_levels_re2 %>% 
+    filter(level == 'plot') %>% 
+    ggplot(aes(x = factor(planting_intensity),
+               y = sp_richness)) + 
+    geom_boxplot(notch = T) 
+  
+  
+ggarrange(p1, p2, p3, ncol = 1)
+  
+hist(both_levels_re2$planting_intensity)
+
+
+gam_shannon_both <- gam(
+  shannon_sp ~ s(planting_intensity, by = level, k = 5) +
+    level + year + 
+    s(plot_id, bs = "re"),
+  data = both_levels_re2,
+  method = "REML",
+  family = gaussian()
+)
+
+gam_shannon_both_k6 <- gam(
+  shannon_sp ~ s(planting_intensity, by = level, k = 6) +
+    level + year + s(plot_id, bs = "re"),
+  data = both_levels_re2,
+  method = "REML"
+)
+
+mgcv::gam.check(gam_shannon_both_k6)
+
+summary(gam_shannon_both_k6)
+appraise(gam_shannon_both)
+plot(gam_shannon_both, page = 1)
+mgcv::gam.check(gam_shannon_both)
+
+draw(gam_shannon_both, select = 1:2)  # shows subplot vs plot smooths
+
+
+# Predict partial effects for both levels -------------------------
+pred_smooths <- ggpredict(
+  gam_shannon_both_k6,
+  terms = c("planting_intensity [all]", "level")  # variable and grouping factor
+)
+
+# Check structure
+head(pred_smooths)
+
+# Plot both smooths in one figure ---------------------------------
+ggplot(pred_smooths, aes(x = x, y = predicted,
+                         color = group, fill = group)) +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high),
+              alpha = 0.2, color = NA) +
+  geom_line(size = 1.2) +
+  scale_color_manual(values = c("#1b9e77", "#7570b3"),
+                     labels = c("Subplot level", "Plot level")) +
+  scale_fill_manual(values = c("#1b9e77", "#7570b3"),
+                    labels = c("Subplot level", "Plot level")) +
+  labs(
+    x = "Planting intensity (0–1)",
+    y = "Predicted Shannon diversity",
+    color = "Sampling level",
+    fill = "Sampling level",
+    title = "Effect of planting intensity on species diversity",
+    subtitle = "Predicted smooths from GAM with random plot effects"
+  ) +
+  theme_classic(base_size = 14) +
+  theme(
+    legend.position = "top",
+    plot.title = element_text(face = "bold")
+  )
+
+
+# test GAm: effective # by planting intensity  ------------------------
+
+gam_effective_both <- gam(
+  effective_numbers ~ s(planting_intensity, by = level, k = 5) +
+    level + year + 
+    s(plot_id, bs = "re"),
+  data = both_levels_re2,
+  method = "REML",
+  family = Gamma(link = "log")
+)
+summary(gam_effective_both)
+plot(gam_effective_both, shade = TRUE, pages = 1)
+mgcv::gam.check(gam_effective_both)
+appraise(gam_effective_both)
+
+
+# share spruce by planting ----------------------------------------------
 both_levels_re2 %>% 
   filter(level == 'plot') %>% 
-  ggplot(aes(x = plant_intens_f,
+  ggplot(aes(x = plant_f,
              y = spruce_share,
-             fill = plant_intens_f)) + 
+             fill = plant_f)) + 
   geom_boxplot(notch = T) +
   stat_compare_means(method = "wilcox.test", 
                      label.y = max(both_levels_re2$spruce_share, na.rm = TRUE) * 1.05) + 
@@ -1450,11 +1511,7 @@ both_levels_re2 %>%
   ggplot(aes(x = factor(planting_intensity),
              y = spruce_share,
              fill = factor(planting_intensity))) + 
-  geom_boxplot(notch = T) +
-  stat_compare_means(method = "wilcox.test", 
-                     label.y = max(both_levels_re2$spruce_share, na.rm = TRUE) * 1.05) + 
-  geom_jitter(alpha = 0.2) +
-  facet_grid(.~level) +
+  geom_boxplot(notch = T)  + 
   theme(legend.position = 'none')
 
 
@@ -1462,8 +1519,7 @@ both_levels_re2 %>%
 both_levels_re2 %>% 
   filter(level == 'plot') %>% 
   ggplot(aes(x = planting_intensity,
-             y = spruce_share,
-             fill = planting_intensity)) + 
+             y = spruce_share)) + 
   geom_point() +
   geom_smooth(method = 'lm')
   
@@ -1476,23 +1532,23 @@ both_levels_re2 %>%
   filter(level == 'plot') %>% 
   ggplot(aes(x = factor(time_snc_full_disturbance),
              y = sp_richness,
-             fill = plant_intens_f))  +
+             fill = plant_f))  +
   geom_boxplot() #+
   geom_smooth(method = "lm") +
   #geom_boxplot() + 
-  facet_grid(.~plant_intens_f)
+  facet_grid(.~plant_f)
   #geom_jitter() +
   
 
-  
+# check species richness if planted or not --------
   both_levels_re2 %>% 
     filter(level == 'plot') %>% 
     ggplot(aes(x = time_snc_full_disturbance,
                y = sp_richness,
-               fill = plant_intens_f,
-               col = plant_intens_f))  +
+               fill = plant_f,
+               col = plant_f))  +
    # geom_jitter(alpha = 0.5) +
-  geom_smooth(method = "gam")
+  geom_smooth(method = "lm")
   #geom_jitter() +
     
     
@@ -1500,13 +1556,58 @@ both_levels_re2 %>%
   filter(level == 'plot') %>% 
       ggplot(aes(x = disturbance_length,
                  y = sp_richness,
-                 fill = plant_intens_f,
-                 col = plant_intens_f))  +
-      geom_jitter(alpha = 0.5) +
+                 fill = plant_f,
+                 col = plant_f))  +
+     # geom_jitter(alpha = 0.5) +
       geom_smooth(method = "lm")
   
 
 
+# effective species if planted or not -----------
+both_levels_re2 %>% 
+  filter(level == 'plot') %>% 
+  ggplot(aes(x = time_snc_full_disturbance,
+             y = effective_numbers,
+             fill = plant_f,
+             col = plant_f))  +
+  # geom_jitter(alpha = 0.5) +
+  geom_smooth(method = "lm")
+#geom_jitter() +
+
+
+both_levels_re2 %>% 
+  filter(level == 'plot') %>% 
+  ggplot(aes(x = disturbance_length,
+             y = effective_numbers,
+             fill = plant_f,
+             col = plant_f))  +
+  geom_jitter() +
+  # geom_jitter(alpha = 0.5) +
+  geom_smooth(method = "lm")# +
+
+# CV vs time since -----------------------------------------
+both_levels_re2 %>% 
+  filter(level == 'plot') %>% 
+  filter(time_snc_full_disturbance < 8) %>% 
+  ggplot(aes(x = time_snc_full_disturbance,
+             y = cv_hgt_pos,
+             fill = plant_f,
+             col = plant_f))  +
+  #geom_jitter() +
+  # geom_jitter(alpha = 0.5) +
+  geom_smooth(method = "gam", formula = y ~ s(x, k = 3)) 
+
+# mean height vs time since -----------------------
+both_levels_re2 %>% 
+  filter(level == 'plot') %>% 
+  filter(time_snc_full_disturbance < 8) %>% 
+  ggplot(aes(x = time_snc_full_disturbance,
+             y = mean_hgt,
+             fill = plant_f,
+             col = plant_f))  +
+  #geom_jitter() +
+  # geom_jitter(alpha = 0.5) +
+  geom_smooth(method = "gam", formula = y ~ s(x, k = 3)) 
 
 
 # check richness by planting?
@@ -1586,21 +1687,16 @@ plot_level_long <- plot_level_means %>%
                values_to = "value")
 
 
-ggplot(plot_level_long, aes(x = level, y = value)) +
-  geom_segment(aes(x = level, xend = level, y = 0, yend = value), linewidth = 1.2, color = "grey40") +
-  geom_point(size = 4, color = "steelblue") +
-  facet_wrap(~ metric, scales = "free_y") +
-  labs(title = "Lollipop Plot of Mean Values by Level",
-       x = "Level", y = "Mean Value") +
-  theme_minimal()
 
-# 1. Convert subplot values to negative
+# Convert subplot values to negative
 level_means_diverged <- plot_level_long %>%
   mutate(value = ifelse(level == "subplot", -value, value),
          level = fct_relevel(level, "subplot", "plot"))
 
-# 2. Plot diverging lollipops
-# CONTINUE HERE!!!!!
+
+level_means_diverged <- level_means_diverged %>%
+  mutate(metric = fct_reorder(metric, abs(value), .desc = F))
+#Plot diverging lollipops
 ggplot(level_means_diverged, aes(x = value, y = fct_rev(metric), fill = level,
                                  color = level)) +
   geom_segment(aes(x = 0, xend = value, y = metric, yend = metric),
@@ -1608,15 +1704,25 @@ ggplot(level_means_diverged, aes(x = value, y = fct_rev(metric), fill = level,
                color = "grey",
                lty = 'dashed'
                ) +
+  scale_y_discrete(labels = c(
+    "cv_hgt"      = "CV height [dim.]",
+    "dens_m2"     = "Stem density [m²]",
+    "effect_n_sp" = "Effective species [#]",
+    "mean_hgt"    = "Mean height [m]",
+    "richness"    = "Species richness [#]",
+    "shannon_sp"  = "Shannon diversity [dim.]"
+  )) +
   geom_vline(xintercept = 0) +
   geom_point(size = 4) +
   scale_x_continuous(labels = abs) +  # show positive axis labels
-  labs(x = "Mean Value", y = "Metric",
-       title = "Diverging Lollipop Plot: Subplot vs Plot") +
+  labs(x = "Mean Value", y = "",
+       title = "") +
+  annotate("text", x = -2, y = 6.5, label = "Subplot", hjust = 0, size = 2.5, fontface = "bold") +
+  annotate("text", x =  3, y = 6.5, label = "Plot",     hjust = 1, size = 2.5, fontface = "bold") +
   theme_classic2() +
-  theme(legend.position = "top")
+  theme(legend.position = "none")
 
-
+# Boxplot - all vars vs time since, disturb. length ----------------------------
 # how does the disturbnac elength affects structure and composition?
 both_levels_long %>% 
   filter(level == 'plot') %>% 
@@ -1657,655 +1763,6 @@ both_levels_long %>%
 
 
 
-
-
-# create species data only for Cv_heights testing - becaue i have many zeros 
-# if i have only one tree species present!
-dat_cv_hgt <- both_levels_re2 %>% 
-  filter(cv_hgt>0) %>% 
-  filter(time_snc_full_disturbance>0)
-
-##### CV_hgt vs disturbance length ----------------
-dat_cv_hgt %>%
-  ggplot(aes(x = disturbance_length,
-             y = cv_hgt_pos)) +
-  geom_point() +
-  geom_smooth(method = 'loess')
-
-
-
-
-dat_cv_hgt %>%
-  filter(time_snc_full_disturbance>0) %>% 
-   ggplot(aes(x = time_snc_full_disturbance,
-             y = cv_hgt_pos)) +
-  geom_point() +
-  geom_smooth(method = 'loess')
-
-
-##### CV x Disturbnace length  
-
-# cv_hgt vs disturbance length 
-# Fit GAMM: smooth term + random effect of plot_id
-m0 <- gam(cv_hgt_pos ~ disturbance_length +
-            #s(disturbance_length, by = level, k = 3) + 
-            #level + 
-            s(plot_id, bs = "re"),
-          #family = tw(),
-          #family = Gamma(link = "log"),
-          data = both_levels_re2 %>% filter(stems_total > 0),
-          method = "REML")
-
-summary(m0)
-
-# add time since disturbance as a fector
-m1 <- gam(cv_hgt_pos ~ s(disturbance_length, by = level, k = 3) + 
-            level + #time_since_f +
-            s(plot_id, bs = "re"),
-          #family = tw(),
-          #family = Gamma(link = "log"),
-          data = both_levels_re2 %>% filter(stems_total > 0),
-          method = "REML")
-
-summary(m1)
-
-# add interaction between level and time since disturbance
-m2 <- gam(cv_hgt_pos ~ s(disturbance_length, by = level, k = 3) + 
-            level*time_since_f +
-            s(plot_id, bs = "re"),
-          #family = tw(),
-          #family = Gamma(link = "log"),
-          data = both_levels_re2 %>% filter(stems_total > 0),
-          method = "REML")
-
-summary(m2)
-
-plot(m2, page = 1)
-
-
-
-# remove 
-
-# nicely plot the predicted values 
-p <- predict_response(m_cv_cont, terms = c("time_snc_full_disturbance [all]"))
-
-plot(p, one_plot = TRUE)
-
-##### CV x time since disturbnace ------------------------------------
-
-# add interaction between level and time since disturbance
-m_cv_hgt1 <- gam(cv_hgt_pos ~ 
-                   s(time_snc_full_disturbance , k = 3) +
-                   s(plot_id, bs = "re"),
-                 
-                 #family = tw(),
-                 family = Gamma(link = "log"),
-                 data = dat_cv_hgt, #%>% filter(stems_total > 0),
-                 method = "REML")
-
-dat_cv_hgt %>% 
-  filter(stems_total > 0) %>% 
-  filter(cv_hgt > 0) %>% 
-  ggplot(aes(x = time_snc_part_disturbance,
-             y = cv_hgt_pos,
-             color = level)) +
-  geom_point() + 
-  geom_smooth(method = 'lm') + facet_grid(.~level)
-
-
-summary(m_cv_hgt1)
-appraise(m_cv_hgt1)
-
-m_cv_hgt1 <- gam(cv_hgt_pos ~ 
-                     s(time_snc_full_disturbance , k = 3) +
-                     s(plot_id, bs = "re"),
-                 family = tw(link = "log"),
-                   #family = Gamma(link = "log"),
-                 weights = w,
-                   data = dat_cv_hgt, #%>% filter(stems_total > 0 &cv_hgt >0),
-                   method = "REML")
-
-summary(m_cv_hgt1)
-appraise(m_cv_hgt1)
-hist(both_levels_re2$cv_hgt_pos)
-plot(m_cv_hgt1, page = 1)
-
-m_cv_hgt_gamma <- gam(cv_hgt_pos ~ 
-                     s(time_snc_full_disturbance , by = level, k = 3) + 
-                     level +
-                     s(plot_id, bs = "re"),
-                   #family = tw(),
-                   #family = tw(link = "log"),
-                   #family = Gamma(link = "log"),
-                   data = dat_cv_hgt,
-                   weights = w,
-                   method = "REML")
-
-summary(m_cv_hgt_gamma)
-appraise(m_cv_hgt_gamma)
-
-AIC(m_cv_hgt_gamma, m_cv_hgt_tw)
-
-m_cv_hgt_tw <- gam(cv_hgt_pos ~ 
-                     s(time_snc_full_disturbance , by = level, k = 3) + 
-            level +
-            s(plot_id, bs = "re"),
-          #family = tw(),
-          family = tw(link = "log"),
-          #family = Gamma(link = "log"),
-          data = dat_cv_hgt,
-          weights = w,
-          method = "REML")
-
-summary(m_cv_hgt_tw)
-appraise(m_cv_hgt_tw)
-
-plot(m_cv_hgt_tw, page = 1)
-
-p <- predict_response(
-  m_cv_hgt_tw,
-  terms = c("time_snc_full_disturbance [all]",    # x-sequence
-            "level [all]"
-            #"early_class")                    # fix level (or drop to average)
-  ))
-p_cv_hgt <- plot(p, one_plot = TRUE)
-#p_mean_hgt <- plot(p, one_plot = TRUE)
-
-
-# remove 
-
-# nicely plot the predicted values 
-p <- predict_response(m_cv_cont, terms = c("time_snc_full_disturbance [all]"))
-
-plot(p, one_plot = TRUE)
-
-
-# HUrdle: Cv vs time since disturbances -----------------------
-##### CV x time since disturbnace ------------------------------------
-
-# add interaction between level and time since disturbance
-m_cv_hgt1 <- gam(cv_hgt ~ 
-                   s(time_snc_full_disturbance , by = level, k = 3) +
-                   s(plot_id, bs = "re"),
-                 weigths = w,
-                 
-                 family = tw(),
-                 #family = Gamma(link = "log"),
-                 data = both_levels_re2 , #%>% filter(stems_total > 0),
-                 method = "REML")
-
-
-summary(m_cv_hgt1)
-appraise(m_cv_hgt1)
-
-library(gamlss)
-
-# Fit a hurdle model (zero-adjusted Gamma)
-m_hurdle <- gamlss(
-  cv_hgt ~ cs(time_snc_full_disturbance, by = level),
-  sigma.formula = ~ 1,  # Dispersion
-  nu.formula = ~ 1,     # Zero-inflation probability
-  family = ZAGA,
-  data = both_levels_re2
-)
-
-summary(m_hurdle)
-
-
-# split model in two formulas: 
-# Add binary flag and filter positive CVs
-dat_cv_hgt2 <- both_levels_re2 %>%
-  mutate(
-    cv_hgt_bin = as.integer(cv_hgt > 0),  # For part 1
-    cv_hgt_pos = ifelse(cv_hgt > 0, cv_hgt, NA)  # For part 2
-  )
-
-m_bin <- gam(
-  cv_hgt_bin ~ s(time_snc_full_disturbance, by = level, k = 5) +
-    level +
-    s(plot_id, bs = "re"),
-  weights = w,
-  family = binomial(),
-  data = dat_cv_hgt2
-)
-
-summary(m_bin)
-appraise(m_bin)
-
-m_pos <- gam(
-  cv_hgt_pos ~ s(time_snc_full_disturbance, by = level, k = 3) +
-    level +
-    s(plot_id, bs = "re"),
-  family = tw(link = "log"),
-  weights = w,
-  data = dat_cv_hgt2 %>% filter(cv_hgt > 0)
-)
-
-summary(m_pos)
-appraise(m_pos)
-
-# 
-p <- predict_response(
-  m_pos,
-  terms = c("time_snc_full_disturbance [all]",    # x-sequence
-            "level [all]"
-            #"early_class")                    # fix level (or drop to average)
-  ))
-#p_mean_hgt <- 
-plot(p, one_plot = TRUE)
-
-  p <- predict_response(
-    m_bin,
-    terms = c("time_snc_full_disturbance [all]",    # x-sequence
-              "level [all]"
-              #"early_class")                    # fix level (or drop to average)
-    ))
-  #p_mean_hgt <- 
-  plot(p, one_plot = TRUE)
-
-
-
-# get test scater plots ---------------------------------
-p_early_cls_plot <- both_levels_re2 %>% 
-  filter(level == 'plot') %>% 
-  ggplot(aes(x = factor(time_snc_full_disturbance),
-             y = cv_hgt,
-             color = early_class,
-             fill = early_class,
-             group = early_class)) +
-  geom_point(alpha = 0.1) +
-  ggtitle('plot') +
-  geom_smooth(method = 'lm') +
-  coord_cartesian(y = c(0,1))
-#facet_grid(.~early_class)
-
-p_early_cls_subplot <- both_levels_re2 %>% 
-  filter(level == 'subplot') %>% 
-  ggplot(aes(x = factor(time_snc_full_disturbance),
-             y = cv_hgt,
-             color = early_class,
-             fill = early_class,
-             group = early_class)) +
-  geom_point(alpha = 0.1) +
-  ggtitle('subplot') +
-  geom_smooth(method = 'lm') +
-  coord_cartesian(y = c(0,1))
-#facet_grid(.~early_class)
-ggarrange(p_early_cls_plot, p_early_cls_subplot, common.legend = T)
-
-# test effect of early seral dominance ---------------------
-m_cv_cont <- gam(
-  cv_hgt ~ s(share_early, k=5) + s(time_snc_full_disturbance, k=5) +
-    te(share_early, time_snc_full_disturbance, k=c(4,4)) +
-    level + s(plot_id, bs="re"),
-  data = both_levels_re2, 
-  family = gaussian()
-)
-
-summary(m_cv_cont)
-appraise(m_cv_cont)
-plot.gam(m_cv_cont, page = 1)
-
-
-# nicely plot the predicted values 
-p <- predict_response(m_cv_cont, terms = c("time_snc_full_disturbance [all]"))
-
-plot(p, one_plot = TRUE)
-
-
-summary(m_cv_cont)
-draw(m_cv_cont)
-
-
-# share classes --------------------
-m_cv <- gam(
-  cv_hgt ~ early_class + level +
-    s(time_snc_full_disturbance, by = early_class, k = 5, bs = "cs") +
-    s(plot_id, bs = "re"),
-  data = both_levels_re2, family = gaussian()
-)
-summary(m_cv)
-
-
-# nicely plot the predicted values 
-p <- predict_response(
-  m_cv,
-  terms = c("time_snc_full_disturbance [all]",    # x-sequence
-            "early_class",                        # 3 groups
-            "level [subplot]")                    # fix level (or drop to average)
-)
-plot(p, one_plot = TRUE)
-
-
-boxplot(cv_hgt ~ early_class, 
-        data = both_levels_re2, 
-        col = "grey90")
-boxplot(mean_hgt ~ early_class, 
-        data = both_levels_re2, 
-        col = "grey90")
-
-###### mean height: time since disturbnace  ---------------------
-library(mgcv)
-library(gratia)
-m_hgt_tw <- gam(
-  mean_hgt ~ level + 
-    s(time_snc_full_disturbance, by = level, k = 5, bs = "cs") +
-    s(plot_id, bs = "re"),
-  family = tw(link = "log"),  # Tweedie with log-link
-  data = both_levels_re2
-)
-
-p <- predict_response(
-  m_hgt_tw,
-  terms = c("time_snc_full_disturbance [all]",    # x-sequence
-            "level [all]"
-            #"early_class")                    # fix level (or drop to average)
-))
-p_mean_hgt <- plot(p, one_plot = TRUE)
-ggarrange(p_mean_hgt, p_cv_hgt, common.legend = TRUE, 
-          labels = "auto")
-
-
-summary(m_hgt_tw)
-appraise(m_hgt_tw)
-draw(m_hgt_tw, select = c(1,2))
-plot(m_hgt_tw, page = 1)
-
-m_stems_tw <- gam(
-  stems_total ~ level + 
-    s(time_snc_full_disturbance, by = level, k = 5, bs = "cs") +
-    s(plot_id, bs = "re"),
-  family = tw(link = "log"),  # Tweedie with log-link
-  data = both_levels_re2,
-)
-summary(m_stems_tw)
-appraise(m_stems_tw)
-draw(m_stems_tw, select = c(1,2))
-
-p_stems_tw <- predict_response(
-  m_stems_tw,
-  terms = c("time_snc_full_disturbance [all]",    # x-sequence
-            "level [all]"
-            #"early_class")                    # fix level (or drop to average)
-  ))
-p_stems_tw <- plot(p_stems_tw, one_plot = TRUE)
-p_stems_tw
-
-
-
-m_share_early_tw <- gam(
-  share_early ~ level + 
-    s(time_snc_full_disturbance, by = level, k = 5, bs = "cs") +
-    s(plot_id, bs = "re"),
-  family = tw(link = "log"),  # Tweedie with log-link
-  data = both_levels_re2,
-)
-summary(m_share_early_tw)
-appraise(m_share_early_tw)
-draw(m_share_early_tw, select = c(1,2))
-
-
-
-m_shade_tw <- gam(
-  CWM_shade ~ level + 
-    s(time_snc_full_disturbance, by = level, k = 5, bs = "cs") +
-    s(plot_id, bs = "re"),
-  family = tw(link = "log"),  # Tweedie with log-link
-  data = both_levels_re2,
-)
-summary(m_shade_tw)
-appraise(m_shade_tw)
-draw(m_shade_tw, select = c(1,2))
-
-
-hist(both_levels_re2$share_early)
-
-m_cv_tw <- gam(
-  cv_hgt ~ level + 
-    s(time_snc_full_disturbance, by = level, k = 5, bs = "cs") +
-    s(plot_id, bs = "re"),
-  #family = tw(link = "log"),  # Tweedie with log-link
-  data = filter(both_levels_re2, cv_hgt >0)
-)
-summary(m_cv_tw)
-appraise(m_cv_tw)
-draw(m_cv_tw, select = c(1,2))
-
-m_shan_tw <- gam(
-  shannon_sp ~ level + 
-    s(time_snc_full_disturbance, by = level, k = 5, bs = "cs") +
-    s(plot_id, bs = "re"),
-  #family = tw(link = "log"),  # Tweedie with log-link
-  data = both_levels_re2
-)
-summary(m_shan_tw)
-appraise(m_shan_tw)
-draw(m_shan_tw, select = c(1,2))
-
-
-# nicely plot the predicted values 
-p <- predict_response(m_hgt, terms = c("time_snc_full_disturbance [all]"))
-
-plot(p, one_plot = TRUE)
-
-
-
-
-
-
-
-
-
-p_plot <- plot_df %>%
-  #ungroup() %>%
-  select(year, time_snc_full_disturbance, time_snc_part_disturbance, 
-         mean_hgt, cv_hgt, shannon_sp, sp_richness,  CWM_shade ,
-         CWM_drought) %>%
-  pivot_longer(c(-year, 
-                 - time_snc_full_disturbance, 
-                 - time_snc_part_disturbance),
-               names_to = "metric", values_to = "value") %>%
-  # keep mean_hgt > 0, leave others as-is
-  filter(!(metric == "mean_hgt" & (is.na(value) | value <= 0))) %>%
-  filter(!is.na(value)) %>%
-  ggplot(aes(x = time_snc_full_disturbance, y = value)) +
-  geom_boxplot(aes(group = time_snc_full_disturbance ), outlier.shape = NA) +
-  stat_summary(fun.data = mean_sd, geom = "errorbar", width = 0.1, linewidth = 0.2, col = 'red') +
-  stat_summary(fun = \(y) mean(y, na.rm = TRUE), geom = "point", size = 2, col = 'red') +
-  facet_wrap(~ metric, scales = "free_y", ncol = 2) +
-  labs(x = NULL, y = NULL, title = 'Plot level') +
-  theme_classic2()
-
-
-p_subplot <- sub_df %>%
-  #ungroup() %>%
-  select(year, time_snc_full_disturbance, time_snc_part_disturbance, 
-         mean_hgt, cv_hgt, shannon_sp, sp_richness,  CWM_shade ,
-         CWM_drought) %>%
-  pivot_longer(c(-year, 
-                 - time_snc_full_disturbance, 
-                 - time_snc_part_disturbance),
-               names_to = "metric", values_to = "value") %>%
-  # keep mean_hgt > 0, leave others as-is
-  filter(!(metric == "mean_hgt" & (is.na(value) | value <= 0))) %>%
-  filter(!is.na(value)) %>%
-  ggplot(aes(x = time_snc_full_disturbance, y = value)) +
-  geom_boxplot(aes(group = time_snc_full_disturbance ), outlier.shape = NA) +
-  stat_summary(fun.data = mean_sd, geom = "errorbar", width = 0.1, linewidth = 0.2, col = 'red') +
-  stat_summary(fun = \(y) mean(y, na.rm = TRUE), geom = "point", size = 2, col = 'red') +
-  facet_wrap(~ metric, scales = "free_y", ncol = 2) +
-  labs(x = NULL, y = NULL, title = 'Subplot level') +
-  theme_classic2()
-
-ggarrange(p_plot, p_subplot)
-# add comparison between years at plot and subplot levels
-
-make_violin_per_year <- function(df, y,
-                                 ylim = NULL,
-                                 drop_zeros = FALSE,
-                                 # p_y = NULL,           # e.g., p_y = 5  (data units)
-                                 p_y_npc = 0.9,       # or p_y_npc = 0.9 (90% up)
-                                 p_size = 3,
-                                 p_method = "wilcox.test") {
-  
-  pd <- position_dodge(0.9)
-  
-  d <- df %>% filter(!is.na({{y}}))
-  if (drop_zeros) d <- d %>% filter({{y}} > 0)
-  
-  p <- ggplot(d, aes(x = year, y = {{y}}, fill = year, color = year)) +
-    geom_violin(alpha = 0.5, trim = TRUE, width = 0.8, position = pd) +
-    geom_boxplot(outlier.shape = NA, color = "black", alpha = 0.5,
-                 width = 0.2, position = pd) +
-    theme_grey(base_size = 8)
-  
-  if (!is.null(ylim)) p <- p + coord_cartesian(ylim = ylim)
-  
-  p + ggpubr::stat_compare_means(method = p_method, label = "p.format",
-                                 size = p_size,
-                                 #label.y = p_y,       # use either…
-                                 label.y.npc = p_y_npc)  # …or this (0–1)
-}
-
-
-# porovnanie cez subplot
-p.dens     <- make_violin_per_year(plot_df, dens_ha, ylim = c(0, 45000), p_y_npc = 0.80) #,   
-p.dens
-p.height   <- make_violin_per_year(plot_df, mean_hgt, drop_zeros = TRUE, ylim = c(0, 6), 
-                                   p_y_npc = 0.15) #,  
-p.cv       <- make_violin_per_year(plot_df, cv_hgt)
-p.shannon  <- make_violin_per_year(plot_df, shannon_sp)
-p.richness <- make_violin_per_year(plot_df, sp_richness)
-p.eveness  <- make_violin_per_year(plot_df, evenness_sp)
-p.eff      <- make_violin_per_year(plot_df, effective_numbers) #, ylim = c(0, 10)
-
-# Arrange with a shared legend
-out_plot <- ggarrange(p.dens, p.height, p.cv, p.shannon, p.richness,p.eveness,p.eff,
-                      common.legend = TRUE, legend = "bottom")
-
-annotate_figure(out_plot, top = text_grob("Plot level", 
-                                          color = "black", face = "bold", size = 14))
-
-
-# get summary statistics
-out_summary_full <- plot_df %>%
-  ungroup() %>%
-  select(year, level, mean_hgt, cv_hgt, shannon_sp, sp_richness, evenness_sp,effective_numbers) %>%
-  pivot_longer(-c(year, level), names_to = "metric", values_to = "value") %>%
-  # keep mean_hgt > 0, others as-is
-  filter(!(metric == "mean_hgt" & (is.na(value) | value <= 0))) %>%
-  group_by(metric, year, level) %>%
-  summarise(
-    n_total  = n(),
-    n_non_na = sum(!is.na(value)),
-    n_na     = sum(is.na(value)),
-    mean     = mean(value, na.rm = TRUE),
-    sd       = sd(value, na.rm = TRUE),
-    se       = sd/sqrt(n_non_na),
-    median   = median(value, na.rm = TRUE),
-    p25      = quantile(value, 0.25, na.rm = TRUE),
-    p75      = quantile(value, 0.75, na.rm = TRUE),
-    .groups  = "drop"
-  ) 
-
-out_summary_full
-
-out_summary_years <- both_levels_re2 %>%
-  ungroup() %>%
-  select(year,  mean_hgt, cv_hgt, shannon_sp, sp_richness, evenness_sp,effective_numbers) %>%
-  pivot_longer(-c(year), names_to = "metric", values_to = "value") %>%
-  # keep mean_hgt > 0, others as-is
-  filter(!(metric == "mean_hgt" & (is.na(value) | value <= 0))) %>%
-  group_by(metric, year) %>%
-  summarise(
-    n_total  = n(),
-    n_non_na = sum(!is.na(value)),
-    n_na     = sum(is.na(value)),
-    mean     = mean(value, na.rm = TRUE),
-    sd       = sd(value, na.rm = TRUE),
-    se       = sd/sqrt(n_non_na),
-    median   = median(value, na.rm = TRUE),
-    p25      = quantile(value, 0.25, na.rm = TRUE),
-    p75      = quantile(value, 0.75, na.rm = TRUE),
-    .groups  = "drop"
-  ) 
-
-out_summary_years
-
-
-# how does the diversity and composition changes over years?
-make_box <- function(df, y, x = "time_snc_full_disturbance",
-                     ylim = NULL, fill = "grey95") {
-  x_sym <- sym(x); y_sym <- sym(y)
-  
-  p <- ggplot(df, aes(x = factor(!!x_sym), y = !!y_sym)) +
-    geom_boxplot(outlier.shape = NA, fill = fill) +
-    geom_jitter(width = 0.15, alpha = 0.5, size = 0.6, color = "grey30") +
-    labs(x = "Years since dist.", y = gsub("_", " ", y)) +
-    theme()
-  theme_classic2()
-  
-  if (!is.null(ylim)) p <- p + coord_cartesian(ylim = ylim)
-  p
-}
-# !!!
-
-# Example usage ---------------------------------------------------------------
-ys <- c("mean_hgt", "cv_hgt", "dens_ha", "sp_richness", "shannon_sp", "CWM_shade")
-ylims <- list(mean_hgt = c(0, 6), cv_hgt = c(0, 1.5))  # others left NULL
-
-plots <- lapply(ys, function(v) make_box(filter(plot_df, !time_snc_full_disturbance %in% c(0, 11, 13)),
-                                         y = v, ylim = ylims[[v]]))
-
-ggarrange(plotlist = plots, ncol = 3, nrow = 2, labels = 'auto')
-
-
-
-
-
-
-both_levels_re2 %>% 
-  filter(level == 'plot') %>% 
-  ggplot(aes(y = share_early, x = factor(time_snc_full_disturbance))) +
-  geom_boxplot(outlier.shape = NA) +geom_jitter(alpha = 0.5, size = 0.5)
-
-# change over time
-
-
-
-
-# Step 1: Reduce to one row per plot × year
-plot_wide <- plot_df %>%
-  select(plot_id, year, mean_hgt, shannon_sp, cv_hgt) %>%
-  distinct() %>%  # make sure it's one row per plot-year
-  pivot_wider(
-    names_from = year,
-    values_from = c(mean_hgt, shannon_sp,cv_hgt),
-    names_sep = "_"
-  ) %>%
-  mutate(
-    delta_hgt = mean_hgt_2025 - mean_hgt_2023,
-    delta_div = shannon_sp_2025 - shannon_sp_2023,
-    delta_cv = cv_hgt_2025 - cv_hgt_2023
-  )
-
-# View result
-head(plot_wide)
-
-ggplot(plot_wide, aes(x = delta_hgt, y = delta_div)) +
-  geom_point() +
-  geom_smooth(method = "loess", se = TRUE) +
-  labs(x = "Δ Mean Height", y = "Δ Shannon Diversity") +
-  theme_classic()
-
-ggplot(plot_wide, aes(x = delta_hgt, y = delta_cv)) +
-  geom_point() +
-  geom_smooth(method = "gam", se = TRUE) +
-  labs(x = "Δ Mean CV", y = "Δ Shannon Diversity") +
-  theme_classic()
-
-
-# Make a threshold for legacy effects: > 4 m
 
 
 
