@@ -32,6 +32,9 @@ library(RColorBrewer)
 library(ggridges)
 library(scales)
 
+library(forcats) # order factors
+
+
 
 
 
@@ -247,7 +250,7 @@ df_master_mng <- dat_overlap %>%
 
 
 df_master_mng_plot <- df_master_mng %>% 
-  select(plot, clear_intensity,           
+  select(plot, year, clear_intensity,           
          grndwrk_intensity,         
          logging_trail_intensity,  
          planting_intensity ,       
@@ -260,7 +263,7 @@ management_proportions <- df_master_mng %>%
   pivot_longer(cols = c(clear, grndwrk, logging_trail, planting, anti_browsing),
                names_to = "activity",
                values_to = "applied") %>%
-  group_by(activity, applied) %>%
+  group_by(activity, applied, year) %>%
   summarise(n = n(), .groups = "drop") %>%
   group_by(activity) %>%
   mutate(proportion = n / sum(n)*100)
@@ -326,7 +329,7 @@ ggplot(mng_sub_conv, aes(x = proportion, y = activity, fill = applied)) +
 
 # plot level, so have only intensities
 df_master_mng_intensity <- dat_overlap %>% 
-  dplyr::filter(year == "2023") %>% # keep management oionly frm 2023 for consistency
+  #dplyr::filter(year == "2023") %>% # keep management oionly frm 2023 for consistency
   distinct(plot, year,
              # intensities
            clear_intensity,           
@@ -345,14 +348,10 @@ mng_intensity_props <-
                         logging_trail_intensity,  
                         planting_intensity ,       
                         anti_browsing_intensity
-                        #,   
-                        # salvage_intensity,         
-                        # protection_intensity,      
-                        # management_intensity
                         ),
                names_to = "activity",
                values_to = "applied") %>%
-  group_by(activity, applied) %>%
+  group_by(activity, applied, year) %>%
   summarise(n = n(), .groups = "drop") %>%
   group_by(activity) %>%
   mutate(proportion = n / sum(n)*100)
@@ -363,8 +362,8 @@ mng_intensity_props <- mng_intensity_props %>%
   mutate(
     intensity_class = cut(
       applied,
-      breaks = c(-Inf, 0.2, 0.4, 0.6, 0.8, Inf),
-      labels = c("0–20", "21–40", "41–60", "61–80", "81–100"),
+      breaks = c(-Inf, 0.19, 0.39, 0.59, 0.79, Inf),
+      labels = c("0–19", "20–39", "40–59", "60–79", "80–100"),
       right = TRUE
     )
   )
@@ -383,6 +382,11 @@ applied_mng_intens_order <- c(
   #"management_intensity"
 )
 
+
+# Define the factor levels in correct order
+intensity_levels <-  c("0–19", "20–39", "40–59", "60–79", "80–100")
+low_classes <- c("0–19", "20–39")
+
 # igroup into classes
 mng_sub_conv <- mng_intensity_props %>%
   mutate(
@@ -395,12 +399,9 @@ mng_sub_conv <- mng_intensity_props %>%
 
 
 ###  Define which classes are on the "left"----------------------
-# Define the factor levels in correct order
-intensity_levels <- c("0–20", "21–40", "41–60", "61–80", "81–100")
-low_classes <- c("0–20", "21–40")
 
 fill_colors <- brewer.pal(length(intensity_levels), "YlOrRd")
-library(forcats)
+
 mng_shifted <- mng_sub_conv %>%
   mutate(
     intensity_class = factor(intensity_class, levels = intensity_levels),
@@ -408,7 +409,7 @@ mng_shifted <- mng_sub_conv %>%
     # reverse class order for right-hand side only
     intensity_class_plot = fct_relevel(
       intensity_class,
-      c("81–100","61–80", "41–60","0–20","21–40" )
+      c("80–100","60–79", "40–59","0–19","20–39" )
     ),
     activity = factor(activity, levels = rev(c(
       "clear_intensity",
@@ -429,11 +430,11 @@ activity_intens_labels <- c(
 
 ggplot(mng_shifted, aes(x = proportion_shifted, y = activity,
                         fill = intensity_class_plot)) +
-  geom_col(width = 0.6, color = "black") +
+  geom_col(width = 0.4, color = "black") +
   scale_fill_manual(values = fill_colors, name = "Intensity class",
                     breaks = intensity_levels) +
   geom_vline(xintercept = 0, color = "grey", 
-             linewidth = 0.8, lty = 'solid') +
+             linewidth = 0.8, lty = 'dashed') +
   ylab('') +
   scale_y_discrete(labels = activity_intens_labels) +   # 👈 this does the relabeling
   scale_x_continuous(labels = abs, name = "Plots share [%]") +
@@ -593,6 +594,42 @@ ggplot(share_early_vs_late,
        fill = "Seral stage") 
 
 
+### Spruce share subplit vs plot level ----------------------------------------------------------------------
+
+# START 
+
+
+# Calculate spruce share at the plot level
+spruce_share_plot <- dat_overlap %>%
+  filter(!is.na(n)) %>%  # Optional: remove NAs if present
+  group_by(plot, year) %>%
+  summarise(
+    total_stems = n(),
+    spruce_stems = sum(species == "piab"),
+    spruce_share = spruce_stems / total_stems
+  ) %>% 
+  select(plot, year, spruce_share)
+
+hist(spruce_share_plot$spruce_share, breaks = 50)
+
+# Calculate spruce share at the subplot level
+spruce_share_sub <- dat_overlap %>%
+  filter(!is.na(n)) %>%  # Optional: remove NAs if present
+  group_by(plot, subplot, year) %>%
+  summarise(
+    total_stems = n(),
+    spruce_stems = sum(species == "piab"),
+    spruce_share = spruce_stems / total_stems,
+    .groups = "drop"
+  ) %>% 
+  select(plot, subplot, year, spruce_share)
+
+hist(spruce_share_sub$spruce_share, breaks = 50)
+
+
+
+
+
 
 
 ## Traits: Weighted community mean (subplot & plot) ------------------
@@ -624,7 +661,8 @@ cwm_subplot <- dat_overlap %>%
                          sum(w * Drought_tolerance, na.rm = TRUE) / stems_with_traits, NA_real_),
     trait_coverage = stems_with_traits / pmax(stems_total, 1e-9),
     .groups = "drop"
-  )
+  ) %>% 
+  select(-stems_total, - stems_with_traits, -trait_coverage)
 
 # 2) Plot × year CWMs
 cwm_plot <- dat_overlap %>%
@@ -641,7 +679,8 @@ cwm_plot <- dat_overlap %>%
                          sum(w * Drought_tolerance, na.rm = TRUE) / stems_with_traits, NA_real_),
     trait_coverage = stems_with_traits / pmax(stems_total, 1e-9),
     .groups = "drop"
-  )
+  ) %>% 
+  select(-stems_total, - stems_with_traits, -trait_coverage)
 
 ### quick plots on subplot and plot level 
 ord_year <- function(x) factor(as.character(x), levels = c("2023","2025"))
@@ -707,7 +746,8 @@ field_sub_summ <- dat_overlap %>%
            time_snc_full_disturbance, 
            time_snc_part_disturbance,
            disturbance_year, 
-           forest_year, disturbance_length,
+           forest_year, 
+           disturbance_length,
            clear,
            grndwrk,
            logging_trail,
@@ -1287,7 +1327,6 @@ ggarrange(p_bar, p_occurence, p_density,
 
 ### heights by species -------------------------------------------------------
 # get heights by species
-library(forcats)
 dat_overlap %>% 
   dplyr::filter(hgt_est>0) %>% 
   mutate(species = fct_reorder(species, hgt_est, .fun = median, .desc = TRUE)) %>%
@@ -1334,8 +1373,9 @@ plot_metrics_mean <- field_sub_summ %>%
     #mean_range_hgt   = mean(range_hgt,   na.rm = TRUE),
     .groups = "drop"
   ) %>% 
-  left_join(cwm_plot) %>% 
-  left_join(df_master_mng_plot)#
+  left_join(cwm_plot, by = join_by(plot, year)) %>% 
+  left_join(df_master_mng_plot,by = join_by(plot, year)) %>% 
+  left_join(spruce_share_plot, by = join_by(plot, year)) #%>% 
 
 
 # --- pooled CV directly from dat23_subplot_recode ---
@@ -1366,20 +1406,26 @@ plot_metrics_pooled  <- dat_overlap %>%
       sqrt(var_hgt) / mean_hgt else
         if (stems_total > 1 && is.finite(mean_hgt) && mean_hgt > 0) 0 else NA_real_,
     .groups = "drop" 
-  ) %>%
-  left_join(cwm_plot) %>% 
-  left_join(df_master_mng_plot)#
+  ) %>% 
+  left_join(cwm_plot, by = join_by(plot, year)) %>% 
+  left_join(df_master_mng_plot,by = join_by(plot, year)) %>% 
+  left_join(spruce_share_plot, by = join_by(plot, year)) #%>% 
+
 #mutate(cv_hgt = ifelse(is.na(cv_hgt), 0L, cv_hgt)) # replace NA by 0 if stems are missing
 
 # get only context and disturbance information on plot level
 df_plot_context <- dat_overlap %>%
   dplyr::select(plot,year,  
-                pre_dist_trees_n,  area_m2, 
+                pre_dist_trees_n,  
+                area_m2, 
                 pre_dist_dens_ha, 
                 time_snc_full_disturbance,
                 time_snc_part_disturbance,
-                disturbance_year, forest_year, disturbance_length,
-                protection_intensity, management_intensity) %>% 
+                disturbance_year, 
+                forest_year, 
+                disturbance_length,
+                protection_intensity, 
+                management_intensity) %>% 
   distinct() 
 
 
@@ -1408,18 +1454,14 @@ sub_df <- field_sub_summ %>%
                                 "year" = "year",
                                 "ID" = 'subplot',
                                 "time_snc_full_disturbance" = "time_snc_full_disturbance") ) %>% 
-  left_join(df_master_mng_plot, by = c("plot_id" = "plot"))# %>%  # need to separate here by year?
-  
+  left_join(df_master_mng_plot, by = c("plot_id" = "plot",
+                                       "year" = "year")) %>%  # need to separate here by year?
+  left_join(spruce_share_sub, by = c("plot_id" = "plot",
+                                     "year" = "year",
+                                     "ID" = 'subplot'))# %>%
 
 nrow(sub_df)
 hist(sub_df$cv_hgt, breaks = 80)
-
-# i have some many NA in cv_hgt?
-# check
-dat_overlap %>% 
-  filter(subplot == "514_T4_TP_20250827") %>% 
-  arrange(n)
-
 
 
 # 2) Plot table (pooled metrics already computed)
@@ -1446,7 +1488,10 @@ plot_df <- plot_metrics_pooled %>%
   left_join(cwm_plot, by = c("plot_id" = "plot",
                              "year" = "year",
                              "time_snc_full_disturbance" = "time_snc_full_disturbance") ) %>% 
-  left_join(df_master_mng_plot, by = c("plot_id" = "plot"))#
+  left_join(df_master_mng_plot, by = c("plot_id" = "plot",
+                                       "year" = "year")) %>% 
+  left_join(spruce_share_plot, by = c("plot_id" = "plot",
+                                       "year" = "year"))#
 
 
 #  3) Bind & clean final table with both levels
@@ -1473,8 +1518,8 @@ both_levels_re2 <- bind_rows(sub_df, plot_df) %>%
            factor(levels = c("early", "later")),
          dist_length_f = ifelse(disturbance_length <= 2, "abrupt", "continuous") %>% 
            factor(levels = c( "abrupt", "continuous")),
-         plant_intens_f = ifelse(planting_intensity <= 0.2, "low", "high") %>% 
-           factor(levels = c("low", "high")))
+         plant_intens_f = ifelse(planting_intensity < 0.2, "no", "high") %>% 
+           factor(levels = c("no", "high")))
 
 
 # add small value to CV = 0
@@ -1508,9 +1553,48 @@ both_levels_re2 %>%
              y = sp_richness,
              fill = plant_intens_f)) + 
   geom_boxplot(notch = T) +
+  stat_compare_means(method = "wilcox.test", label.y = max(both_levels_re2$sp_richness, na.rm = TRUE) * 1.05) + 
   geom_jitter(alpha = 0.2) +
-  facet_grid(.~level)
+  facet_grid(.~level) +
+  theme(legend.position = 'none')
 
+
+# share spruce by planting
+both_levels_re2 %>% 
+  filter(level == 'plot') %>% 
+  ggplot(aes(x = plant_intens_f,
+             y = spruce_share,
+             fill = plant_intens_f)) + 
+  geom_boxplot(notch = T) +
+  stat_compare_means(method = "wilcox.test", 
+                     label.y = max(both_levels_re2$spruce_share, na.rm = TRUE) * 1.05) + 
+  geom_jitter(alpha = 0.2) +
+  facet_grid(.~level) +
+  theme(legend.position = 'none')
+
+
+both_levels_re2 %>% 
+  filter(level == 'plot') %>% 
+  ggplot(aes(x = factor(planting_intensity),
+             y = spruce_share,
+             fill = factor(planting_intensity))) + 
+  geom_boxplot(notch = T) +
+  stat_compare_means(method = "wilcox.test", 
+                     label.y = max(both_levels_re2$spruce_share, na.rm = TRUE) * 1.05) + 
+  geom_jitter(alpha = 0.2) +
+  facet_grid(.~level) +
+  theme(legend.position = 'none')
+
+
+
+both_levels_re2 %>% 
+  filter(level == 'plot') %>% 
+  ggplot(aes(x = planting_intensity,
+             y = spruce_share,
+             fill = planting_intensity)) + 
+  geom_point() +
+  geom_smooth(method = 'lm')
+  
 
 
 
@@ -1644,6 +1728,7 @@ level_means_diverged <- plot_level_long %>%
          level = fct_relevel(level, "subplot", "plot"))
 
 # 2. Plot diverging lollipops
+# CONTINUE HERE!!!!!
 ggplot(level_means_diverged, aes(x = value, y = fct_rev(metric), fill = level,
                                  color = level)) +
   geom_segment(aes(x = 0, xend = value, y = metric, yend = metric),
