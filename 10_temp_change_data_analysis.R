@@ -75,7 +75,7 @@ dat_overlap_n0 <- dat_overlap %>%
   mutate(n = ifelse(is.na(n), 0, n))  
 
 
-### Subplot: Species richness per planting -----------------------
+### richness: Subplot: Species richness per planting -----------------------
 richness_per_subplot <- dat_overlap_n0 %>%
   group_by(plot, subplot, year, planting) %>% #
   summarize(
@@ -156,7 +156,7 @@ single_species_sub_details <- dat_overlap %>%
 length(unique(single_species_sub_details$subplot))  # 709!!
 
 
-## single species per plot ---------------------
+#### single species per plot 
 single_species_plots <- dat_overlap %>%
   filter(!is.na(n), n > 0) %>%
   group_by(plot, year, planting_intensity) %>%
@@ -170,7 +170,27 @@ length(unique(single_species_plots$plot))  # 30
 hist(single_species_plots$planting_intensity)
 
 
-### Get context and disturbance characteristics (plot) --------------
+### Total trees per year --------------------------------------------------------
+total_trees_per_year <- dat_overlap %>%
+  group_by(year) %>%
+  summarise(
+    total_trees = sum(n, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+tree_summary <- dat_overlap %>%
+  group_by(year, seral_stage ) %>%
+  summarise(
+    n_trees_recovery = sum(n, na.rm = TRUE),
+    .groups = "drop"
+  ) %>% 
+  left_join(total_trees_per_year) %>% 
+  mutate(share = n_trees_recovery /total_trees * 100)
+
+
+
+
+## Get context and disturbance characteristics (plot) --------------
 plot_context_chars <- dat_overlap %>% 
   dplyr::select(plot, year,
                 status,
@@ -216,10 +236,11 @@ ggarrange(p_hist_dist_year, p_hist_dist_length, p_hist_time_since_dist,
 
 
 
-
+# Graphics: share of management per subplot and plot level --------------
+## Subplot level -----------------------------------------------------------
 # Clean up management - if site has been mamaged in 2023, it needs to be managemt (cleared)
 # in 2025 as well!!
-df_master_mng <- dat_overlap %>% 
+df_mng_sub <- dat_overlap %>% 
   #dplyr::filter(year == "2023") %>% # keep management oionly frm 2023 for consistency
   distinct(plot, subplot,year,
            clear,
@@ -241,7 +262,7 @@ df_master_mng <- dat_overlap %>%
            )
 
 
-df_master_mng_plot <- df_master_mng %>% 
+df_mng_plot <- df_mng_sub %>% 
   select(plot, year, clear_intensity,           
          grndwrk_intensity,         
          logging_trail_intensity,  
@@ -250,7 +271,7 @@ df_master_mng_plot <- df_master_mng %>%
   distinct()
 
 
-management_proportions <- df_master_mng %>%
+mng_sub_props <- df_mng_sub %>%
   # group by year???
   pivot_longer(cols = c(clear, grndwrk, logging_trail, planting, anti_browsing),
                names_to = "activity",
@@ -260,23 +281,23 @@ management_proportions <- df_master_mng %>%
   group_by(activity) %>%
   mutate(proportion = n / sum(n)*100)
 
-management_proportions
+mng_sub_props
 
 
 # First extract proportion for applied == 1 per activity
-applied_order <- management_proportions %>%
+mng_sub_applied_order <- mng_sub_props %>%
   filter(applied == 1) %>%
   arrange(desc(proportion)) %>%
-  pull(activity)
+  pull(activity) %>% 
+  unique()
 
-management_activity <- unique(management_proportions$activity)
 
 # Prepare data for diverging bar plot
-mng_sub_conv <-  management_proportions %>%
+mng_sub_conv <-  mng_sub_props %>%
   mutate(proportion = ifelse(applied == 0, -proportion, proportion),
          applied = ifelse(applied == 1, "Presence", "Absence")) %>% 
   arrange(desc(proportion)) %>% 
-  mutate(activity = factor(activity, levels = rev(management_activity))) #%>%
+  mutate(activity = factor(activity, levels = rev(mng_sub_applied_order))) #%>%
 
 #library(forcats)
 
@@ -287,8 +308,6 @@ activity_labels <- c(
   "anti_browsing" = "Browsing protection",
   "logging_trail" = "Logging trail"
 )
-# mng_sub_conv <- mng_sub_conv %>%
-#   mutate(activity = recode(activity, !!!activity_labels))
 
 # Create diverging bar plot - need to check for divide where site is salvage logging = 1 in 2023 but 0 in 2025
 ggplot(mng_sub_conv, aes(x = proportion, y = activity, fill = applied)) +
@@ -315,11 +334,8 @@ ggplot(mng_sub_conv, aes(x = proportion, y = activity, fill = applied)) +
         text = element_text(size = 10))
 
 
-# get management intensities on plot level: qantify for low vs high level intensity
-
-# TEST START - neneeds more work!!!
-
-# plot level, so have only intensities
+# 
+### Plot level: intensities  ------------------------------------
 df_master_mng_intensity <- dat_overlap %>% 
   #dplyr::filter(year == "2023") %>% # keep management oionly frm 2023 for consistency
   distinct(plot, year,
@@ -328,7 +344,10 @@ df_master_mng_intensity <- dat_overlap %>%
            grndwrk_intensity,         
            logging_trail_intensity,  
            planting_intensity ,      
-           anti_browsing_intensity,   salvage_intensity,         protection_intensity,      management_intensity
+           anti_browsing_intensity,   
+           salvage_intensity,         
+           protection_intensity,      
+           management_intensity
            
   )
 nrow(df_master_mng_intensity)
@@ -388,10 +407,7 @@ mng_sub_conv <- mng_intensity_props %>%
   group_by(activity, intensity_class) %>% 
   summarise(proportion = sum(proportion, na.rm = T))
 
-
-
-###  Define which classes are on the "left"----------------------
-
+# define colors 
 fill_colors <- brewer.pal(length(intensity_levels), "YlOrRd")
 
 mng_shifted <- mng_sub_conv %>%
@@ -440,92 +456,8 @@ ggplot(mng_shifted, aes(x = proportion_shifted, y = activity,
   )
 
 
-
-# > table(df_master_mng$clear )
-# 0   1 
-# 7 618 
-# > table(df_master_mng$grndwrk)
-# 0   1 
-# 79 546 
-
-# > table(df_master_mng$logging_trail)
-# 0   1 
-# 522 103 
-
-# > table(df_master_mng$planting)
-# 0   1 
-# 297 328 
-
-# > table(df_master_mng$anti_browsing)
-# 0   1 
-# 377 248
-
-# get management characteristics only from 2023
-# clear,
-# grndwrk,
-# logging_trail,
-# planting,
-# anti_browsing
-
-
-## Early vs late (landscape, plot, subplot) ---------------
-# Summarize total number of trees per year and recovery type
-total_trees_per_year <- dat_overlap %>%
-  group_by(year) %>%
-  summarise(
-    total_trees = sum(n, na.rm = TRUE),
-    .groups = "drop"
-  )
-
-tree_summary <- dat_overlap %>%
-  group_by(year, seral_stage ) %>%
-  summarise(
-    n_trees_recovery = sum(n, na.rm = TRUE),
-    .groups = "drop"
-  ) %>% 
-  left_join(total_trees_per_year) %>% 
-  mutate(share = n_trees_recovery /total_trees * 100)
-
-print(tree_summary)
-
-# Stacked barplot
-tree_summary %>% 
-  dplyr::filter(seral_stage != 'other') %>% 
-  ggplot( aes(x = year, y = share, fill = seral_stage)) +
-  geom_bar(stat = "identity", color = "black") +
-  labs(
-    title = "Tree Counts by Recovery Type per Year",
-    x = "Year",
-    y = "Share [%]",
-    fill = "Recovery Type"
-  ) +
-  scale_fill_manual(values = c("early" = "#66c2a5", "late" = "#fc8d62")) +
-  theme_classic2(base_size = 8)
-
-
-
-
-dat_sum_recovery <- dat_overlap %>%
-  mutate(n = coalesce(n, 0L)) %>% 
-  # mutate(year = as.factor(year)) %>% 
-  group_by(seral_stage, year) %>%
-  summarise(
-    stems_total = sum(n, na.rm = TRUE))
-
-dat_sum_recovery
-
-
-### Early vs. late species over time --------------------
-
-dat_overlap %>% 
-  group_by(plot, seral_stage) %>%
-  summarise(n_stems = n(), .groups = "drop") %>%
-  pivot_wider(names_from = seral_stage,
-              values_from = n_stems,
-              values_fill = 0)  # fill missing types with 0
-
-
-# check up development of early vs ;late shares givet time since disturbance
+# Generate new data -----------------------------------------------------------
+## Early vs late ( plot, subplot) ---------------
 
 # Calculate stem counts by recovery type at the plot level
 share_early_vs_late <- 
@@ -544,7 +476,7 @@ share_early_vs_late <-
                names_to = "seral_stage",
                values_to = "share")# %>%
 
-### Early vs late: plot level 
+### Early vs late: plot level  
 df_plot_share_early <-  
   dat_overlap %>%
   filter(!is.na(n)) %>%  # Optional: remove NAs if present
@@ -559,8 +491,7 @@ df_plot_share_early <-
   select(plot, year, share_early, share_late,time_snc_full_disturbance) 
 
 ### early vs late : subplot level 
-df_sub_share_early <-  
-  dat_overlap %>%
+df_sub_share_early <-  dat_overlap %>%
   filter(!is.na(n)) %>%  # Optional: remove NAs if present
   group_by(subplot, plot,year, seral_stage, time_snc_full_disturbance) %>%
   summarise(n_stems = n(), .groups = "drop") %>%
@@ -586,9 +517,7 @@ ggplot(share_early_vs_late,
        fill = "Seral stage") 
 
 
-### Spruce share subplit vs plot level ----------------------------------------------------------------------
-
-# START 
+## Spruce share ( plot, subplot) ----------------------------------------------------------------------
 
 
 # Calculate spruce share at the plot level
@@ -617,11 +546,6 @@ spruce_share_sub <- dat_overlap %>%
   select(plot, subplot, year, spruce_share)
 
 hist(spruce_share_sub$spruce_share, breaks = 50)
-
-
-
-
-
 
 
 ## Traits: Weighted community mean (subplot & plot) ------------------
@@ -730,6 +654,7 @@ cwm_all_long %>%
   theme(legend.position = "none")
 
 
+# Create table on subplot and plot level ----------------------------------------
 ## Field data summary: subplot metrics ----------------------------------------------------------
 field_sub_summ <- dat_overlap %>%
   mutate(n = coalesce(n, 0L)) %>% # change NAs to 0 (0L = literrary 0 = integer (not double))
@@ -777,15 +702,12 @@ field_sub_summ <- dat_overlap %>%
   )  %>% 
   left_join(cwm_subplot)
 
-# mutate(cv_hgt = ifelse(is.na(cv_hgt), 0L, cv_hgt),
-#       mean_hgt = ifelse(is.na(mean_hgt), 0L, mean_hgt)) # replace NA by 0 if stems are missing
-
 
 # is teh change in community shading/drought tolerance driven by planting????
 # Plot: Shade ~ Time since disturbance, by planting
 x_lab_time_snc_full_dist = "Time since stand\nreplacing disturbance (years)"
 
-#### Effect of planting? ---------------------------------------------
+#### Effect of planting? 
 p_shade_planting <- field_sub_summ %>% 
   ggplot(aes(x = as.factor(time_snc_full_disturbance),
              y = CWM_shade,
@@ -886,7 +808,7 @@ df_sub_long <- field_sub_summ %>%
 
 
 
-### Subplot: Time since disturbnace ----------------------------------------
+#### Subplot: Time since disturbnace ----------------------------------------
 
 # see CV with time since disturbnace : poartial disturbance
 p_partial_disturbance <- df_sub_long %>% 
@@ -941,48 +863,6 @@ subplot_summary_tbl <- field_sub_summ %>%
 subplot_summary_tbl
 
 
-# summarize subplot information 
-# how many trees?
-sum(field_sub_summ$stems_total)            # 3658 stems
-length(unique(field_sub_summ$subplot))     # 1250
-sum(field_sub_summ$stems_total == 0)       # 271 
-sum(field_sub_summ$cv_hgt > 1, na.rm = T)  # 20
-
-
-field_sub_summ_filt <- field_sub_summ %>%
-  filter(stems_total > 0 & cv_hgt > 0)
-
-p1 <- ggplot(field_sub_summ_filt, aes(x = stems_total, y = cv_hgt, color = year,
-                                      fill = year)) +
-  geom_point(alpha = 0.4, size = 2 ) +
-  # geom_smooth(method = "loess", se = TRUE, color = "red") +
-  geom_smooth(method = "gam", formula = y ~ s(x, k = 3),
-              se = TRUE,  linetype = "dashed") +
-  labs(
-    x = "Stem count per subplot",
-    y = "CV of tree height",
-    title = "Stem density vs. Vertical Structural Variation",
-    subtitle = "Empty subplots excluded"
-  ) +
-  theme_classic2(base_size = 8)
-
-
-p2 <- ggplot(field_sub_summ_filt, aes(x = shannon_sp, y = cv_hgt, color = year,
-                                      fill = year)) +
-  geom_point(alpha = 0.4, size = 2) +
-  # geom_smooth(method = "loess", se = TRUE, color = "red") +
-  geom_smooth(method = "gam", formula = y ~ s(x, k = 3),
-              se = TRUE, linetype = "dashed") +
-  labs(
-    x = "Shannon per subplot",
-    y = "CV of tree height",
-    title = "Shannon vs. Vertical Structural Variation",
-    subtitle = "Empty subplots excluded"
-  ) +
-  theme_classic2(base_size = 8)
-
-ggarrange(p1, p2)
-# ssame analysis on both scales? 
 
 # Species composition --------------------------------------------------
 
