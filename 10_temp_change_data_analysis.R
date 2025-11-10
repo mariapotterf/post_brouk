@@ -1353,19 +1353,27 @@ plot_df <- plot_metrics_pooled %>%
 names(plot_df)
 
 
-#  3) Bind & clean final table with both levels
+#### Bind & clean final table with both levels ----------
 both_levels_re2 <- bind_rows(sub_df, plot_df) %>%
     mutate(
-    level   = factor(level, levels = c("subplot","plot")),
-    plot_id = factor(plot_id),
-    w       = pmin(pmax(w, 1), 50)   # cap weights so a few dense plots don't dominate
+      # cap time since disturbance
+      time_snc_full_disturbance = pmin(time_snc_full_disturbance, 8),
+      level   = factor(level, levels = c("subplot","plot")),
+      plot_id = factor(plot_id),
+      w       = pmin(pmax(w, 1), 50)   # cap weights so a few dense plots don't dominate
   ) %>% 
   mutate(time_since_f = ifelse(time_snc_full_disturbance <= 2, "early", "later") %>% 
            factor(levels = c("early", "later")),
          dist_length_f = ifelse(disturbance_length <= 2, "abrupt", "continuous") %>% 
            factor(levels = c( "abrupt", "continuous")),
          plant_f = ifelse(planting_intensity < 0.2, "no", "yes") %>% 
-           factor(levels = c("no", "yes")))
+           factor(levels = c("no", "yes")), 
+         anti_brow_f = ifelse(anti_browsing_intensity < 0.2, "no", "yes") %>% 
+           factor(levels = c("no", "yes")),
+         grndwrk_f = ifelse(grndwrk_intensity < 0.2, "no", "yes") %>% 
+           factor(levels = c("no", "yes")),
+         year_f = factor(year)
+           )
 
 
 # add small value to CV = 0
@@ -1376,111 +1384,370 @@ both_levels_re2 <- both_levels_re2 %>%
   filter(!is.na(mean_hgt), !is.na(w), !is.na(cv_hgt), !is.na(dens_m2))
 
 
-### GAM: Richness by planting?  ------------------
-both_levels_re2 %>% 
+##### Boxplot: which management is most important?  --------------------
+# Create long table for plotting across factors
+both_levels_long <- both_levels_re2 %>%
   filter(level == 'plot') %>% 
-  ggplot(aes(x = plant_f,
-             y = sp_richness,
-             fill = plant_f)) + 
-  geom_boxplot(notch = T) +
-  stat_compare_means(method = "wilcox.test", label.y = max(both_levels_re2$sp_richness, na.rm = TRUE) * 1.05) + 
-  geom_jitter(alpha = 0.2) +
-  facet_grid(.~level) +
+  select(plot_id, level,
+         dens_m2, cv_hgt, mean_hgt, sp_richness, shannon_sp,
+         time_since_f, dist_length_f, plant_f, 
+         anti_brow_f,
+         grndwrk_f) %>%
+  pivot_longer(
+    cols = c(dens_m2, cv_hgt, mean_hgt, sp_richness, shannon_sp),
+    names_to = "variable",
+    values_to = "value"
+  )
+
+# check which one of management activities is more important for species richness 
+# and vertical structure?
+p1<-ggplot(both_levels_long %>% filter(level == "plot"),
+       aes(x = plant_f, y = value, fill = plant_f)) +
+  geom_boxplot(outlier.shape = NA) +
+  stat_compare_means(
+    aes(label = paste0("p = ", ..p.format..)),  # nicely formatted p-values
+    method = "wilcox.test",                     # or "t.test" depending on data
+    label.y.npc = 0.95,                         # position near top of panel
+    size = 3
+  ) +
+  facet_wrap(~ variable, scales = "free_y", ncol = 5) +
+  theme_bw() + 
+  theme(legend.position = 'none')
+
+p2<-ggplot(both_levels_long %>% filter(level == "plot"),
+       aes(x = anti_brow_f, y = value,
+           fill = anti_brow_f)) +
+  geom_boxplot(outlier.shape = NA) +
+  stat_compare_means(
+    aes(label = paste0("p = ", ..p.format..)),  # nicely formatted p-values
+    method = "wilcox.test",                     # or "t.test" depending on data
+    label.y.npc = 0.95,                         # position near top of panel
+    size = 3
+  ) +
+  facet_wrap(~ variable, scales = "free_y", ncol = 5) +  theme_bw() +
+  theme(legend.position = 'none')
+
+p3<-ggplot(both_levels_long %>% filter(level == "plot"),
+       aes(x = grndwrk_f, y = value,
+           fill = grndwrk_f)) +
+  geom_boxplot(outlier.shape = NA) +
+  stat_compare_means(
+    aes(label = paste0("p = ", ..p.format..)),  # nicely formatted p-values
+    method = "wilcox.test",                     # or "t.test" depending on data
+    label.y.npc = 0.95,                         # position near top of panel
+    size = 3
+  ) +
+  facet_wrap(~ variable, scales = "free_y", ncol = 5) +
+  theme_bw() +
   theme(legend.position = 'none')
 
 
+ggarrange(p1,p2,p3, ncol = 1, nrow = 3)
 
-p1<-both_levels_re2 %>% 
-  filter(level == 'plot') %>% 
-  ggplot(aes(x = factor(planting_intensity),
-             y = shannon_sp)) + 
-  geom_boxplot(notch = T) 
+both_levels_re2 %>% 
+  filter(level == "plot") %>% 
+  ggplot(aes(x = anti_brow_f,
+             y = mean_hgt)) +
+  geom_boxplot()
 
+### Test which management activity is most important ----------------------------
+library(broom)
+library(dplyr)
+library(purrr)
 
-# effective number sof species
-p2<-  both_levels_re2 %>% 
-    filter(level == 'plot') %>% 
-    ggplot(aes(x = factor(planting_intensity),
-               y = effective_numbers)) + 
-    geom_boxplot(notch = T) 
+models <- both_levels_re2 %>%
+  filter(level == "plot") %>%
+  {
+    list(
+      # shannon_sp   = lm(shannon_sp ~ plant_f + anti_brow_f + grndwrk_f, data = .),
+      # sp_richness  = lm(sp_richness ~ plant_f + anti_brow_f + grndwrk_f, data = .),
+      # mean_hgt     = lm(mean_hgt ~ plant_f + anti_brow_f + grndwrk_f, data = .),
+      # cv_hgt       = lm(cv_hgt ~ plant_f + anti_brow_f + grndwrk_f, data = .)
+      effective_numbers  = gam(effective_numbers ~ plant_f + anti_brow_f + grndwrk_f +
+                          s(plot_id, bs = "re"),
+                        data = ., family = tw(link = "log"), method = "REML"),
+      
+      sp_richness = gam(sp_richness ~ plant_f + anti_brow_f + grndwrk_f +
+                          s(plot_id, bs = "re"),
+                        data = ., family = nb(link = "log"), method = "REML"),
+      
+      mean_hgt    = gam(mean_hgt ~ plant_f + anti_brow_f + grndwrk_f +
+                          s(plot_id, bs = "re"),
+                        data = ., family = tw(link = "log"), method = "REML"),
+      
+      cv_hgt      = gam(cv_hgt_pos ~ plant_f + anti_brow_f + grndwrk_f +
+                          s(plot_id, bs = "re"),
+                        data = ., family = tw(link = "log"), method = "REML")
+    )
+  }
 
-p3<-  both_levels_re2 %>% 
-    filter(level == 'plot') %>% 
-    ggplot(aes(x = factor(planting_intensity),
-               y = sp_richness)) + 
-    geom_boxplot(notch = T) 
+##### check model assumptions  - from gam model
+
+# Extract model summaries
+model_stats <- map_dfr(names(models), function(nm) {
+  m <- models[[nm]]
+  sm <- summary(m)
   
-  
-ggarrange(p1, p2, p3, ncol = 1)
-  
-hist(both_levels_re2$planting_intensity)
+  tibble(
+    response = nm,
+    r2_adj = sm$r.sq,                     # adjusted R² for GAM
+    dev_expl = sm$dev.expl * 100          # explained deviance in %
+  )
+})
+
+model_stats
 
 
-gam_shannon_both <- gam(
-  shannon_sp ~ s(planting_intensity, by = level, k = 5) +
-    level + year + 
-    s(plot_id, bs = "re"),
-  data = both_levels_re2,
-  method = "REML",
-  family = gaussian()
-)
+model_results_df <- map_dfr(models, tidy, parametric = TRUE, .id = "response") %>%
+  filter(term != "(Intercept)") %>%
+  mutate(
+    lower = estimate - 1.96 * std.error,
+    upper = estimate + 1.96 * std.error,
+    term = recode(term,
+                  "plant_fyes" = "Planting",
+                  "anti_brow_fyes" = "Anti-browsing",
+                  "grndwrk_fyes" = "Groundwork"),
+    # Add a tiny offset so very small bars are still visible
+    estimate_adj = ifelse(abs(estimate) < 0.01, sign(estimate + 1e-6) * 0.01, estimate),
+    lower_adj = ifelse(abs(estimate) < 0.01, 0, lower),
+    upper_adj = ifelse(abs(estimate) < 0.01, 0, upper),
+    response = recode(response,
+                      "effective_numbers" = "Species diversity\n[Effective #]",
+                      "sp_richness"       = "Species richness\n[#]",
+                      "mean_hgt"          = "Mean height\n[m]",
+                      "cv_hgt"            = "Height variability\n[CV, %]"
+                      ),
+    # order facets manually
+    response = factor(response,
+                      levels = c("Mean height\n[m]",
+                                 "Height variability\n[CV, %]",
+                                 "Species diversity\n[Effective #]",
+                                 "Species richness\n[#]"))
+  )
 
-gam_shannon_both_k6 <- gam(
-  shannon_sp ~ s(planting_intensity, by = level, k = 6) +
-    level + year + s(plot_id, bs = "re"),
-  data = both_levels_re2,
-  method = "REML"
-)
-
-mgcv::gam.check(gam_shannon_both_k6)
-
-summary(gam_shannon_both_k6)
-appraise(gam_shannon_both)
-plot(gam_shannon_both, page = 1)
-mgcv::gam.check(gam_shannon_both)
-
-draw(gam_shannon_both, select = 1:2)  # shows subplot vs plot smooths
-
-
-# Predict partial effects for both levels -------------------------
-pred_smooths <- ggpredict(
-  gam_shannon_both_k6,
-  terms = c("planting_intensity [all]", "level")  # variable and grouping factor
-)
-
-# Check structure
-head(pred_smooths)
-
-# Plot both smooths in one figure ---------------------------------
-ggplot(pred_smooths, aes(x = x, y = predicted,
-                         color = group, fill = group)) +
-  geom_ribbon(aes(ymin = conf.low, ymax = conf.high),
-              alpha = 0.2, color = NA) +
-  geom_line(size = 1.2) +
-  scale_color_manual(values = c("#1b9e77", "#7570b3"),
-                     labels = c("Subplot level", "Plot level")) +
-  scale_fill_manual(values = c("#1b9e77", "#7570b3"),
-                    labels = c("Subplot level", "Plot level")) +
+ggplot(model_results_df, aes(x = term, y = estimate, fill = term)) +
+  geom_hline(yintercept = 0, col = 'grey', lwd = 0.5, lty = 'solid') +
+  geom_col(position = "dodge", width = 0.7) +
+   geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.15, linewidth = 0.5) +
+  facet_wrap(~ response, ncol = 4) + #scales = "free_y"
+  theme_classic2(base_size = 8) +
   labs(
-    x = "Planting intensity (0–1)",
-    y = "Predicted Shannon diversity",
-    color = "Sampling level",
-    fill = "Sampling level",
-    title = "Effect of planting intensity on species diversity",
-    subtitle = "Predicted smooths from GAM with random plot effects"
+    x = "",
+    y = "Estimated effect (parametric term)",
+    title = ""
   ) +
-  theme_classic(base_size = 14) +
   theme(
-    legend.position = "top",
-    plot.title = element_text(face = "bold")
+    legend.position = "none",
+    strip.text = element_text( size = 10),
+    axis.text.x = element_text(angle = 25, hjust = 1),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.6),
+    panel.grid.major.y = element_line(color = "grey90", linewidth = 0.3)
   )
 
 
-# test GAm: effective # by planting intensity  ------------------------
+# how much is the change in %? 
 
+effects_df <- model_results_df %>%
+  select(response, term, estimate) %>%
+  mutate(
+    perc_change = (exp(estimate) - 1) * 100
+  ) %>%
+  group_by(response, term) %>%
+  summarise(mean_effect = mean(perc_change), .groups = "drop")
+effects_df
+
+
+
+
+
+
+
+
+
+
+
+### GAM: height x time_since   ------------------
+# test by presence_absence of planting
+gam_mean_hgt <- gam(
+  mean_hgt  ~ s(planting_intensity,  k = 3) +
+    s(grndwrk_intensity        ,  k = 3) +
+    s(anti_browsing_intensity  ,  k = 3) +
+    s(time_snc_full_disturbance, by = plant_f,  k = 3)+
+    level + 
+    plant_f +
+    s(plot_id, bs = "re"),
+  data = both_levels_re2,
+  method = "REML",
+  family = tw(link = "log")
+)
+
+# test for present/absent groundwork
+gam_mean_hgt2 <- gam(
+  mean_hgt  ~ s(planting_intensity,  k = 3) +
+    s(grndwrk_intensity        ,  k = 3) +
+    s(anti_browsing_intensity  ,  k = 3) +
+    s(time_snc_full_disturbance, by = grndwrk_f ,  k = 3)+
+    level + 
+   # plant_f +
+    grndwrk_f +
+    s(plot_id, bs = "re"),
+  data = both_levels_re2,
+  method = "REML",
+  family = tw(link = "log")
+)
+
+AIC(gam_mean_hgt2, gam_mean_hgt)
+summary(gam_mean_hgt)
+summary(gam_mean_hgt2)
+plot(gam_mean_hgt, shade = TRUE, pages = 1)
+appraise(gam_mean_hgt)
+
+pred_smooths <- ggpredict(
+  gam_mean_hgt,
+  terms = c("time_snc_full_disturbance [0:8]",
+            "plant_f [all]")  # variable and grouping factor
+)
+
+p_gam_height <- plot(pred_smooths)
+p_gam_height
+
+
+pred_smooths <- ggpredict(
+  gam_mean_hgt2,
+  terms = c("time_snc_full_disturbance [0:8]",
+            "grndwrk_f [all]")  # variable and grouping factor
+)
+
+p_gam_height <- plot(pred_smooths)
+p_gam_height
+
+# is teh pattern real? eg planted sites are slightly taller then no planted ones?
+
+both_levels_re2 %>%
+  filter(level == "plot") %>%
+  group_by(plant_f, time_snc_full_disturbance) %>%
+  summarise(n = n(), mean_hgt = mean(mean_hgt, na.rm = TRUE))
+
+
+
+### GAM: CV_height x time_since   ------------------
+
+# as binary/continuous part
+
+#  1. Binary part: presence/absence 
+both_levels_re2 <- both_levels_re2 %>%
+  mutate(cv_hgt_present = as.integer(cv_hgt > 0))
+table(both_levels_re2$cv_hgt_present)
+
+gam_cv_hgt_bin <- gam(
+  cv_hgt_present ~   s(planting_intensity,  k = 3) +
+    s(grndwrk_intensity        ,  k = 3) +
+    s(anti_browsing_intensity  ,  k = 3) +
+    s(time_snc_full_disturbance, by = plant_f,  k = 3)+
+    level + 
+    plant_f +
+    s(plot_id, bs = "re"),
+  data   = both_levels_re2,
+  method = "REML",
+  family = binomial(link = "logit")
+)
+
+# 2. Positive part: only where cv_hgt_pos > 0
+gam_cv_hgt_pos <- gam(
+  cv_hgt_pos ~ s(planting_intensity,  k = 3) +
+    s(grndwrk_intensity        ,  k = 3) +
+    s(anti_browsing_intensity  ,  k = 3) +
+    s(time_snc_full_disturbance, by = plant_f,  k = 3)+
+    level + 
+    plant_f +
+    s(plot_id, bs = "re"),
+  data   = subset(both_levels_re2, cv_hgt > 0),
+  method = "REML",
+  family = tw(link = "log")   # or tw(link="log") if still skewed
+)
+
+summary(gam_cv_hgt_pos)
+plot(gam_cv_hgt_pos, page = 1)
+summary(gam_cv_hgt_bin)
+plot(gam_cv_hgt_bin, page = 1)
+appraise(gam_cv_hgt_pos)
+
+pred_bin <- ggpredict(
+  gam_cv_hgt_bin,
+  terms = c("time_snc_full_disturbance [0:8]", "plant_f")
+)
+
+plot(pred_bin) + 
+  labs(y = "Probability of CV height > 0", x = "Years since disturbance")
+
+
+pred_pos <- ggpredict(
+  gam_cv_hgt_pos,
+  terms = c("time_snc_full_disturbance [0:8]", "plant_f")
+)
+
+plot(pred_pos) +
+  labs(y = "Mean CV height (given >0)", x = "Years since disturbance")
+
+
+
+##### Combine binary and positive model ----------------------------------------
+# 1️⃣ Predict probability (binary model)
+pred_bin <- ggpredict(
+  gam_cv_hgt_bin,
+  terms = c("time_snc_full_disturbance [0:8]", "plant_f")
+) %>%
+  rename(prob = predicted,
+         prob_low = conf.low,
+         prob_high = conf.high)
+
+# 2️⃣ Predict magnitude (positive model)
+pred_pos <- ggpredict(
+  gam_cv_hgt_pos,
+  terms = c("time_snc_full_disturbance [0:8]", "plant_f")
+) %>%
+  rename(mean_pos = predicted,
+         pos_low = conf.low,
+         pos_high = conf.high)
+
+# 3️⃣ Merge and compute expected CV = probability × conditional mean
+pred_combined <- left_join(pred_bin, pred_pos, by = c("x", "group")) %>%
+  mutate(
+    expected_cv = prob * mean_pos,
+    lower = prob_low * pos_low,
+    upper = prob_high * pos_high
+  )
+
+# 4️⃣ Plot combined expected CV
+p_gam_cv <- ggplot(pred_combined,
+       aes(x = x, y = expected_cv, colour = group, fill = group)) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2, colour = NA) +
+  geom_line(linewidth = 1.1) +
+  labs(
+    x = "Years since disturbance",
+    y = "Expected height variability (CV)",
+    colour = "Planting",
+    fill = "Planting"
+  ) +
+   theme_classic(base_size = 8) +
+  theme(
+    legend.position = "top",
+    panel.border = element_rect(colour = "black", fill = NA, linewidth = 0.5)
+  )
+
+
+
+
+
+
+### GAM: Effective number of species x time_since   ------------------
 gam_effective_both <- gam(
-  effective_numbers ~ s(planting_intensity, by = level, k = 5) +
-    level + year + 
+  effective_numbers ~ s(planting_intensity,  k = 3) +
+    s(grndwrk_intensity        ,  k = 3) +
+    s(anti_browsing_intensity  ,  k = 3) +
+    s(time_snc_full_disturbance, by = plant_f,  k = 3)+
+    level + 
+    plant_f +
     s(plot_id, bs = "re"),
   data = both_levels_re2,
   method = "REML",
@@ -1490,6 +1757,44 @@ summary(gam_effective_both)
 plot(gam_effective_both, shade = TRUE, pages = 1)
 mgcv::gam.check(gam_effective_both)
 appraise(gam_effective_both)
+
+
+pred_smooths <- ggpredict(
+  gam_effective_both,
+  terms = c("time_snc_full_disturbance [0:8]", "plant_f")  # variable and grouping factor
+)
+
+p_gam_eff <- plot(pred_smooths)
+
+
+
+
+
+### GAM: Richness  x time_since   ------------------
+gam_richness <- gam(
+  sp_richness  ~ s(planting_intensity,  k = 3) +
+    s(grndwrk_intensity        ,  k = 3) +
+    s(anti_browsing_intensity  ,  k = 3) +
+    s(time_snc_full_disturbance, by = plant_f,  k = 3)+
+    level + 
+    plant_f +
+    s(plot_id, bs = "re"),
+  data = both_levels_re2,
+  method = "REML",
+  family = tw(link = "log")
+)
+summary(gam_richness)
+plot(gam_richness, shade = TRUE, pages = 1)
+mgcv::gam.check(gam_richness)
+appraise(gam_richness)
+
+
+pred_smooths <- ggpredict(
+  gam_richness,
+  terms = c("time_snc_full_disturbance [0:8]", "plant_f")  # variable and grouping factor
+)
+
+p_gam_richness <- plot(pred_smooths)
 
 
 # share spruce by planting ----------------------------------------------
@@ -1762,8 +2067,3 @@ both_levels_long %>%
  geom_point()
 
 
-
-
-
-
-#
