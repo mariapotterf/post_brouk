@@ -1604,22 +1604,51 @@ appraise(gam_mean_hgt)
 
 pred_smooths <- ggpredict(
   gam_mean_hgt,
-  terms = c("time_snc_full_disturbance [0:8]",
-            "plant_f [all]")  # variable and grouping factor
-)
+  terms = c("time_snc_full_disturbance [1:8]",
+            "plant_f [all]"),  # variable and grouping factor
+  condition = list(level = "plot")
+  )
 
 p_gam_height <- plot(pred_smooths)
 p_gam_height
 
 
-pred_smooths <- ggpredict(
-  gam_mean_hgt2,
-  terms = c("time_snc_full_disturbance [0:8]",
-            "grndwrk_f [all]")  # variable and grouping factor
-)
+# pred_smooths <- ggpredict(
+#   gam_mean_hgt2,
+#   terms = c("time_snc_full_disturbance [0:8]",
+#             "grndwrk_f [all]")  # variable and grouping factor
+# )
 
-p_gam_height <- plot(pred_smooths)
+#p_gam_height <- plot(pred_smooths)
+#p_gam_height
+
+
+# Convert to data frame for ggplot
+pred_df <- as.data.frame(pred_smooths)
+
+# Custom ggplot (same structure as your CV plot)
+p_gam_height <- ggplot(pred_df,
+                       aes(x = x, y = predicted, colour = group, fill = group)) +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high),
+              alpha = 0.2, colour = NA) +
+  geom_line(linewidth = 1.1) +
+  labs(
+    x = "Years since disturbance",
+    y = "Mean tree height [m]",
+    colour = "Groundwork",
+    fill = "Groundwork"
+  ) +
+  theme_classic(base_size = 8) +
+  theme(
+    legend.position = "top",
+    panel.border = element_rect(colour = "black", fill = NA, linewidth = 0.5),
+    legend.title = element_blank(),
+    axis.text = element_text(size = 8),
+    axis.title = element_text(size = 9)
+  )
+
 p_gam_height
+
 
 # is teh pattern real? eg planted sites are slightly taller then no planted ones?
 
@@ -1637,6 +1666,7 @@ both_levels_re2 %>%
 #  1. Binary part: presence/absence 
 both_levels_re2 <- both_levels_re2 %>%
   mutate(cv_hgt_present = as.integer(cv_hgt > 0))
+
 table(both_levels_re2$cv_hgt_present)
 
 gam_cv_hgt_bin <- gam(
@@ -1674,7 +1704,8 @@ appraise(gam_cv_hgt_pos)
 
 pred_bin <- ggpredict(
   gam_cv_hgt_bin,
-  terms = c("time_snc_full_disturbance [0:8]", "plant_f")
+  terms = c("time_snc_full_disturbance [0:8]", "plant_f"),
+  condition = list(level = "plot")
 )
 
 plot(pred_bin) + 
@@ -1683,15 +1714,14 @@ plot(pred_bin) +
 
 pred_pos <- ggpredict(
   gam_cv_hgt_pos,
-  terms = c("time_snc_full_disturbance [0:8]", "plant_f")
+  terms = c("time_snc_full_disturbance [0:8]", "plant_f"),
+  condition = list(level = "plot")
 )
 
 plot(pred_pos) +
   labs(y = "Mean CV height (given >0)", x = "Years since disturbance")
 
 
-
-##### Combine binary and positive model ----------------------------------------
 # 1️⃣ Predict probability (binary model)
 pred_bin <- ggpredict(
   gam_cv_hgt_bin,
@@ -1720,21 +1750,21 @@ pred_combined <- left_join(pred_bin, pred_pos, by = c("x", "group")) %>%
 
 # 4️⃣ Plot combined expected CV
 p_gam_cv <- ggplot(pred_combined,
-       aes(x = x, y = expected_cv, colour = group, fill = group)) +
-  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2, colour = NA) +
+       aes(x = x, y = expected_cv*100, colour = group, fill = group)) +
+  geom_ribbon(aes(ymin = lower*100, ymax = upper*100), alpha = 0.2, colour = NA) +
   geom_line(linewidth = 1.1) +
   labs(
     x = "Years since disturbance",
-    y = "Expected height variability (CV)",
+    y = "Height variability [CV, %]",
     colour = "Planting",
     fill = "Planting"
   ) +
-   theme_classic(base_size = 8) +
+   theme_classic(base_size = 9) +
   theme(
     legend.position = "top",
     panel.border = element_rect(colour = "black", fill = NA, linewidth = 0.5)
   )
-
+p_gam_cv
 
 
 
@@ -1761,12 +1791,36 @@ appraise(gam_effective_both)
 
 pred_smooths <- ggpredict(
   gam_effective_both,
-  terms = c("time_snc_full_disturbance [0:8]", "plant_f")  # variable and grouping factor
-)
+  terms = c("time_snc_full_disturbance [0:8]", "plant_f"),  # variable and grouping factor
+  condition = list(level = "plot")
+  )
 
-p_gam_eff <- plot(pred_smooths)
+#p_gam_eff <- plot(pred_smooths)
+# Convert predictions to data frame
+pred_df <- as.data.frame(pred_smooths)
 
+# Build the ggplot manually
+p_gam_eff <- ggplot(pred_df,
+                    aes(x = x, y = predicted, colour = group, fill = group)) +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high),
+              alpha = 0.2, colour = NA) +
+  geom_line(linewidth = 1.1) +
+  labs(
+    x = "Years since disturbance",
+    y = "Effective species number",
+    colour = "Planting",
+    fill = "Planting"
+  ) +
+  theme_classic(base_size = 8) +
+  theme(
+    legend.position = "top",
+    legend.title = element_blank(),
+    panel.border = element_rect(colour = "black", fill = NA, linewidth = 0.5),
+    axis.text = element_text(size = 8),
+    axis.title = element_text(size = 9)
+  )
 
+p_gam_eff
 
 
 
@@ -1791,13 +1845,150 @@ appraise(gam_richness)
 
 pred_smooths <- ggpredict(
   gam_richness,
-  terms = c("time_snc_full_disturbance [0:8]", "plant_f")  # variable and grouping factor
+  terms = c("time_snc_full_disturbance [0:8]", "plant_f"),
+  condition = list(level = "plot")# variable and grouping factor
 )
 
-p_gam_richness <- plot(pred_smooths)
+#p_gam_richness <- plot(pred_smooths)
+
+# Convert to data frame for ggplot
+pred_df <- as.data.frame(pred_smooths)
+
+# Build the plot manually with consistent style
+p_gam_richness <- ggplot(pred_df,
+                         aes(x = x, y = predicted, colour = group, fill = group)) +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high),
+              alpha = 0.2, colour = NA) +
+  geom_line(linewidth = 1.1) +
+  labs(
+    x = "Years since disturbance",
+    y = "Species richness [#]",
+    colour = "Planting",
+    fill = "Planting"
+  ) +
+  theme_classic(base_size = 8) +
+  theme(
+    legend.position = "top",
+    legend.title = element_blank(),
+    panel.border = element_rect(colour = "black", fill = NA, linewidth = 0.5),
+    axis.text = element_text(size = 8),
+    axis.title = element_text(size = 9)
+  )
+
+p_gam_richness
 
 
-# share spruce by planting ----------------------------------------------
+##### Plot all gams  ------------------------------------------------------------
+p_gam_combined <- ggarrange(p_gam_height, p_gam_cv, p_gam_eff,p_gam_richness, common.legend = TRUE,
+          ncol = 2, nrow = 2,
+          align = "hv", legend = 'bottom',
+          labels = c("[a]", "[b]", "[c]", "[d]"),
+          font.label = list(size = 11, face = "plain", color ="black"),
+          label.y = 0.95,
+          label.x = 0.15)
+
+annotate_figure(
+  p_gam_combined,
+  bottom = text_grob("Planting", face = "plain", size = 11)
+)
+
+
+
+#### make me categories for planting or browsing and both/none -----------
+
+# Step 1: Create the treatment group at plot level
+plot_treatment <- both_levels_re2 %>%
+  filter(level == "plot") %>%
+  mutate(
+    treatment = case_when(
+      plant_f == "no" & anti_brow_f == "no" ~ "none",
+      plant_f == "yes" & anti_brow_f == "no" ~ "planting",
+      plant_f == "no" & anti_brow_f == "yes" ~ "anti_brw",
+      plant_f == "yes" & anti_brow_f == "yes" ~ "both"
+    ),
+    treatment = factor(treatment, levels = c("none", 
+                                             "planting", 
+                                             "anti_brw", 
+                                             "both"))
+  )
+
+# Step 2: Check summary
+summary(plot_treatment$treatment)
+
+# ---- HEIGHT ----
+p_height <- ggplot(plot_treatment, aes(x = treatment, y = mean_hgt, fill = treatment)) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.7) +
+ # geom_jitter(width = 0.2, alpha = 0.4, size = 1) +
+  stat_compare_means(method = "kruskal.test",
+                     label = "p.format",
+                     label.y = max(plot_treatment$mean_hgt, na.rm = TRUE) * 1.05) +
+  labs(y = "Mean Height [m]", x = NULL) +
+  theme_bw() +
+  theme(legend.position = "none")
+
+# ---- HEIGHT CV ----
+p_cv <- ggplot(plot_treatment, aes(x = treatment, y = cv_hgt*100, fill = treatment)) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.7) +
+ # geom_jitter(width = 0.2, alpha = 0.4, size = 1) +
+  stat_compare_means(method = "kruskal.test",
+                     label = "p.format",
+                     label.y = max(plot_treatment$cv_hgt*100, na.rm = TRUE) * 1.05) +
+  labs(y = "Height CV [%]", x = NULL) +
+  theme_bw() +
+  theme(legend.position = "none")
+
+
+
+
+# Step 3: Plot richness and diversity (Shannon or effective_numbers)
+p_richness <- ggplot(plot_treatment, aes(x = treatment, y = sp_richness, fill = treatment)) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.7) +
+ # geom_jitter(width = 0.2, alpha = 0.4, size = 1) +
+  stat_compare_means(method = "kruskal.test", 
+                     label = "p.format",
+                     label.y = max(plot_treatment$sp_richness, na.rm = TRUE) * 1.05) +
+  labs(y = "Species Richness [#]", x = NULL) +
+  theme_bw() +
+  theme(legend.position = "none")
+
+p_diversity <- ggplot(plot_treatment, aes(x = treatment, y = effective_numbers, fill = treatment)) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.7) +
+ # geom_jitter(width = 0.2, alpha = 0.4, size = 1) +
+  stat_compare_means(method = "kruskal.test", 
+                     label = "p.format",
+                     label.y = max(plot_treatment$effective_numbers, na.rm = TRUE) * 1.05) +
+  labs(y = "Effective Species [#]", x = NULL) +
+  theme_bw() +
+  theme(legend.position = "none")
+
+# Step 4: Display both plots
+ggarrange(
+   p_height, p_cv,p_richness, p_diversity,
+  labels = c("[a]", "[b]", "[c]", "[d]"),
+  font.label = list(size = 10, face = "plain"),
+  ncol = 2, nrow = 2,
+  align = "hv",
+  common.legend = FALSE,
+  legend = "none"
+)
+
+
+# Dunn test to for pairwise group comparison
+library(rstatix)
+# Dunn test for mean height
+# Full pairwise Dunn test (all groups)
+dunn_height <- plot_treatment %>%
+  dunn_test(mean_hgt ~ treatment, p.adjust.method = "BH")
+
+dunn_cv <- plot_treatment %>%
+  dunn_test(cv_hgt ~ treatment, p.adjust.method = "BH")
+
+# View results
+dunn_height
+dunn_cv
+
+
+#### share spruce by planting ----------------------------------------------
 both_levels_re2 %>% 
   filter(level == 'plot') %>% 
   ggplot(aes(x = plant_f,
