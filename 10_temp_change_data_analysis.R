@@ -75,10 +75,10 @@ dat_overlap_n0 <- dat_overlap %>%
   mutate(n = ifelse(is.na(n), 0, n))  
 
 
-# Species composition --------------------------------------------------
+## Species composition --------------------------------------------------
 
 
-## Get summary across all trees and study sites --------------------------
+### Get summary across all trees and study sites --------------------------
 # find species with the highest share of stems overall
 # 0) Safe counts (treat NA counts as 0)
 df <- dat_overlap %>%
@@ -94,7 +94,7 @@ overall_totals <- df %>%
 n_trees_total <- overall_totals %>% 
   pull(total_trees)
 
-# 2) Species × year counts and presence
+# Species counts and presence - now without year! all pooled as composition have not changed much
 species_stem_share <- 
   df %>%
   group_by(species) %>%
@@ -117,7 +117,6 @@ top_overall_stem_share <-
 
 v_top_species_overall <- top_overall_stem_share %>% pull(species)
 
-
 # Reverse the color palette and map to the species in the desired order
 n_colors  <- length(v_top_species_overall)  # Number of species
 my_colors <- colorRampPalette(brewer.pal(11, "RdYlGn"))(n_colors)  # Generate colors
@@ -132,7 +131,7 @@ species_colors
 
 # species_colors
 # piab      besp      pisy      qusp      fasy      lade      saca      soau      acps      potr      absp      sasp 
-# "#006837" "#17934D" "#58B65F" "#94D168" "#C6E77F" "#EDF7A7" "#FEF0A7" "#FDCD7B" "#FA9C58" "#EE613D" "#D22B26" "#A50026" 
+#"#006837" "#17934D" "#58B65F" "#94D168" "#C6E77F" "#EDF7A7" "#FEF0A7" "#FDCD7B" "#FA9C58" "#EE613D" "#D22B26" "#A50026" 
 
 
 # Print the color assignments for confirmation
@@ -155,6 +154,7 @@ species_labels <- c(
   #sasp = "Salix sp."
 )
 
+species_levels <- rev(names(species_labels))  # Custom order, matching color palette and labels
 
 
 ### Stem density per species per top 10 species --------------------------------
@@ -186,8 +186,6 @@ df_stem_dens_species <- df_stem_dens_species %>%
   mutate(species = factor(species, levels = rev(v_top_species_overall))) # Set custom order
 
 
-
-### Stem density per species 
 df_stem_dens_species2 <- df_stem_dens_species_year %>%
   dplyr::filter(!is.na(log_sum_stem_density) & sum_n > 0) %>%
   dplyr::mutate(year = factor(year, levels = c("2023","2025")),
@@ -196,6 +194,7 @@ df_stem_dens_species2 <- df_stem_dens_species_year %>%
 
 # 
 p_density<-df_stem_dens_species_year2 %>% 
+  mutate(species = factor(species, levels = species_levels)) %>% 
   filter(!is.na(species)) %>% 
   ggplot(aes(x = log_sum_stem_density, y = species,
              fill = species)) +
@@ -214,53 +213,47 @@ p_density<-df_stem_dens_species_year2 %>%
     y = "",  
     fill = "Year"
   ) +
-  # scale_fill_manual(values= species_colors) +
-  # scale_alpha_manual(
-  #   values = c("2023" = 0.5, "2025" = 1)#,  # 2023 = lighter
-  #   #guide = "none"  # hides alpha legend
-  # ) +
+  scale_fill_manual(values= species_colors) +
   theme_classic(base_size = 10) +
   scale_y_discrete(labels = species_labels) +
-  theme(axis.text.y = element_text(face = "italic", size = 8))
+  theme(axis.text.y = element_text(face = "italic", size = 8),
+        legend.position = 'none')
 
 
 p_density
 
 
-p_bar <- ggplot(top_overall_stem_share, aes(x = share, y = species, fill = species)) +
+p_bar <- top_overall_stem_share %>%  
+  mutate(species = factor(species, levels = species_levels)) %>% 
+  ggplot(aes(x = share, y = species, fill = species)) +
+ 
   geom_col(aes(#group = interaction(species, year)#,
     #alpha = factor(year)
   ), 
   position = position_dodge(width = 0.7), width = 0.6) +
   # if 'share' is 0–100 already, just add a % suffix:
-  scale_x_continuous(labels = label_number(accuracy = 0.1, suffix = "")) +
+  scale_x_continuous(labels = label_number(accuracy = 1, 
+                                           suffix = "")) +
   scale_y_discrete(
     limits = rev(names(species_labels)),
     labels = species_labels,
     drop = FALSE
   ) +
-  # scale_alpha_manual(
-  #   values = c("2023" = 0.5, "2025" = 1.0)#,  # 2023 = lighter
-  #   #guide = "none"  # hides alpha legend
-  # ) +
-  # if you prefer proportions (0–1), use:
-  # scale_x_continuous(labels = label_percent()) 
-  labs(
-    x = "Share of stems",
-    y = "Species",
-    fill = "Year"#,
-    #title = "Top 12 species by share, by year"
+    labs(
+    x = "Stems share [%]",
+    y = ""
   ) +
-  # scale_fill_manual(values = species_colors) +
+  scale_fill_manual(values = species_colors) +
   theme_classic2(base_size = 10) +
-  theme(axis.text.y = element_text(size = 8, face = "italic"))
+  theme(axis.text.y = element_text(size = 8, face = "italic"),
+        legend.position = "none")
 
 p_bar
 
 ####  Get species occurence from total number of plots -------------
 # Total number of unique plots
 total_plots <- dat_overlap %>%
-  pull(plot) %>%
+  pull(plot, year) %>%
   n_distinct()
 
 # Share of plots per species (where species has non-zero stems)
@@ -268,8 +261,8 @@ species_occurence <-
   df_stem_dens_species %>%
   ungroup(.) %>% 
   dplyr::filter(sum_n > 0) %>%                 # Only where species occurred
-  distinct(species, plot) %>%           # Unique species × plot combos
-  count(species, name = "n_plots") %>%  # Count number of plots per species
+  distinct(species, year, plot) %>%           # Unique species × plot combos
+  count(year, species, name = "n_plots") %>%  # Count number of plots per species
   mutate(share_of_plots = n_plots / total_plots*100) %>% 
   arrange()
 
@@ -283,33 +276,62 @@ species_order <- species_occurence %>%
   pull(species)
 
 species_plot_share <- species_occurence %>%
+  group_by(species) %>% 
+  summarize(share_of_plots_avg = mean(share_of_plots)) %>% 
   mutate(species = factor(species, levels = rev(species_order)))
 
 # Plot
 p_occurence <- species_plot_share %>% 
   filter(species %in% v_top_species_overall ) %>% 
-  ggplot(aes(x = share_of_plots, y = species, fill = species)) +
+  mutate(species = factor(species, levels = species_levels)) %>% 
+  ggplot(aes(x = share_of_plots_avg, y = species, fill = species)) +
   geom_col(position = position_dodge(width = 0.7), width = 0.6) +
   scale_x_continuous(labels = scales::label_number(accuracy = 1), expand = expansion(mult = c(0, 0.05))) +
   labs(
-    x = "Species occurence over plots (%)",
+    x = "Species occurence over plots [%]",
     y = "Species",
     fill = "Year"
   ) +
+  scale_fill_manual(values = species_colors) +
   theme_classic(base_size = 10) +
   theme(
     axis.text.y = element_text(face = "italic", size = 9),
-    legend.position = "right"
+    legend.position = "none"
   )
 
 p_occurence
 
+# p_occurence with no y labels
+p_occurence <- p_occurence +
+  labs(y = NULL) +
+  theme(axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
+
+# p_density with no y labels
+p_density <- p_density +
+  labs(y = NULL) +
+  theme(axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
 
 
-ggarrange(p_bar, p_occurence, p_density,  
-          ncol = 3, common.legend = T)
+p_bar <- p_bar + theme(plot.margin = margin(t = 12, r = 5, b = 5, l = 5))
+p_occurence <- p_occurence + theme(plot.margin = margin(t = 12, r = 5, b = 5, l = 5))
 
 
+p_species_composition <- ggarrange(p_bar, p_occurence,# p_density,  
+          ncol = 2, common.legend = F, 
+          widths = c(1.5, 1),
+          labels = c("[a]", "[b]"),
+          font.label = list(size = 10, face = "plain"),
+          label.x = 0.02,    # near left edge
+          label.y = 1.01     # just above plot
+)
+
+p_species_composition
+# Export to PNG
+ggsave("outFigs/p_species_composition.png", 
+       plot = p_species_composition,
+       width = 7, height = 3, units = "in", dpi = 300)
 
 ### Richness: Subplot: Species richness per planting -----------------------
 richness_per_subplot <- dat_overlap_n0 %>%
@@ -755,26 +777,36 @@ ggplot(aes(x = proportion_plot, y = activity,
 
 
 ### Graphics: disturbance chars, species composition and management
-
+# Combine
+p_combined_disturb_fig <- ggarrange(
+  p_hist_dist_year, p_hist_time_since_dist,
+ # p_management_bin_plot,
+  labels = c("[a]", "[b]"),
+  font.label = list(size = 10, face = 'plain'),
+  ncol = 2, nrow = 1
+)
 
 # Combine
 p_combined_management_fig <- ggarrange(
-  p_hist_dist_year, p_hist_time_since_dist,
+  #p_hist_dist_year, p_hist_time_since_dist,
+  p_combined_disturb_fig,
   p_management_bin_plot,
-  labels = c("[a]", "[b]", "[c]"),
+  labels = c(" ", "[c]"),
   font.label = list(size = 10, face = 'plain'),
-  ncol = 3,
+  ncol = 1, nrow = 2,
   # align = 'hv',
-  widths = c(1, 1, 1.5)  # Adjust as needed
+  widths = c(1,1.5),  
+  heights = c(1.2,1)  
 )
 
+p_combined_management_fig
 # Save as PNG
 ggsave("outFigs/combined_management_fig.png", plot = p_combined_management_fig,
-       width = 7, height = 2, units = "in", dpi = 300)
+       width = 4, height = 4, units = "in", dpi = 300)
 
-# Save as SVG
-ggsave("outFigs/combined_management_fig.svg", plot = p_combined_management_fig,
-       width = 7, height = 3.5, units = "in", dpi = 300)
+# # Save as SVG
+# ggsave("outFigs/combined_management_fig.svg", plot = p_combined_management_fig,
+#        width = 7, height = 3.5, units = "in", dpi = 300)
 
 
 
