@@ -2239,19 +2239,104 @@ hist(both_levels_re2$area_m2, breaks = 50)
 
 # how did disturbnace lenght affected post-dsiturbance recovery? ---------------
 # List of response variables to pivot
-response_vars <- c(#"dens_m2", 
-                   "cv_hgt", "mean_hgt", 
-                   "sp_richness", 
-                   "shannon_sp", 
-                   "evenness_sp",
-                   "effective_numbers", 
-                   "dens_ha")
+response_vars <- c("mean_hgt",
+  #"dens_m2", 
+                   "cv_hgt", 
+                     "effective_numbers" , 
+                   "sp_richness"#, 
+                   #"shannon_sp", 
+                   #"evenness_sp",
+                  
+  #                 "dens_ha"
+  )
 
 # Pivot to long format
 both_levels_long <- both_levels_re2 %>%
   pivot_longer(cols = all_of(response_vars),
                names_to = "variable",
                values_to = "value")
+
+both_levels_long_plot <- both_levels_long %>% 
+  filter(level == 'plot')
+
+
+# !!!! 
+# both_levels_long_plot <- both_levels_long %>% 
+#   filter(level == "plot") %>% 
+
+# capp all variables to 95%
+# Cap values at the 95th percentile within each variable
+both_levels_long_capped <- both_levels_long %>%
+  group_by(variable) %>%
+  mutate(
+    value_capped = ifelse(
+      value > quantile(value, 0.95, na.rm = TRUE),
+      quantile(value, 0.95, na.rm = TRUE),
+      value
+    )
+  ) %>%
+  ungroup(.) %>% 
+  mutate(value_capped = ifelse(variable == "cv_hgt", value_capped * 100, value_capped)) %>% 
+  mutate(variable = factor(variable, levels = c('mean_hgt',
+                                                "cv_hgt",
+                                                'effective_numbers',
+                                                'sp_richness')), 
+         variable = recode(variable,
+                    "effective_numbers" = "Species diversity\n[Effective #]",
+                    "sp_richness"       = "Species richness\n[#]",
+                    "mean_hgt"          = "Mean height\n[m]",
+                    "cv_hgt"            = "Height variability\n[CV, %]"
+         )) 
+
+
+#library(gghalves)
+
+# !!!
+
+# Create violin plot
+p_violin <- 
+  ggplot(both_levels_long_capped, 
+         aes(x = level,
+             y = value_capped,
+             fill = level)) +
+    gghalves::geom_half_violin(
+      side = "l",  # use "r" for right
+      #fill = 'grey', 
+      color = NA, 
+      trim = FALSE,
+      scale = 'width'
+    ) +
+  geom_boxplot(width = 0.1, 
+               #fill = 'grey',
+               outlier.shape = NA, 
+               color = "black") +
+    scale_fill_manual(
+      values = c("subplot" = "grey50", 
+                 "plot" = "grey80")
+    ) +
+  facet_wrap(~ variable, scales = "free_y", ncol = 4, nrow = 1) +
+  #scale_fill_manual(values = c("2023" = "skyblue", "2025" = "tomato")) +
+  theme_classic(base_size = 10) +
+  labs(x = NULL, y = NULL, fill = "Level") +
+  theme(legend.position = 'none',
+    strip.text = element_text(size = 9, 
+                              face = "plain"),
+    axis.text.x = element_text(size = 8),
+    axis.text.y = element_text(size = 8)
+  )
+
+# Print plot
+p_violin
+
+ggsave(
+  filename = "outFigs/p_violin.png",
+  plot = p_violin,
+  width = 7,       # Adjust width as needed
+  height = 2.5,      # Adjust height as needed
+  units = "in",
+  dpi = 300        # High resolution for publication
+)
+  
 
 
 # make lollipop plot: two levels
@@ -2315,14 +2400,6 @@ ggplot(level_means_diverged, aes(x = value, y = fct_rev(metric), fill = level,
 
 # Boxplot - all vars vs time since, disturb. length ----------------------------
 # how does the disturbnac elength affects structure and composition?
-both_levels_long %>% 
-  filter(level == 'plot') %>% 
-  ggplot(aes(x = factor(disturbance_length), y = value)) +
-  geom_boxplot(outlier.shape = NA) +
-  geom_jitter(width = 0.2, alpha = 0.2, size = 0.3) +
-  facet_wrap(variable ~ . , scales = "free_y") +
-  ggtitle("Disturbance length")
-
 # how does time since stand replacing disturbnace affects str & composition?
 both_levels_long %>% 
   filter(level == 'plot') %>% 
