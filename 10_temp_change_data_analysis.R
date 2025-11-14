@@ -1479,6 +1479,28 @@ both_levels_re2 <- both_levels_re2 %>%
   filter(!is.na(mean_hgt), !is.na(w), !is.na(cv_hgt), !is.na(dens_m2))
 
 
+both_levels_re2 <- both_levels_re2 %>%
+  mutate(plant_browse_f = interaction(plant_f, anti_brow_f, sep = "_")) %>% 
+  mutate(treatment_grp = case_when(
+    plant_f == "yes" & anti_brow_f == "yes" ~ "yes",
+    TRUE ~ "no"
+  ) %>% factor(levels = c("yes", "no")))
+
+
+both_levels_re2$mng_f <- dplyr::case_when(
+  both_levels_re2$plant_browse_f == "no_no"   ~ "none",
+  both_levels_re2$plant_browse_f == "yes_yes" ~ "both",
+  TRUE                                        ~ "some"
+)
+
+
+both_levels_re2$mng_f <- factor(
+  both_levels_re2$mng_f,
+  levels = c("none", "some", "both")
+)
+
+table(both_levels_re2$mng_f)
+
 ##### Boxplot: which management is most important?  --------------------
 # Create long table for plotting across factors
 both_levels_long <- both_levels_re2 %>%
@@ -1545,7 +1567,7 @@ both_levels_re2 %>%
              y = mean_hgt)) +
   geom_boxplot()
 
-### Test which management activity is most important ----------------------------
+#### GAM: test which management activity is most important ----------------------------
 library(broom)
 library(dplyr)
 library(purrr)
@@ -1652,6 +1674,8 @@ effects_df <- model_results_df %>%
 effects_df
 
 
+table(both_levels_re2$treatment_grp)
+table(both_levels_re2$plant_browse_f )
 
 
 
@@ -1659,9 +1683,8 @@ effects_df
 
 
 
-
-
-### GAM: height x time_since   ------------------
+### GAM Planting -------------------------------------
+##### GAM: height x time_since   ------------------
 # test by presence_absence of planting
 gam_mean_hgt <- gam(
   mean_hgt  ~ s(planting_intensity,  k = 3) +
@@ -1677,25 +1700,58 @@ gam_mean_hgt <- gam(
 )
 
 # test for present/absent groundwork
-gam_mean_hgt2 <- gam(
-  mean_hgt  ~ s(planting_intensity,  k = 3) +
-    s(grndwrk_intensity        ,  k = 3) +
-    s(anti_browsing_intensity  ,  k = 3) +
-    s(time_snc_full_disturbance, by = grndwrk_f ,  k = 3)+
+gam_mean_hgt_comb <- gam(
+  mean_hgt  ~ #s(planting_intensity,  k = 3) +
+   # s(grndwrk_intensity        ,  k = 3) +
+    #s(anti_browsing_intensity  ,  k = 3) +
+    s(time_snc_full_disturbance, by = treatment_grp ,  k = 3)+
     level + 
    # plant_f +
-    grndwrk_f +
+    treatment_grp +
     s(plot_id, bs = "re"),
   data = both_levels_re2,
   method = "REML",
   family = tw(link = "log")
 )
 
-AIC(gam_mean_hgt2, gam_mean_hgt)
+gam_mean_hgt_plt <- gam(
+  mean_hgt  ~ 
+    s(time_snc_full_disturbance, by = plant_f ,  k = 3)+
+    level + 
+    plant_f +
+    s(plot_id, bs = "re"),
+  data = both_levels_re2,
+  method = "REML",
+  family = tw(link = "log")
+)
+
+gam_mean_hgt_mng <- gam(
+  mean_hgt  ~ 
+    s(time_snc_full_disturbance, by = mng_f ,  k = 3)+
+    level + 
+    mng_f +
+    year_f +
+    s(plot_id, bs = "re"),
+  data = both_levels_re2,
+  method = "REML",
+  family = tw(link = "log")
+)
+
+# Generate predictions
+df <- ggpredict(gam_mean_hgt_mng, terms = c("time_snc_full_disturbance [0:8]", "mng_f"))
+
+# Quick plot
+plot(df)
+
+
+
+AIC(gam_mean_hgt_comb, gam_mean_hgt_plt, gam_mean_hgt_mng)
 summary(gam_mean_hgt)
-summary(gam_mean_hgt2)
-plot(gam_mean_hgt, shade = TRUE, pages = 1)
-appraise(gam_mean_hgt)
+summary(gam_mean_hgt_mng)
+plot(gam_mean_hgt_mng, shade = TRUE, pages = 1)
+plot(gam_mean_hgt_comb, shade = TRUE, pages = 1)
+appraise(gam_mean_hgt_plt)
+appraise(gam_mean_hgt_comb)
 
 pred_smooths <- ggpredict(
   gam_mean_hgt,
@@ -1754,7 +1810,7 @@ both_levels_re2 %>%
 
 
 
-### GAM: CV_height x time_since   ------------------
+##### GAM: CV_height x time_since   ------------------
 
 # as binary/continuous part
 
@@ -1865,7 +1921,7 @@ p_gam_cv
 
 
 
-### GAM: Effective number of species x time_since   ------------------
+##### GAM: Effective number of species x time_since   ------------------
 gam_effective_both <- gam(
   effective_numbers ~ s(planting_intensity,  k = 3) +
     s(grndwrk_intensity        ,  k = 3) +
@@ -1919,7 +1975,7 @@ p_gam_eff
 
 
 
-### GAM: Richness  x time_since   ------------------
+##### GAM: Richness  x time_since   ------------------
 gam_richness <- gam(
   sp_richness  ~ s(planting_intensity,  k = 3) +
     s(grndwrk_intensity        ,  k = 3) +
@@ -1973,7 +2029,7 @@ p_gam_richness <- ggplot(pred_df,
 p_gam_richness
 
 
-##### Plot all gams  ------------------------------------------------------------
+####### Plot all GAMs planting  ------------------------------------------------------------
 p_gam_combined <- ggarrange(p_gam_height, p_gam_cv, p_gam_eff,p_gam_richness, common.legend = TRUE,
           ncol = 2, nrow = 2,
           align = "hv", legend = 'bottom',
@@ -1988,8 +2044,176 @@ annotate_figure(
 )
 
 
+#### GAM interaction plantoing&browsing  ------------------------------------
+##### Height & time since by planting&anti-browsing -----------
+gam_mean_hgt_int <- gam(
+  mean_hgt ~ 0 + treatment_grp +  # removes global intercept
+    s(time_snc_full_disturbance, by = treatment_grp, k = 3) +
+    level +
+    s(plot_id, bs = "re"),
+  data = both_levels_re2,
+  method = "REML",
+  family = tw(link = "log")
+)
 
-#### make me categories for planting or browsing and both/none -----------
+gam_mean_hgt0 <- gam(
+  mean_hgt ~ 0 + treatment_grp + 
+    s(time_snc_full_disturbance, by = treatment_grp, k = 3) +
+    level +
+    s(plot_id, bs = "re"),
+  data = both_levels_re2,
+  method = "REML",
+  family = tw(link = "log")
+)
+table(both_levels_re2$treatment_grp)
+table(both_levels_re2$plant_browse_f )
+
+AIC(gam_mean_hgt_int, gam_mean_hgt0)
+
+summary(gam_mean_hgt_int)
+summary(gam_mean_hgt0)
+
+plot(gam_mean_hgt_int)
+
+df_hgt <- ggpredict(gam_mean_hgt_int, 
+                    terms = c("time_snc_full_disturbance [1:7]", "treatment_grp"))
+plot(df_hgt)
+
+##### CV_hgt vs time  ----------------------------------------
+gam_cv_hgt_bin0 <- gam(
+  cv_hgt_present ~   0 + treatment_grp + 
+    s(time_snc_full_disturbance, by = treatment_grp, k = 3) +
+    level +
+    s(plot_id, bs = "re"),,
+  data   = both_levels_re2,
+  method = "REML",
+  family = binomial(link = "logit")
+)
+
+# 2. Positive part: only where cv_hgt_pos > 0
+gam_cv_hgt_pos0 <- gam(
+  cv_hgt_pos ~ 0 + treatment_grp + 
+    s(time_snc_full_disturbance, by = treatment_grp, k = 3) +
+    level +
+    s(plot_id, bs = "re"),
+  data   = subset(both_levels_re2, cv_hgt > 0),
+  method = "REML",
+  family = tw(link = "log")   # or tw(link="log") if still skewed
+)
+
+
+##### EFficient number vs time ----------------------------------
+gam_effective_both0 <- gam(
+  effective_numbers ~ 0 + treatment_grp + 
+    s(time_snc_full_disturbance, by = treatment_grp, k = 3) +
+    level +
+    s(plot_id, bs = "re"),
+  data = both_levels_re2,
+  method = "REML",
+  family = Gamma(link = "log")
+)
+
+##### GAM: Richness  x time_since   ------------------
+gam_richness0 <- gam(
+  sp_richness  ~  0 + treatment_grp + 
+    s(time_snc_full_disturbance, by = treatment_grp, k = 3) +
+    level +
+    s(plot_id, bs = "re"),
+  data = both_levels_re2,
+  method = "REML",
+  family = tw(link = "log")
+)
+
+
+
+###### Gam plotting  function ---------------------
+
+plot_gam_smooth <- function(model, y_lab, group_var, level_value = "plot") {
+  # Get predictions
+  pred <- ggpredict(
+    model,
+    terms = c("time_snc_full_disturbance [0:8]", group_var),
+    condition = list(level = level_value)
+  )
+  
+  # Convert to data frame
+  df <- as.data.frame(pred)
+  
+  # Make the plot
+  ggplot(df, aes(x = x, y = predicted, colour = group, fill = group)) +
+    geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2, colour = NA) +
+    geom_line(linewidth = 1.1) +
+    labs(
+      x = "Years since disturbance",
+      y = y_lab,
+      colour = group_var,
+      fill = group_var
+    ) +
+    theme_classic(base_size = 8) +
+    theme(
+      legend.position = "top",
+      legend.title = element_blank(),
+      panel.border = element_rect(colour = "black", fill = NA, linewidth = 0.5),
+      axis.text = element_text(size = 8),
+      axis.title = element_text(size = 9)
+    )
+}
+
+
+# Mean height
+p_hgt <- plot_gam_smooth(gam_mean_hgt0, 
+                         y_lab = "Mean height [m]", group_var = "treatment_grp")
+
+# CV height — binary part
+df_bin <- ggpredict(gam_cv_hgt_bin0, terms = c("time_snc_full_disturbance [1:7]", "treatment_grp"),
+                    condition = list(level = "plot"))
+
+# CV height — positive part
+df_pos <- ggpredict(gam_cv_hgt_pos0, terms = c("time_snc_full_disturbance [1:7]", "treatment_grp"),
+                    condition = list(level = "plot"))
+
+# Combine binary and positive parts
+df_cv <- merge(df_bin, df_pos, by = c("x", "group"))
+df_cv$predicted <- df_cv$predicted.x * df_cv$predicted.y
+df_cv$conf.low  <- df_cv$conf.low.x * df_cv$conf.low.y
+df_cv$conf.high <- df_cv$conf.high.x * df_cv$conf.high.y
+
+# CV plot
+p_cv <- ggplot(df_cv, aes(x = x, y = predicted, colour = group, fill = group)) +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2, colour = NA) +
+  geom_line(linewidth = 1.1) +
+  labs(
+    x = "Years since disturbance",
+    y = "Height variability [CV, %]",
+    colour = "Treatment",
+    fill = "Treatment"
+  ) +
+  theme_classic(base_size = 8) +
+  theme(
+    legend.position = "top",
+    legend.title = element_blank(),
+    panel.border = element_rect(colour = "black", fill = NA, linewidth = 0.5),
+    axis.text = element_text(size = 8),
+    axis.title = element_text(size = 9)
+  )
+
+# Effective number
+p_eff <- plot_gam_smooth(gam_effective_both0, y_lab = "Effective species number", group_var = "treatment_grp")
+
+# Richness
+p_rich <- plot_gam_smooth(gam_richness0, 
+                          y_lab = "Species richness [#]", 
+                          group_var = "treatment_grp")
+
+
+
+
+
+
+
+
+
+## make categories for planting or browsing and both/none -----------
 
 # Step 1: Create the treatment group at plot level
 plot_treatment <- both_levels_re2 %>%
@@ -2010,7 +2234,7 @@ plot_treatment <- both_levels_re2 %>%
 # Step 2: Check summary
 summary(plot_treatment$treatment)
 
-# ---- HEIGHT ----
+#
 p_height <- ggplot(plot_treatment, aes(x = treatment, y = mean_hgt, fill = treatment)) +
   geom_boxplot(outlier.shape = NA, alpha = 0.7) +
  # geom_jitter(width = 0.2, alpha = 0.4, size = 1) +
@@ -2021,7 +2245,7 @@ p_height <- ggplot(plot_treatment, aes(x = treatment, y = mean_hgt, fill = treat
   theme_bw() +
   theme(legend.position = "none")
 
-# ---- HEIGHT CV ----
+# 
 p_cv <- ggplot(plot_treatment, aes(x = treatment, y = cv_hgt*100, fill = treatment)) +
   geom_boxplot(outlier.shape = NA, alpha = 0.7) +
  # geom_jitter(width = 0.2, alpha = 0.4, size = 1) +
@@ -2289,11 +2513,9 @@ both_levels_long_capped <- both_levels_long %>%
          )) 
 
 
-#library(gghalves)
+library(gghalves)
 
-# !!!
-
-# Create violin plot
+# All indicators:  Create half-violin plot ------------------------------------------------
 p_violin <- 
   ggplot(both_levels_long_capped, 
          aes(x = level,
@@ -2372,7 +2594,9 @@ level_means_diverged <- plot_level_long %>%
 
 level_means_diverged <- level_means_diverged %>%
   mutate(metric = fct_reorder(metric, abs(value), .desc = F))
-#Plot diverging lollipops
+
+
+### Plot vs subplot: diverging lollipop  --------------------------------
 ggplot(level_means_diverged, aes(x = value, y = fct_rev(metric), fill = level,
                                  color = level)) +
   geom_segment(aes(x = 0, xend = value, y = metric, yend = metric),
