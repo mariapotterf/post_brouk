@@ -2046,55 +2046,40 @@ annotate_figure(
 
 #### GAM interaction plantoing&browsing  ------------------------------------
 ##### Height & time since by planting&anti-browsing -----------
-gam_mean_hgt_int <- gam(
-  mean_hgt ~ 0 + treatment_grp +  # removes global intercept
-    s(time_snc_full_disturbance, by = treatment_grp, k = 3) +
-    level +
+gam_mean_hgt_mng <- gam(
+  mean_hgt  ~ 
+    s(time_snc_full_disturbance, by = mng_f ,  k = 3)+
+    level + 
+    mng_f +
+    year_f +
     s(plot_id, bs = "re"),
   data = both_levels_re2,
   method = "REML",
   family = tw(link = "log")
 )
-
-gam_mean_hgt0 <- gam(
-  mean_hgt ~ 0 + treatment_grp + 
-    s(time_snc_full_disturbance, by = treatment_grp, k = 3) +
-    level +
-    s(plot_id, bs = "re"),
-  data = both_levels_re2,
-  method = "REML",
-  family = tw(link = "log")
-)
-table(both_levels_re2$treatment_grp)
-table(both_levels_re2$plant_browse_f )
-
-AIC(gam_mean_hgt_int, gam_mean_hgt0)
-
-summary(gam_mean_hgt_int)
-summary(gam_mean_hgt0)
-
-plot(gam_mean_hgt_int)
 
 df_hgt <- ggpredict(gam_mean_hgt_int, 
-                    terms = c("time_snc_full_disturbance [1:7]", "treatment_grp"))
+                    terms = c("time_snc_full_disturbance [1:7]", "mng_f"))
 plot(df_hgt)
 
 ##### CV_hgt vs time  ----------------------------------------
-gam_cv_hgt_bin0 <- gam(
-  cv_hgt_present ~   0 + treatment_grp + 
-    s(time_snc_full_disturbance, by = treatment_grp, k = 3) +
-    level +
-    s(plot_id, bs = "re"),,
+gam_cv_hgt_bin_mng <- gam(
+  cv_hgt_present ~    s(time_snc_full_disturbance, by = mng_f ,  k = 3)+
+    level + 
+    mng_f +
+    year_f +
+    s(plot_id, bs = "re"),
   data   = both_levels_re2,
   method = "REML",
   family = binomial(link = "logit")
 )
 
 # 2. Positive part: only where cv_hgt_pos > 0
-gam_cv_hgt_pos0 <- gam(
-  cv_hgt_pos ~ 0 + treatment_grp + 
-    s(time_snc_full_disturbance, by = treatment_grp, k = 3) +
-    level +
+gam_cv_hgt_pos_mng <- gam(
+  cv_hgt_pos ~  s(time_snc_full_disturbance, by = mng_f ,  k = 3)+
+    level + 
+    mng_f +
+    year_f +
     s(plot_id, bs = "re"),
   data   = subset(both_levels_re2, cv_hgt > 0),
   method = "REML",
@@ -2103,10 +2088,11 @@ gam_cv_hgt_pos0 <- gam(
 
 
 ##### EFficient number vs time ----------------------------------
-gam_effective_both0 <- gam(
-  effective_numbers ~ 0 + treatment_grp + 
-    s(time_snc_full_disturbance, by = treatment_grp, k = 3) +
-    level +
+gam_effective_mng <- gam(
+  effective_numbers ~ s(time_snc_full_disturbance, by = mng_f ,  k = 3)+
+    level + 
+    mng_f +
+    year_f +
     s(plot_id, bs = "re"),
   data = both_levels_re2,
   method = "REML",
@@ -2114,25 +2100,48 @@ gam_effective_both0 <- gam(
 )
 
 ##### GAM: Richness  x time_since   ------------------
-gam_richness0 <- gam(
-  sp_richness  ~  0 + treatment_grp + 
-    s(time_snc_full_disturbance, by = treatment_grp, k = 3) +
-    level +
+gam_richness_mng <- gam(
+  sp_richness  ~   s(time_snc_full_disturbance, by = mng_f ,  k = 3)+
+    level + 
+    mng_f +
+    year_f +
     s(plot_id, bs = "re"),
   data = both_levels_re2,
   method = "REML",
   family = tw(link = "log")
 )
 
+# get summary and overall infos
+summary(gam_mean_hgt_mng)
+summary(gam_cv_hgt_bin_mng)
+summary(gam_cv_hgt_pos_mng)
+summary(gam_effective_mng)
+summary(gam_richness_mng)
+
 
 
 ###### Gam plotting  function ---------------------
+# cols_mng <- RColorBrewer::brewer.pal(3, "Greens")
+# 
+# cols_mng <- c("#f7fcb9",
+#               "#addd8e",
+#               "#31a354")
+# 
 
-plot_gam_smooth <- function(model, y_lab, group_var, level_value = "plot") {
+
+cols_mng <- c("#d9f0a3", "#78c679" , "#006837")
+
+mng_title = "Planting & Anti-Browsing measures"
+
+names(cols_mng) <- c("none", "some", "both")
+
+plot_gam_smooth <- function(model, y_lab, group_var, 
+                            level_value = "plot",
+                            colors = NULL) {
   # Get predictions
   pred <- ggpredict(
     model,
-    terms = c("time_snc_full_disturbance [0:8]", group_var),
+    terms = c("time_snc_full_disturbance [1:7]", group_var),
     condition = list(level = level_value)
   )
   
@@ -2141,35 +2150,66 @@ plot_gam_smooth <- function(model, y_lab, group_var, level_value = "plot") {
   
   # Make the plot
   ggplot(df, aes(x = x, y = predicted, colour = group, fill = group)) +
-    geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2, colour = NA) +
-    geom_line(linewidth = 1.1) +
+    geom_ribbon(aes(ymin = conf.low, ymax = conf.high), 
+                alpha = 0.2, 
+                colour = NA) +
+    geom_line(linewidth = 0.8) +
+    scale_color_manual(values = colors) +
+    scale_fill_manual(values = colors) +
+    
     labs(
       x = "Years since disturbance",
       y = y_lab,
-      colour = group_var,
-      fill = group_var
+      color = mng_title,
+      fill = mng_title
     ) +
     theme_classic(base_size = 8) +
     theme(
       legend.position = "top",
-      legend.title = element_blank(),
+      legend.title = element_text(size = 9, 
+                                  face = "plain"),
+     # legend.title = element_blank(),
       panel.border = element_rect(colour = "black", fill = NA, linewidth = 0.5),
       axis.text = element_text(size = 8),
       axis.title = element_text(size = 9)
+    ) +
+    guides(
+      colour = guide_legend(
+        title = mng_title,
+        title.position = "top",
+        title.hjust = 0.5  # ← this centers the title over the legend keys
+      ),
+      fill = guide_legend(
+        title = mng_title,
+        title.position = "top",
+        title.hjust = 0.5
+      )
     )
 }
 
 
 # Mean height
-p_hgt <- plot_gam_smooth(gam_mean_hgt0, 
-                         y_lab = "Mean height [m]", group_var = "treatment_grp")
+p_hgt  <- plot_gam_smooth(gam_mean_hgt_mng, 
+                          "Mean height [m]", 
+                          "mng_f", 
+                          colors = cols_mng)
+p_eff  <- plot_gam_smooth(gam_effective_mng, 
+                          "Effective species number", 
+                          "mng_f", 
+                          colors = cols_mng)
+p_rich <- plot_gam_smooth(gam_richness_mng, 
+                          "Species richness [#]", 
+                          "mng_f", 
+                          colors = cols_mng)
 
 # CV height — binary part
-df_bin <- ggpredict(gam_cv_hgt_bin0, terms = c("time_snc_full_disturbance [1:7]", "treatment_grp"),
+df_bin <- ggpredict(gam_cv_hgt_bin_mng, terms = c("time_snc_full_disturbance [1:7]", 
+                                                  "mng_f"),
                     condition = list(level = "plot"))
 
 # CV height — positive part
-df_pos <- ggpredict(gam_cv_hgt_pos0, terms = c("time_snc_full_disturbance [1:7]", "treatment_grp"),
+df_pos <- ggpredict(gam_cv_hgt_pos_mng, terms = c("time_snc_full_disturbance [1:7]", 
+                                                  "mng_f"),
                     condition = list(level = "plot"))
 
 # Combine binary and positive parts
@@ -2179,39 +2219,58 @@ df_cv$conf.low  <- df_cv$conf.low.x * df_cv$conf.low.y
 df_cv$conf.high <- df_cv$conf.high.x * df_cv$conf.high.y
 
 # CV plot
-p_cv <- ggplot(df_cv, aes(x = x, y = predicted, colour = group, fill = group)) +
-  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2, colour = NA) +
-  geom_line(linewidth = 1.1) +
+p_cv <- ggplot(df_cv, aes(x = x, y = predicted*100, colour = group, fill = group)) +
+  geom_ribbon(aes(ymin = conf.low*100, ymax = conf.high*100), alpha = 0.2, colour = NA) +
+  geom_line(linewidth = 0.8) +
   labs(
     x = "Years since disturbance",
     y = "Height variability [CV, %]",
-    colour = "Treatment",
-    fill = "Treatment"
+    color = mng_title,
+    fill = mng_title,
   ) +
+  scale_color_manual(values = cols_mng) +
+  scale_fill_manual(values = cols_mng) +
   theme_classic(base_size = 8) +
   theme(
     legend.position = "top",
-    legend.title = element_blank(),
+    legend.title = element_text(size = 9, face = "plain"),
+    legend.text = element_text(size = 8),
+    legend.margin = margin(b = 4),  # slight spacing
+    legend.box = "vertical",        # <-- this stacks title and keys
     panel.border = element_rect(colour = "black", fill = NA, linewidth = 0.5),
     axis.text = element_text(size = 8),
     axis.title = element_text(size = 9)
+  ) +
+  guides(
+    colour = guide_legend(
+      title = mng_title,
+      title.position = "top",
+      title.hjust = 0.5  # ← this centers the title over the legend keys
+    ),
+    fill = guide_legend(
+      title = mng_title,
+      title.position = "top",
+      title.hjust = 0.5
+    )
   )
+p_cv
+p_comb_gam <- ggarrange(p_hgt, p_cv, p_eff, p_rich, 
+          common.legend = T,
+          labels = c("[a]", "[b]", "[c]", "[d]"),
+          font.label = list(size = 10, face = "plain"),
+          ncol = 2, nrow = 2,
+          align = "hv"
+)
 
-# Effective number
-p_eff <- plot_gam_smooth(gam_effective_both0, y_lab = "Effective species number", group_var = "treatment_grp")
-
-# Richness
-p_rich <- plot_gam_smooth(gam_richness0, 
-                          y_lab = "Species richness [#]", 
-                          group_var = "treatment_grp")
-
-
-
-
-
-
-
-
+# Export ggarranged plot to PNG
+ggsave(
+  filename = "outFigs/combined_gam_plots.png",
+  plot = p_comb_gam,
+  width = 5,        # adjust as needed
+  height = 5,         # adjust as needed
+  units = "in",
+  dpi = 300           # high resolution for publication
+)
 
 ## make categories for planting or browsing and both/none -----------
 
