@@ -2119,6 +2119,23 @@ summary(gam_effective_mng)
 summary(gam_richness_mng)
 
 
+# Required libraries
+library(sjPlot)
+
+# Export all model summaries into a single Word document
+tab_model(
+  gam_mean_hgt_mng,
+  gam_cv_hgt_bin_mng,
+  gam_cv_hgt_pos_mng,
+  gam_effective_mng,
+  gam_richness_mng,
+  show.icc = FALSE,
+  show.re.var = TRUE,
+  show.r2 = TRUE,
+  file = "outTable/forest_model_summaries.doc"
+)
+
+
 
 ###### Gam plotting  function ---------------------
 # cols_mng <- RColorBrewer::brewer.pal(3, "Greens")
@@ -2129,7 +2146,9 @@ summary(gam_richness_mng)
 # 
 
 
-cols_mng <- c("#d9f0a3", "#78c679" , "#006837")
+#cols_mng <- c("#d9f0a3", "#78c679" , "#006837")
+
+cols_mng <- c("grey60", "#78c679" , "#006837")
 
 mng_title = "Planting & Anti-Browsing measures"
 
@@ -2580,34 +2599,58 @@ p_violin <-
          aes(x = level,
              y = value_capped,
              fill = level)) +
-    gghalves::geom_half_violin(
-      side = "l",  # use "r" for right
-      #fill = 'grey', 
-      color = NA, 
-      trim = FALSE,
-      scale = 'width'
-    ) +
-  geom_boxplot(width = 0.1, 
-               #fill = 'grey',
-               outlier.shape = NA, 
-               color = "black") +
-    scale_fill_manual(
-      values = c("subplot" = "grey50", 
-                 "plot" = "grey80")
-    ) +
+  gghalves::geom_half_violin(
+    side = "l",
+    color = NA, 
+    trim = FALSE,
+    scale = 'width'
+  ) +
+  geom_boxplot(
+    width = 0.1, 
+    outlier.shape = NA, 
+    color = "black"
+  ) +
+  # Add red dots for the mean
+  stat_summary(
+    fun = mean, 
+    geom = "point", 
+    shape = 21, 
+    size = 2, 
+    fill = "red", 
+    color = "black"
+  ) +
+  scale_fill_manual(
+    values = c("subplot" = "grey50", 
+               "plot" = "grey80")
+  ) +
   facet_wrap(~ variable, scales = "free_y", ncol = 4, nrow = 1) +
-  #scale_fill_manual(values = c("2023" = "skyblue", "2025" = "tomato")) +
   theme_classic(base_size = 10) +
   labs(x = NULL, y = NULL, fill = "Level") +
-  theme(legend.position = 'none',
-    strip.text = element_text(size = 9, 
-                              face = "plain"),
+  theme(
+    legend.position = 'none',
+    strip.text = element_text(size = 9, face = "plain"),
     axis.text.x = element_text(size = 8),
     axis.text.y = element_text(size = 8)
   )
 
 # Print plot
 p_violin
+
+
+summary_stats_violin <- both_levels_long_capped %>%
+  group_by(variable, level) %>%
+  summarise(
+    n = n(),
+    mean = mean(value_capped, na.rm = TRUE),
+    median = median(value_capped, na.rm = TRUE),
+    Q1 = quantile(value_capped, 0.25, na.rm = TRUE),
+    Q3 = quantile(value_capped, 0.75, na.rm = TRUE),
+    IQR = IQR(value_capped, na.rm = TRUE)
+  ) %>%
+  arrange(variable, level)
+
+print(summary_stats_violin)
+
 
 ggsave(
   filename = "outFigs/p_violin.png",
