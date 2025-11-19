@@ -28,7 +28,7 @@ major_cities <- c(
   # "Olomouc",         # Olomouc
   # "Ústí nad Labem",  # Usti
   # "Hradec Králové",  # Hradec
-  "České Budějovice",# Ceske Budejovice
+  "České Budějovice"#,# Ceske Budejovice
   #"Pardubice"        # Pardubice
 )
 
@@ -39,6 +39,7 @@ pts_major <- pts %>%
 
 
 st_write(pts_major, "raw/CR_administrativa/major_czech_cities.gpkg", delete_layer = TRUE)
+st_write(pts, "raw/CR_administrativa/cities.gpkg", delete_layer = TRUE)
 
 
 # Get line geometries of rivers
@@ -54,6 +55,7 @@ rivers_main <- rivers %>%
 
 # Write to GeoPackage
 st_write(rivers_main, "raw/CR_administrativa/main_czech_rivers.gpkg", delete_layer = TRUE)
+st_write(rivers, "raw/CR_administrativa/rivers.gpkg", delete_layer = TRUE)
 
 
 
