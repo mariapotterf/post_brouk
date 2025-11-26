@@ -57,6 +57,23 @@ rivers_main <- rivers %>%
 st_write(rivers_main, "raw/CR_administrativa/main_czech_rivers.gpkg", delete_layer = TRUE)
 st_write(rivers, "raw/CR_administrativa/rivers.gpkg", delete_layer = TRUE)
 
+# Get line geometries of roads
+roads <- silnice()
+st_write(roads,       "raw/CR_administrativa/roads.gpkg",            delete_layer = TRUE)
+
+
+# 1. Load woodland areas
+woodlands <- lesy()
+st_write(woodlands,       "raw/CR_administrativa/woodlands.gpkg",            delete_layer = TRUE)
+
+
+# 2. Load protected natural areas
+prot_zones <- chr_uzemi()
+st_write(prot_zones,       "raw/CR_administrativa/prot_zones.gpkg",            delete_layer = TRUE)
+
+
+
+
 
 
 # --- INPUTS -----------------------------------------------------------------
