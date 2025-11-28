@@ -886,96 +886,96 @@ ggsave("outFigs/combined_management_fig.png", plot = p_combined_management_fig,
 
 
 # Generate new data -----------------------------------------------------------
-## Early vs late ( plot, subplot) ---------------
-
-# Calculate stem counts by recovery type at the plot level
-share_early_vs_late <- 
-  dat_overlap %>%
-  filter(!is.na(n)) %>%  # Optional: remove NAs if present
-  group_by(plot, seral_stage, time_snc_full_disturbance) %>%
-  summarise(n_stems = n(), .groups = "drop") %>%
-  pivot_wider(names_from = seral_stage,
-              values_from = n_stems,
-              values_fill = 0) %>% 
-  mutate(total = early + late,
-         share_early = early/total*100,
-         share_late = late/total*100) %>% 
-  select(plot, time_snc_full_disturbance, share_early, share_late) %>%
-  pivot_longer(cols = starts_with("share_"),
-               names_to = "seral_stage",
-               values_to = "share")# %>%
-
-### Early vs late: plot level  
-df_plot_share_early <-  
-  dat_overlap %>%
-  filter(!is.na(n)) %>%  # Optional: remove NAs if present
-  group_by(plot,year, seral_stage, time_snc_full_disturbance) %>%
-  summarise(n_stems = n(), .groups = "drop") %>%
-  pivot_wider(names_from = seral_stage,
-              values_from = n_stems,
-              values_fill = 0) %>% 
-  mutate(total = early + late,
-         share_early = early/total*100,
-         share_late = late/total*100) %>% 
-  select(plot, year, share_early, share_late,time_snc_full_disturbance) 
-
-### early vs late : subplot level 
-df_sub_share_early <-  dat_overlap %>%
-  filter(!is.na(n)) %>%  # Optional: remove NAs if present
-  group_by(subplot, plot,year, seral_stage, time_snc_full_disturbance) %>%
-  summarise(n_stems = n(), .groups = "drop") %>%
-  pivot_wider(names_from = seral_stage,
-              values_from = n_stems,
-              values_fill = 0) %>% 
-  mutate(total = early + late,
-         share_early = early/total*100,
-         share_late = late/total*100) %>% 
-  select(subplot, plot, year, share_early, share_late,time_snc_full_disturbance) 
-
-
-# Plot
-ggplot(share_early_vs_late, 
-       aes(x = factor(time_snc_full_disturbance),
-           y = share,
-           fill = seral_stage)) +
-  geom_boxplot() +
-  #geom_jitter() +
-  #geom_bar(stat = "identity", position = "stack") +
-  labs(x = "Time since stand replacing\ndisturbance (years)",
-       y = "Share of stems (%)",
-       fill = "Seral stage") 
-
+# ## Early vs late ( plot, subplot) ---------------
+# 
+# # Calculate stem counts by recovery type at the plot level
+# share_early_vs_late <- 
+#   dat_overlap %>%
+#   filter(!is.na(n)) %>%  # Optional: remove NAs if present
+#   group_by(plot, seral_stage, time_snc_full_disturbance) %>%
+#   summarise(n_stems = n(), .groups = "drop") %>%
+#   pivot_wider(names_from = seral_stage,
+#               values_from = n_stems,
+#               values_fill = 0) %>% 
+#   mutate(total = early + late,
+#          share_early = early/total*100,
+#          share_late = late/total*100) %>% 
+#   select(plot, time_snc_full_disturbance, share_early, share_late) %>%
+#   pivot_longer(cols = starts_with("share_"),
+#                names_to = "seral_stage",
+#                values_to = "share")# %>%
+# 
+# ### Early vs late: plot level  
+# df_plot_share_early <-  
+#   dat_overlap %>%
+#   filter(!is.na(n)) %>%  # Optional: remove NAs if present
+#   group_by(plot,year, seral_stage, time_snc_full_disturbance) %>%
+#   summarise(n_stems = n(), .groups = "drop") %>%
+#   pivot_wider(names_from = seral_stage,
+#               values_from = n_stems,
+#               values_fill = 0) %>% 
+#   mutate(total = early + late,
+#          share_early = early/total*100,
+#          share_late = late/total*100) %>% 
+#   select(plot, year, share_early, share_late,time_snc_full_disturbance) 
+# 
+# ### early vs late : subplot level 
+# df_sub_share_early <-  dat_overlap %>%
+#   filter(!is.na(n)) %>%  # Optional: remove NAs if present
+#   group_by(subplot, plot,year, seral_stage, time_snc_full_disturbance) %>%
+#   summarise(n_stems = n(), .groups = "drop") %>%
+#   pivot_wider(names_from = seral_stage,
+#               values_from = n_stems,
+#               values_fill = 0) %>% 
+#   mutate(total = early + late,
+#          share_early = early/total*100,
+#          share_late = late/total*100) %>% 
+#   select(subplot, plot, year, share_early, share_late,time_snc_full_disturbance) 
+# 
+# 
+# # Plot
+# ggplot(share_early_vs_late, 
+#        aes(x = factor(time_snc_full_disturbance),
+#            y = share,
+#            fill = seral_stage)) +
+#   geom_boxplot() +
+#   #geom_jitter() +
+#   #geom_bar(stat = "identity", position = "stack") +
+#   labs(x = "Time since stand replacing\ndisturbance (years)",
+#        y = "Share of stems (%)",
+#        fill = "Seral stage") 
+# 
 
 ## Spruce share ( plot, subplot) ----------------------------------------------------------------------
 
-
-# Calculate spruce share at the plot level
-spruce_share_plot <- dat_overlap %>%
-  filter(!is.na(n)) %>%  # Optional: remove NAs if present
-  group_by(plot, year) %>%
-  summarise(
-    total_stems = n(),
-    spruce_stems = sum(species == "piab"),
-    spruce_share = spruce_stems / total_stems
-  ) %>% 
-  select(plot, year, spruce_share)
-
-hist(spruce_share_plot$spruce_share, breaks = 50)
-
-# Calculate spruce share at the subplot level
-spruce_share_sub <- dat_overlap %>%
-  filter(!is.na(n)) %>%  # Optional: remove NAs if present
-  group_by(plot, subplot, year) %>%
-  summarise(
-    total_stems = n(),
-    spruce_stems = sum(species == "piab"),
-    spruce_share = spruce_stems / total_stems,
-    .groups = "drop"
-  ) %>% 
-  select(plot, subplot, year, spruce_share)
-
-hist(spruce_share_sub$spruce_share, breaks = 50)
-
+# 
+# # Calculate spruce share at the plot level
+# spruce_share_plot <- dat_overlap %>%
+#   filter(!is.na(n)) %>%  # Optional: remove NAs if present
+#   group_by(plot, year) %>%
+#   summarise(
+#     total_stems = n(),
+#     spruce_stems = sum(species == "piab"),
+#     spruce_share = spruce_stems / total_stems
+#   ) %>% 
+#   select(plot, year, spruce_share)
+# 
+# hist(spruce_share_plot$spruce_share, breaks = 50)
+# 
+# # Calculate spruce share at the subplot level
+# spruce_share_sub <- dat_overlap %>%
+#   filter(!is.na(n)) %>%  # Optional: remove NAs if present
+#   group_by(plot, subplot, year) %>%
+#   summarise(
+#     total_stems = n(),
+#     spruce_stems = sum(species == "piab"),
+#     spruce_share = spruce_stems / total_stems,
+#     .groups = "drop"
+#   ) %>% 
+#   select(plot, subplot, year, spruce_share)
+# 
+# hist(spruce_share_sub$spruce_share, breaks = 50)
+# 
 
 ## Traits: Weighted community mean (subplot & plot) ------------------
 
@@ -1067,20 +1067,20 @@ trait_labs <- c(CWM_shade = "Shade tolerance",
 #        title = "Trait CWMs by level and year") +
 #   theme_classic2(base_size = 10)
 # 
-cwm_all_long %>% 
-  ggplot(aes(x = time_snc_full_disturbance, 
-             y = CWM, 
-             fill = factor(time_snc_full_disturbance))) +
-  geom_boxplot(width = 0.6, outlier.shape = NA) +
- # geom_jitter(width = 0.1, alpha = 0.25, size = 0.7) +
-  facet_grid(level ~ trait, 
-             labeller = labeller(trait = trait_labs),
-             scales = 'free_y') +
-  labs(x = "Year", y = "Community-weighted mean (CWM)",
-       title = "Trait CWMs",
-       subtitle = "by level and time since disturbance") +
-  theme_bw(base_size = 10) + 
-  theme(legend.position = "none")
+# cwm_all_long %>% 
+#   ggplot(aes(x = time_snc_full_disturbance, 
+#              y = CWM, 
+#              fill = factor(time_snc_full_disturbance))) +
+#   geom_boxplot(width = 0.6, outlier.shape = NA) +
+#  # geom_jitter(width = 0.1, alpha = 0.25, size = 0.7) +
+#   facet_grid(level ~ trait, 
+#              labeller = labeller(trait = trait_labs),
+#              scales = 'free_y') +
+#   labs(x = "Year", y = "Community-weighted mean (CWM)",
+#        title = "Trait CWMs",
+#        subtitle = "by level and time since disturbance") +
+#   theme_bw(base_size = 10) + 
+#   theme(legend.position = "none")
 
 
 # Create table on subplot and plot level ----------------------------------------
@@ -1135,71 +1135,71 @@ field_sub_summ <- dat_overlap %>%
 # is teh change in community shading/drought tolerance driven by planting????
 # Plot: Shade ~ Time since disturbance, by planting
 x_lab_time_snc_full_dist = "Time since stand\nreplacing disturbance (years)"
-
-#### Effect of planting? 
-p_shade_planting <- field_sub_summ %>% 
-  ggplot(aes(x = as.factor(time_snc_full_disturbance),
-             y = CWM_shade,
-             fill = factor(planting))) +
- #
-  geom_boxplot() +
-  labs(x = x_lab_time_snc_full_dist,
-       y = "CWM shade",
-       fill = "Planting") +
-  theme_classic2() +
-  theme(text  = element_text(size = 10))
-
-# Plot: Drought ~ Time since disturbance, by planting
-p_shade_drought <- field_sub_summ %>% 
-  ggplot(aes(x = as.factor(time_snc_full_disturbance),
-             y = CWM_drought,
-             fill = factor(planting))) +
-  geom_boxplot(outlier.shape = NA) +
-  labs(x = x_lab_time_snc_full_dist,
-       y = "CWM drought",
-       fill = "Planting") +
-  theme_classic2()+
-  theme(text  = element_text(size = 10))
-
-# Plot: Shade ~ Planting
-p_shade_total <- field_sub_summ %>% 
-  ggplot(aes(x = factor(planting),
-             y = CWM_shade,
-             fill = factor(planting))) +
-  #
-  geom_boxplot(outlier.shape = NA) +
-  stat_compare_means(method = "wilcox.test", label = "p.format", 
-                     label.y = 4, size = 3) +
-  labs(x = "Planting",
-       y = "CWM shade",
-       fill = "Planting") +
-  theme_classic2() +
-  theme(text  = element_text(size = 10))
-
-# Plot: Drought ~ Planting
-p_drought_total <- field_sub_summ %>% 
-  ggplot(aes(x = factor(planting),
-             y = CWM_drought,
-             fill = factor(planting))) +
-  geom_boxplot() +
-  stat_compare_means(method = "wilcox.test", label = "p.format", 
-                     label.y = 4, size = 3) +
-  labs(x = "Planting",
-       y = "CWM drought",
-       fill = "Planting") +
-  theme_classic2() +
-  theme(text  = element_text(size = 10))
-
-# Arrange all plots
-annotate_figure(
-  ggarrange(p_shade_planting, p_shade_total,
-            p_shade_drought, p_drought_total,
-            ncol = 2, nrow = 2,
-            common.legend = TRUE, legend = "bottom"),
-  top = text_grob("Subplot level", 
-                  face = "bold", size = 12)
-)
-
+# 
+# #### Effect of planting? 
+# p_shade_planting <- field_sub_summ %>% 
+#   ggplot(aes(x = as.factor(time_snc_full_disturbance),
+#              y = CWM_shade,
+#              fill = factor(planting))) +
+#  #
+#   geom_boxplot() +
+#   labs(x = x_lab_time_snc_full_dist,
+#        y = "CWM shade",
+#        fill = "Planting") +
+#   theme_classic2() +
+#   theme(text  = element_text(size = 10))
+# 
+# # Plot: Drought ~ Time since disturbance, by planting
+# p_shade_drought <- field_sub_summ %>% 
+#   ggplot(aes(x = as.factor(time_snc_full_disturbance),
+#              y = CWM_drought,
+#              fill = factor(planting))) +
+#   geom_boxplot(outlier.shape = NA) +
+#   labs(x = x_lab_time_snc_full_dist,
+#        y = "CWM drought",
+#        fill = "Planting") +
+#   theme_classic2()+
+#   theme(text  = element_text(size = 10))
+# 
+# # Plot: Shade ~ Planting
+# p_shade_total <- field_sub_summ %>% 
+#   ggplot(aes(x = factor(planting),
+#              y = CWM_shade,
+#              fill = factor(planting))) +
+#   #
+#   geom_boxplot(outlier.shape = NA) +
+#   stat_compare_means(method = "wilcox.test", label = "p.format", 
+#                      label.y = 4, size = 3) +
+#   labs(x = "Planting",
+#        y = "CWM shade",
+#        fill = "Planting") +
+#   theme_classic2() +
+#   theme(text  = element_text(size = 10))
+# 
+# # Plot: Drought ~ Planting
+# p_drought_total <- field_sub_summ %>% 
+#   ggplot(aes(x = factor(planting),
+#              y = CWM_drought,
+#              fill = factor(planting))) +
+#   geom_boxplot() +
+#   stat_compare_means(method = "wilcox.test", label = "p.format", 
+#                      label.y = 4, size = 3) +
+#   labs(x = "Planting",
+#        y = "CWM drought",
+#        fill = "Planting") +
+#   theme_classic2() +
+#   theme(text  = element_text(size = 10))
+# 
+# # Arrange all plots
+# annotate_figure(
+#   ggarrange(p_shade_planting, p_shade_total,
+#             p_shade_drought, p_drought_total,
+#             ncol = 2, nrow = 2,
+#             common.legend = TRUE, legend = "bottom"),
+#   top = text_grob("Subplot level", 
+#                   face = "bold", size = 12)
+# )
+# 
 
 
 #### Subplot quick plotting: all vars ---------------------
@@ -1234,64 +1234,6 @@ df_sub_long <- field_sub_summ %>%
   # keep mean_hgt > 0, leave others as-is
   filter(!(metric == "mean_hgt" & (is.na(value) | value <= 0))) %>%
   filter(!is.na(value))# %>%
-
-
-
-#### Subplot: Time since disturbnace ----------------------------------------
-
-# see CV with time since disturbnace : poartial disturbance
-p_partial_disturbance <- df_sub_long %>% 
-  ggplot(aes(x = time_snc_part_disturbance, y = value)) +
-  geom_boxplot(aes(group = time_snc_part_disturbance ), outlier.shape = NA) +
-  
-  stat_summary(fun.data = mean_sd, geom = "errorbar", width = 0.1, linewidth = 0.2, col = 'red') +
-  stat_summary(fun = \(y) mean(y, na.rm = TRUE), geom = "point", size = 2, col = 'red') +
-  facet_wrap(~ metric, scales = "free_y", ncol = 2) +
-  labs(x = NULL, y = NULL, title = 'Subplot: Partial disturbance') +
-  theme_classic2()
-
-
-# see CV with time since disturbnace : full disturbance
-p_full_disturbance <- df_sub_long %>%
-  # keep mean_hgt > 0, leave others as-is
-  filter(!(metric == "mean_hgt" & (is.na(value) | value <= 0))) %>%
-  filter(!is.na(value)) %>%
-  ggplot(aes(x = time_snc_full_disturbance, y = value)) +
-  geom_boxplot(aes(group = time_snc_full_disturbance ), outlier.shape = NA) +
-  stat_summary(fun.data = mean_sd, geom = "errorbar", width = 0.1, linewidth = 0.2, col = 'red') +
-  stat_summary(fun = \(y) mean(y, na.rm = TRUE), geom = "point", size = 2, col = 'red') +
-  facet_wrap(~ metric, scales = "free_y", ncol = 2) +
-  labs(x = NULL, y = NULL, title = 'Subplot: Full disturbance') +
-  theme_classic2()
-
-ggarrange(p_partial_disturbance, p_full_disturbance, ncol = 2)
-
-
-
-subplot_summary_tbl <- field_sub_summ %>%
-  ungroup() %>%
-  select(year, mean_hgt, cv_hgt, shannon_sp, sp_richness) %>%
-  pivot_longer(-year, names_to = "metric", values_to = "value") %>%
-  # keep mean_hgt > 0, others as-is
-  filter(!(metric == "mean_hgt" & (is.na(value) | value <= 0))) %>%
-  group_by(metric, year) %>%
-  summarise(
-    n_total  = n(),
-    n_non_na = sum(!is.na(value)),
-    n_na     = sum(is.na(value)),
-    mean     = mean(value, na.rm = TRUE),
-    sd       = sd(value, na.rm = TRUE),
-    se       = sd/sqrt(n_non_na),
-    median   = median(value, na.rm = TRUE),
-    p25      = quantile(value, 0.25, na.rm = TRUE),
-    p75      = quantile(value, 0.75, na.rm = TRUE),
-    .groups  = "drop"
-  ) %>%
-  arrange(metric, year)
-
-subplot_summary_tbl
-
-
 
 
 
