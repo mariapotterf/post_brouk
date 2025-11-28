@@ -50,6 +50,8 @@ theme_set(theme_classic2(base_size = 10) +
 dat_overlap  <- fread('outData/full_table_23_25.csv')  # accound for all data points, not just the ovelapping ones
 # this can help me to benefit from all disturbnace history sites
 
+
+
 # Summary --------------------------------------
 ## Analyze data: first check up ----------------------
 # get master table, having all unique plots and subplots - ven teh empty ones
@@ -104,7 +106,7 @@ species_stem_share <-
     .groups = "drop"
   ) %>%
   dplyr::arrange(species) %>% 
-  mutate(n_trees = n_trees,
+  mutate(#n_trees = n_trees,
         # trees25 = n_trees25,
          share = round(stems/n_trees_total*100,2)) 
 
@@ -159,7 +161,7 @@ species_levels <- rev(names(species_labels))  # Custom order, matching color pal
 
 ### Stem density per species per top 10 species --------------------------------
 df_stem_dens_species <- df %>% 
-  group_by(plot, species, n_subplots ) %>%
+  group_by(plot, year, species, n_subplots ) %>%
   summarize(sum_n = sum(n, na.rm =T)) %>% 
   mutate(scaling_factor = 10000/(n_subplots * 4),
          stem_dens = sum_n*scaling_factor) %>% 
@@ -169,7 +171,7 @@ df_stem_dens_species <- df %>%
 # get total sum and calculate as average value over all sites 
 df_stem_dens_species_sum <- 
   df_stem_dens_species %>% 
-  group_by(species, year) %>% 
+  group_by(species, year) %>% #, year
   summarise(stem_dens = sum(stem_dens, na.rm = T),
             log_sum_stem_density = sum(log_sum_stem_density, na.rm = T)) %>%
   mutate(stem_dens_avg = stem_dens/n_plots_total,
@@ -180,20 +182,20 @@ df_stem_dens_species <- df_stem_dens_species %>%
   ungroup(.) %>% 
   filter(sum_n >0) %>% 
   filter(species %in% v_top_species_overall) %>% 
-  dplyr::group_by(species) %>%
+  dplyr::group_by(species, year) %>%
   dplyr::mutate(median_stem_density = median(stem_dens, na.rm = TRUE)) %>% 
   dplyr::ungroup(.) %>%
   mutate(species = factor(species, levels = rev(v_top_species_overall))) # Set custom order
 
 
-df_stem_dens_species2 <- df_stem_dens_species_year %>%
-  dplyr::filter(!is.na(log_sum_stem_density) & sum_n > 0) %>%
-  dplyr::mutate(year = factor(year, levels = c("2023","2025")),
-                # order by mean log density (ascending → highest ends up at the TOP after coord_flip)
-                species = forcats::fct_reorder(species, log_sum_stem_density, .fun = mean, na.rm = TRUE))
+# df_stem_dens_species2 <- df_stem_dens_species_year %>%
+#   dplyr::filter(!is.na(log_sum_stem_density) & sum_n > 0) %>%
+#   dplyr::mutate(year = factor(year, levels = c("2023","2025")),
+#                 # order by mean log density (ascending → highest ends up at the TOP after coord_flip)
+#                 species = forcats::fct_reorder(species, log_sum_stem_density, .fun = mean, na.rm = TRUE))
 
 # 
-p_density<-df_stem_dens_species_year2 %>% 
+p_density<-df_stem_dens_species_sum %>% #df_stem_dens_species_year2 %>% 
   mutate(species = factor(species, levels = species_levels)) %>% 
   filter(!is.na(species)) %>% 
   ggplot(aes(x = log_sum_stem_density, y = species,
@@ -221,6 +223,8 @@ p_density<-df_stem_dens_species_year2 %>%
 
 
 p_density
+
+
 
 
 p_bar <- top_overall_stem_share %>%  
@@ -261,8 +265,8 @@ species_occurence <-
   df_stem_dens_species %>%
   ungroup(.) %>% 
   dplyr::filter(sum_n > 0) %>%                 # Only where species occurred
-  distinct(species, year, plot) %>%           # Unique species × plot combos
-  count(year, species, name = "n_plots") %>%  # Count number of plots per species
+  distinct(species, year, plot) %>%    #year,       # Unique species × plot combos
+  count(species, year, name = "n_plots")  %>% #year, %>%  # Count number of plots per species
   mutate(share_of_plots = n_plots / total_plots*100) %>% 
   arrange()
 
@@ -359,7 +363,7 @@ ggplot(richness_per_subplot,
 
 ### Richnesss: Plot - per planting intensity ---------------------------------------
 
-### Calculate species richness per subplot -----------------------
+#### Calculate species richness per subplot -----------------------
 richness_per_plot <- dat_overlap_n0 %>%
   group_by(plot, year, planting_intensity) %>% #
   summarize(
@@ -723,23 +727,55 @@ mng_intensity_props <- mng_intensity_props %>%
 # Define the factor levels in correct order
 intensity_levels <-  c("0–19", "20–39", "40–59", "60–79", "80–100")
 low_classes <- c("0–19", "20–39")
+applied_mng_intens_order <- c("0–19", "20–39","40–59", "60–79", "80–100") 
 
-# igroup into classes
+
+# prepare for binary classifucation  - need to group first, as I have two years
 mng_sub_conv <- mng_intensity_props %>%
   mutate(
     intensity_binary = factor(intensity_binary, levels = c('no', 'yes')),
-    intensity_class = factor(intensity_class, levels = intensity_levels),
-    activity = factor(activity, levels = applied_mng_intens_order)
+    intensity_class = factor(intensity_class, levels = intensity_levels)#,
+    #activity = factor(activity, levels = applied_mng_intens_order)
   ) %>% 
   group_by(activity, intensity_binary) %>% 
   summarise(proportion = sum(proportion, na.rm = T))
 
+# prepare for intensity classification
+mng_sub_intensity <- mng_intensity_props %>%
+  mutate(
+    intensity_binary = factor(intensity_binary, levels = c('no', 'yes')),
+    intensity_class = factor(intensity_class, levels = intensity_levels)#,
+    #activity = factor(activity, levels = applied_mng_intens_order)
+  ) %>% 
+  group_by(activity, intensity_class) %>% 
+  summarise(proportion = sum(proportion, na.rm = T))
+
+
 # define colors 
 fill_colors <- brewer.pal(length(intensity_levels), "YlOrRd")
 
-# Flip "no" values to negative
+# for binary: Flip "no" values to negative
 mng_sub_conv_plot <- mng_sub_conv %>%
   mutate(proportion_plot = if_else(intensity_binary == "no", -proportion, proportion))
+
+# for intensity - flip low intensity to left side of the plot
+mng_shifted <- mng_sub_intensity %>%
+  mutate(
+    intensity_class = factor(intensity_class, levels = intensity_levels),
+    proportion_shifted = if_else(intensity_class %in% low_classes, -proportion, proportion),
+    # reverse class order for right-hand side only
+    intensity_class_plot = fct_relevel(
+      intensity_class,
+      c("80–100","60–79", "40–59","0–19","20–39" )
+    ),
+    activity = factor(activity, levels = rev(c(
+      "clear_intensity",
+      "grndwrk_intensity",      
+      "planting_intensity",     
+      "anti_browsing_intensity",
+      "logging_trail_intensity"
+    )))
+  )
 
 
 activity_intens_labels <- c(
@@ -774,6 +810,41 @@ ggplot(aes(x = proportion_plot, y = activity,
     axis.text = element_text(size = 8),
     panel.grid.major.y = element_blank()
   )
+
+p_management_bin_plot
+
+
+p_management_intensity_plot <- mng_shifted %>% 
+  filter(activity != "logging_trail_intensity") %>% 
+  droplevels(.) %>% 
+  ggplot(aes(x = proportion_shifted, 
+             y = activity,
+             fill = intensity_class_plot)) +
+  geom_col(width = 0.4, color = "black") +
+  scale_fill_manual(values = fill_colors, name = "Intensity class",
+                    breaks = intensity_levels) +
+  geom_vline(xintercept = 0, color = "grey", 
+             linewidth = 0.8, lty = 'dashed') +
+  ylab('') +
+  scale_y_discrete(labels = activity_intens_labels) +   # 👈 this does the relabeling
+  scale_x_continuous(labels = abs, name = "Plots share [%]") +
+  annotate("text", x = -80, y = 4.5, label = "Low intensity", hjust = 0, size = 2.5, fontface = "bold") +
+  annotate("text", x =  80, y = 4.5, label = "High intensity",     hjust = 1, size = 2.5, fontface = "bold") +
+  theme_classic2() +
+  theme(
+    legend.position = "right",
+    axis.text.y = element_text(size = 10),
+    panel.grid.major.y = element_blank()
+  )
+
+p_management_intensity_plot
+
+# Save as PNG
+ggsave("outFigs/mng_intensity_plot.png", plot = p_management_intensity_plot,
+       width = 5, height = 2.1, units = "in", dpi = 300)
+
+
+
 
 
 ### Graphics: disturbance chars, species composition and management
@@ -810,83 +881,6 @@ ggsave("outFigs/combined_management_fig.png", plot = p_combined_management_fig,
 
 
 
-
-### Plot level: intensities - summary  ------------------------------------
-
-mng_intensity_props <- mng_intensity_props %>%
-  mutate(
-    intensity_class = cut(
-      applied,
-      breaks = c(-Inf, 0.19, 0.39, 0.59, 0.79, Inf),
-      labels = c("no", "yes", "yes", "yes", "yes"),
-      right = TRUE
-    )
-  )
-
-
-
-
-
-# Define the factor levels in correct order
-intensity_levels <-  c("0–19", "20–39", "40–59", "60–79", "80–100")
-low_classes <- c("0–19", "20–39")
-
-# igroup into classes
-mng_sub_conv <- mng_intensity_props %>%
-  mutate(
-    intensity_class = factor(intensity_class, levels = intensity_levels),
-    activity = factor(activity, levels = applied_mng_intens_order)
-  ) %>% 
-  group_by(activity, intensity_class) %>% 
-  summarise(proportion = sum(proportion, na.rm = T))
-
-# define colors 
-fill_colors <- brewer.pal(length(intensity_levels), "YlOrRd")
-
-mng_shifted <- mng_sub_conv %>%
-  mutate(
-    intensity_class = factor(intensity_class, levels = intensity_levels),
-    proportion_shifted = if_else(intensity_class %in% low_classes, -proportion, proportion),
-    # reverse class order for right-hand side only
-    intensity_class_plot = fct_relevel(
-      intensity_class,
-      c("80–100","60–79", "40–59","0–19","20–39" )
-    ),
-    activity = factor(activity, levels = rev(c(
-      "clear_intensity",
-      "grndwrk_intensity",      
-      "planting_intensity",     
-      "anti_browsing_intensity",
-      "logging_trail_intensity"
-    )))
-  )
-
-activity_intens_labels <- c(
-  "clear_intensity" = "Salvage logging",
-  "grndwrk_intensity" = "Soil preparation",
-  "planting_intensity" = "Planting",
-  "anti_browsing_intensity" = "Browsing protection",
-  "logging_trail_intensity" = "Logging trail"
-)
-
-ggplot(mng_shifted, aes(x = proportion_shifted, y = activity,
-                        fill = intensity_class_plot)) +
-  geom_col(width = 0.4, color = "black") +
-  scale_fill_manual(values = fill_colors, name = "Intensity class",
-                    breaks = intensity_levels) +
-  geom_vline(xintercept = 0, color = "grey", 
-             linewidth = 0.8, lty = 'dashed') +
-  ylab('') +
-  scale_y_discrete(labels = activity_intens_labels) +   # 👈 this does the relabeling
-  scale_x_continuous(labels = abs, name = "Plots share [%]") +
-  annotate("text", x = -80, y = 5.5, label = "Low intensity", hjust = 0, size = 2.5, fontface = "bold") +
-  annotate("text", x =  80, y = 5.5, label = "High intensity",     hjust = 1, size = 2.5, fontface = "bold") +
-  theme_classic2() +
-  theme(
-    legend.position = "right",
-    axis.text.y = element_text(size = 10),
-    panel.grid.major.y = element_blank()
-  )
 
 
 
