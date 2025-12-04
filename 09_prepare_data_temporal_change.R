@@ -391,6 +391,31 @@ names(dat_subplots23)
 names(dat_subplots25)
 
 
+# get only site history for 2025- for Miso, aggreagte on subplot, hitosry derived on plot level
+dat_subplots25_history <- dat_subplots25 %>% 
+  dplyr::select(-plot,
+                -species,  
+                -vegtype,    
+                -hgt,     
+                -n,   
+                -dbh, 
+                -year,
+                - time_snc_part_disturbance,
+                -n_subplots               ,
+                -clear,
+                -grndwrk,                   
+                -logging_trail,            
+                -planting,
+                -anti_browsing,  
+                -n_subplots,                
+                -status
+                
+  ) %>% 
+  distinct()
+
+
+
+
 # merge data with cleaned up naming
 dat_subplots_merged <- rbind(dat_subplots23, dat_subplots25) %>% 
   mutate(plot    = as.factor(plot),
@@ -536,6 +561,9 @@ hist(traits_full$Shade_tolerance)
 
 fwrite(dat_subplot_mng2, 'outData/full_table_23_25.csv')
 fwrite(dat_overlap,      'outData/full_table_overlap_23_25.csv')
+
+# subplots history - 2025 - for Miso
+fwrite(dat_subplots25_history,      'outDataShare/dat_subplots25_history.csv')
 
 
 
