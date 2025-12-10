@@ -107,3 +107,36 @@ write_xlsx(df_sample_photos_updated, "outShare/samples_list_renamed.xlsx")
 # Output summary
 cat("Copied", nrow(matched_photos_renamed), "renamed sample photos to", target_dir, "\n")
 
+
+
+
+# read data from Roman - merge orevious and new database -----------------------
+# need to marge dataset that was inspected manually with new photos 
+# 2025/12/10 
+library(readxl)
+
+df_manual <- read_xlsx("outShare/samples_list_zari.xlsx") %>%
+  dplyr::filter(photo != "")
+
+df_new <- read_xlsx("outShare/samples_list_renamed.xlsx") %>%
+  dplyr::filter(photo != "")
+
+head(df_manual)
+head(df_new)
+
+nrow(df_manual)
+nrow(df_new)
+
+
+df_merged <- df_manual %>%
+  left_join(
+    df_new %>% dplyr::select(plot_key, sample, photo, new_filename),
+    by = c("plot_key", "sample", "photo")
+  ) %>% 
+  select(-c(photo)) %>% 
+  rename(photo = new_filename)
+
+
+# Export updated table to Excel
+write_xlsx(df_merged, "outShare/samples_list_merged.xlsx")
+
