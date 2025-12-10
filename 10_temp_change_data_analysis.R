@@ -535,7 +535,7 @@ p_hist_dist_year <- plot_context_chars %>%
   group_by(disturbance_year) %>% 
   summarise(n = n()) %>% 
   ggplot(aes(x = disturbance_year, y = n)) +
-  geom_col(fill = 'grey80', color = 'black') +
+  geom_col(fill = 'grey80', color = 'black',  width = 0.8) +
   #geom_histogram(binwidth = 0.8, ) +
   scale_x_continuous(breaks = seq(2018, 2022, 2)) +
   labs(x = "Disturbance Year\n", y = "Number of Plots [#]") +
@@ -553,7 +553,7 @@ p_hist_time_since_dist <- plot_context_chars %>%
   summarise(n = n()) %>% 
   
     ggplot(aes(x = time_since_disturbance, y = n)) +
-  geom_col(fill = 'grey80', color = 'black') +
+  geom_col(fill = 'grey80', color = 'black', width = 0.8) +
   labs(x = "Time since disturbance\n[years]", 
        y = "Number of Plots [#]") +
   theme_classic2() +
@@ -890,14 +890,15 @@ p_combined_management_intens <- ggarrange(
   font.label = list(size = 10, face = 'plain'),
   ncol = 1, nrow = 2,
   # align = 'hv',
-  widths = c(1,1.5),  
+  widths = c(1,1.6),  
   heights = c(1.2,1)  
 )
 
+windows(6,5)
 p_combined_management_intens
 # Save as PNG
 ggsave("outFigs/p_combined_management_intens.png", plot = p_combined_management_intens,
-       width = 4, height = 4, units = "in", dpi = 300)
+       width = 7, height = 4, units = "in", dpi = 300)
 
 
 
@@ -1801,23 +1802,6 @@ appraise(models_intensity[[1]])
 draw(models_intensity[[4]])
 plot.gam(models_intensity[[4]], page = 1)
 
-
-gam_smooth <- gam(cv_hgt_pos ~ 
-                    te(planting_intensity, anti_browsing_intensity) +
-                    grndwrk_intensity +
-                    s(plot_id, bs = "re"),
-                  data = both_levels_re2,
-                  family = tw(link = "log"),
-                  method = "REML")
-
-draw(gam_smooth, select = 1)  # plots the te() surface
-
-library(car)
-# Linear approximation to check VIF
-lm_check <- lm(sp_richness ~ planting_intensity + anti_browsing_intensity + grndwrk_intensity,
-               data = both_levels_re2)
-vif(lm_check)
-
 ### GAM management interaction + time since disturbance smooths
 
 model_time_main <- gam(
@@ -1846,7 +1830,7 @@ model_time_effects_smooth <- gam(
 
 plot.gam(model_time_effects_smooth, page = 1)
 draw(model_time_effects_smooth)  # plots the te() surface
-
+# !!!!!!
 # Predict over a grid of planting intensity at different levels of anti-browsing intensity
 preds <- ggpredict(model_time_main,
                    terms = c("planting_intensity", "anti_browsing_intensity [0,0.2,0.4,0.6,0.8,1]"))
