@@ -858,7 +858,7 @@ p_combined_disturb_fig <- ggarrange(
 )
 
 # Combine
-p_combined_management_fig <- ggarrange(
+p_combined_management_bin <- ggarrange(
   #p_hist_dist_year, p_hist_time_since_dist,
   p_combined_disturb_fig,
   p_management_bin_plot,
@@ -872,7 +872,7 @@ p_combined_management_fig <- ggarrange(
 
 p_combined_management_fig
 # Save as PNG
-ggsave("outFigs/combined_management_fig.png", plot = p_combined_management_fig,
+ggsave("outFigs/combined_management_bin.png", plot = combined_management_bin,
        width = 4, height = 4, units = "in", dpi = 300)
 
 # # Save as SVG
@@ -881,6 +881,23 @@ ggsave("outFigs/combined_management_fig.png", plot = p_combined_management_fig,
 
 
 
+# Combine
+p_combined_management_intens <- ggarrange(
+  #p_hist_dist_year, p_hist_time_since_dist,
+  p_combined_disturb_fig,
+  p_management_intensity_plot,
+  labels = c(" ", "[c]"),
+  font.label = list(size = 10, face = 'plain'),
+  ncol = 1, nrow = 2,
+  # align = 'hv',
+  widths = c(1,1.5),  
+  heights = c(1.2,1)  
+)
+
+p_combined_management_intens
+# Save as PNG
+ggsave("outFigs/p_combined_management_intens.png", plot = p_combined_management_intens,
+       width = 4, height = 4, units = "in", dpi = 300)
 
 
 
@@ -1739,7 +1756,16 @@ model_intensity_df_pct <- model_intensity_df %>%
     upper_pct = (exp(upper) - 1) * 100
   )
 
-
+# add stars to classify p values
+model_intensity_df_pct <- model_intensity_df_pct %>%
+  mutate(
+    p_signif = case_when(
+      p.value <= 0.001 ~ "***",
+      p.value <= 0.01  ~ "**",
+      p.value <= 0.05  ~ "*",
+      TRUE             ~ "n.s."
+    )
+  )
 
 
 ggplot(model_intensity_df_pct, aes(x = term, y = estimate_pct, fill = term)) +
@@ -1749,6 +1775,15 @@ ggplot(model_intensity_df_pct, aes(x = term, y = estimate_pct, fill = term)) +
   facet_wrap(~ response, ncol = 4) +
   theme_classic(base_size = 9) +
   scale_fill_brewer(palette = "Dark2") +
+  # NEW: Add stars above bars
+  geom_text(
+    aes(label = p_signif, 
+        y = ifelse(estimate_pct >= 0, 
+                                     upper_pct + 7, 
+                                     lower_pct - 7)),
+    vjust = 0,
+    size = 3
+  ) +
   labs(
     x = "Management Intensity",
     y = "Effect on response (%)",
