@@ -115,7 +115,7 @@ cat("Copied", nrow(matched_photos_renamed), "renamed sample photos to", target_d
 # 2025/12/10 
 library(readxl)
 
-df_manual <- read_xlsx("outShare/samples_list_zari.xlsx") %>%
+df_manual <- read_xlsx("outShare/samples_list_zari_maja.xlsx") %>%
   dplyr::filter(photo != "")
 
 df_new <- read_xlsx("outShare/samples_list_renamed.xlsx") %>%
