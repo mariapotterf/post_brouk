@@ -14,7 +14,7 @@ library(writexl)  # for Excel writing
 
 # Set base directory and target folder
 base_dir <- "raw/collected_2025"
-target_dir <- "outShare/sample_photo"  # You can customize this
+target_dir <- "outShare/sample_photo_renamed"  # You can customize this
 
 # export final table as csv
 df_sample_photos <- fread('outShare/samples_list.csv') %>% 
@@ -32,7 +32,8 @@ dir_create(target_dir)
 photo_files <- dir_ls(
   path = base_dir,
   recurse = TRUE,
-  regexp = "DCIM/rg.*\\.(jpg|jpeg|png)$",
+  #regexp = "DCIM/rg.*\\.(jpg|jpeg|png)$",
+  regexp = "DCIM/(rg|mat).*\\.(jpg|jpeg|png)$",
   type = "file"
 )
 
@@ -44,17 +45,65 @@ unique_files <- photo_files[!duplicated(path_file(photo_files))]
 # Create a named vector of photo basenames and full paths
 photo_lookup <- setNames(photo_files, path_file(photo_files))
 
-# Match only those in sample_photos$photo
+# # Match only those in sample_photos$photo
+# matched_photos <- df_sample_photos %>%
+#   dplyr::filter(photo %in% names(photo_lookup)) %>%
+#   mutate(
+#     original_path = photo_lookup[photo],
+#     new_filename = paste0(sample, "_", photo),
+#     new_path = file.path(target_dir, new_filename)
+#   )
+# 
+# # Copy and rename photos
+# file_copy(matched_photos$original_path, matched_photos$new_path, overwrite = TRUE)
+# 
+# # Output result
+# cat("Copied", nrow(matched_photos), "renamed sample photos to", target_dir, "\n")
+
+
+# Join matched photo files - filter only photos that have sample in them
 matched_photos <- df_sample_photos %>%
   dplyr::filter(photo %in% names(photo_lookup)) %>%
+  mutate(original_path = photo_lookup[photo])
+
+# Update photos names, extract date (YYYYMMDD) from photo name using regex
+matched_photos_renamed <- matched_photos %>%
   mutate(
-    original_path = photo_lookup[photo],
-    new_filename = paste0(sample, "_", photo),
+    sample_clean = word(sample, 1),  # get first word before space
+    tablet = substr(sample_clean, 1, 2), # get indication of tablet - seems my date on photos is wrong on Tablet1?
+    plot_date = str_extract(plot_key, "\\d{8}"),
+    photo_date = str_extract(photo, "\\d{8}"), # extract first 8 characters from the time stamp
+    photo_description = photo %>%
+      str_replace("_\\d{17,}\\.(jpg|jpeg|png)$", "") %>%
+      tools::file_path_sans_ext(),
+    sort_key = as.integer(photo_date)
+  ) %>%
+  arrange(sort_key) %>% # arrange by date (as integer)
+  mutate(
+    photo_seq = sprintf("%03d", row_number()),  # padded sequence
+    #new_filename = paste0(plot_date, "_", photo_seq, "_", sample_clean, "_", photo_description, ".jpg"), # , 
+    new_filename = paste0(photo_seq, "_", sample_clean, ".jpg"), # , 
     new_path = file.path(target_dir, new_filename)
+  ) %>% 
+  dplyr::select(-c(sample, photo_seq)) %>% 
+  rename(sample = sample_clean)
+
+# Copy and rename photo files
+file_copy(
+  path = matched_photos_renamed$original_path,  # same as matched_photos$original_path
+  new_path = matched_photos_renamed$new_path,
+  overwrite = TRUE
+)
+# Update sample list with new photo names
+df_sample_photos_updated <- df_sample_photos %>%
+  left_join(
+    matched_photos_renamed %>% dplyr::select(photo, new_filename),
+    by = "photo"
   )
 
-# Copy and rename photos
-file_copy(matched_photos$original_path, matched_photos$new_path, overwrite = TRUE)
+# Export updated table to Excel
+write_xlsx(df_sample_photos_updated, "outShare/samples_list_renamed.xlsx")
 
-# Output result
-cat("Copied", nrow(matched_photos), "renamed sample photos to", target_dir, "\n")
+# Output summary
+cat("Copied", nrow(matched_photos_renamed), "renamed sample photos to", target_dir, "\n")
+
