@@ -1819,7 +1819,7 @@ model_time_main <- gam(
   method = "REML"
 )
 
-model_time_effects_smooth <- gam(
+gam_mean_hgt_intensity <- gam(
   mean_hgt ~ 
     s(planting_intensity, k = 3) +
     s(anti_browsing_intensity, k = 3) +
@@ -1833,21 +1833,20 @@ model_time_effects_smooth <- gam(
   method = "REML"
 )
 
-plot.gam(model_time_effects_smooth, page = 1)
-draw(model_time_effects_smooth)  # plots the te() surface
-vis.gam(model_time_effects_smooth)
+plot.gam(gam_mean_hgt_intensity, page = 1)
+draw(gam_mean_hgt_intensity)  # plots the te() surface
 # !!!!!!
 # Predict over a grid of planting intensity at different levels of anti-browsing intensity
-preds <- ggpredict(model_time_effects_smooth,
+preds <- ggpredict(gam_mean_hgt_intensity,
                    terms = c("time_snc_full_disturbance"))
 
 plot(preds)
 # 1. Predict for planting intensity (holding anti_browsing constant)
-pred_planting <- ggpredict(model_time_effects_smooth, terms = "planting_intensity [all]") %>%
+pred_planting <- ggpredict(gam_mean_hgt_intensity, terms = "planting_intensity [all]") %>%
   mutate(variable = "Planting")
 
 # 2. Predict for anti-browsing intensity (holding planting constant)
-pred_browsing <- ggpredict(model_time_effects_smooth, terms = "anti_browsing_intensity [all]") %>%
+pred_browsing <- ggpredict(gam_mean_hgt_intensity, terms = "anti_browsing_intensity [all]") %>%
   mutate(variable = "Anti-browsing")
 
 
@@ -1959,10 +1958,391 @@ gam_richness_intensity <- gam(
 
 ##### Summaries and Export -----------
 summary(gam_mean_hgt_intensity)
+appraise(gam_mean_hgt_intensity)
+
 summary(gam_cv_hgt_bin_intensity)
+appraise(gam_cv_hgt_bin_intensity)
+
 summary(gam_cv_hgt_pos_intensity)
+appraise(gam_cv_hgt_pos_intensity)
+
 summary(gam_effective_intensity)
+appraise(gam_effective_intensity)
+
 summary(gam_richness_intensity)
+appraise(gam_richness_intensity)
+
+### Make plots : only time since disturbnace  ----------------------------
+# 1️⃣ Mean height
+preds_hgt <- ggpredict(
+  gam_mean_hgt_intensity,
+  terms = c("time_snc_full_disturbance"),
+  condition = list(level = "plot")
+)
+
+p_hgt <- plot(preds_hgt) +
+  labs(y = "", x = "", title = "[a] Mean\nheight [m]") +
+  theme_classic(base_size = 9)
+
+
+# 2️⃣ CV binary
+pred_bin <- ggpredict(
+  gam_cv_hgt_bin_intensity,
+  terms = c("time_snc_full_disturbance"),
+  condition = list(level = "plot")
+) %>%
+  rename(prob = predicted, prob_low = conf.low, prob_high = conf.high)
+
+# 3️⃣ CV positive
+pred_pos <- ggpredict(
+  gam_cv_hgt_pos_intensity,
+  terms = c("time_snc_full_disturbance"),
+  condition = list(level = "plot")
+) %>%
+  rename(mean_pos = predicted, pos_low = conf.low, pos_high = conf.high)
+
+# 4️⃣ Combine CV
+pred_cv_combined <- left_join(pred_bin, pred_pos, by = c("x")) %>%
+  mutate(
+    expected_cv = prob * mean_pos,
+    lower = prob_low * pos_low,
+    upper = prob_high * pos_high
+  )
+
+p_cv <- ggplot(pred_cv_combined,
+               aes(x = x, y = expected_cv * 100)) +
+  geom_ribbon(aes(ymin = lower * 100, ymax = upper * 100), alpha = 0.2, colour = NA) +
+  geom_line(linewidth = 0.9) +
+  labs(y = "", x = "", title = "[b] Height\nvariability [CV, %]") +
+  theme_classic(base_size = 9) +
+  theme(legend.position = "none")
+
+
+# 5️⃣ Effective species number
+preds_eff <- ggpredict(
+  gam_effective_intensity,
+  terms = c("time_snc_full_disturbance"),
+  condition = list(level = "plot")
+)
+
+p_eff <- plot(preds_eff) +
+  labs(y = "", x = "", title = "[c] Effective\ndiversity") +
+  theme_classic(base_size = 9)
+
+
+# 6️⃣ Species richness
+preds_rich <- ggpredict(
+  gam_richness_intensity,
+  terms = c("time_snc_full_disturbance"),
+  condition = list(level = "plot")
+)
+
+p_rich <- plot(preds_rich) +
+  labs(y = "", x = "", title = "[d] Species\nrichness [#]") +
+  theme_classic(base_size = 9)
+
+
+combined_plot <- ggarrange(
+  p_hgt, p_cv,
+  p_eff, p_rich,
+#  labels = c("[a]", "[b]", "[c]", "[d]"),
+  ncol = 2, nrow = 2,
+  align = "hv",
+  common.legend = TRUE,
+  legend = "top",
+  font.label = list(size = 11, face = "plain", color = "black"),
+  label.x = 0.1,
+  label.y = 0.95
+)
+
+# Optional: annotate bottom
+annotate_figure(
+  combined_plot,
+  bottom = text_grob("Years since disturbance", size = 11, face = "plain")
+)
+
+
+# how 
+
+
+
+###### Collect all values from models -----------------------------
+# Function to clean term names
+clean_term <- function(x) {
+  x %>%
+    str_replace_all("[:()`,]", "_") %>%
+    str_replace_all("__+", "_") %>%
+    str_remove_all("^_|_$")
+}
+
+# Function to convert p-values to significance codes
+p_to_signif <- function(p) {
+  case_when(
+    is.na(p) ~ NA_character_,
+    p <= 0.001 ~ "***",
+    p <= 0.01  ~ "**",
+    p <= 0.05  ~ "*",
+    p <= 0.1   ~ ".",
+    TRUE       ~ "n.s."
+  )
+}
+
+# Extractor function
+# Extractor function
+extract_gam_summary <- function(model, model_name) {
+  s <- summary(model)
+  
+  # Parametric terms
+  param <- as.data.frame(s$p.table)
+  pval_col <- grep("Pr\\(>.*\\)", colnames(param), value = TRUE)
+  param <- rownames_to_column(param, "term")
+  
+  # Extract intercept value separately
+  intercept_val <- param %>%
+    filter(term == "(Intercept)") %>%
+    pull(Estimate) %>%
+    exp()
+  
+  # Keep only non-intercept terms for p-values
+  param_clean <- param %>%
+    filter(term != "(Intercept)") %>%
+    select(term, p.value = all_of(pval_col))
+  
+  # Smooth terms
+  smooth <- if (!is.null(s$s.table)) {
+    as.data.frame(s$s.table) %>%
+      rownames_to_column("term") %>%
+      select(term, p.value = `p-value`)
+  } else {
+    tibble(term = character(), p.value = numeric())
+  }
+  
+  # Combine parametric + smooth terms
+  all_terms <- bind_rows(param_clean, smooth) %>%
+    mutate(
+      term_clean = clean_term(term),
+      signif = p_to_signif(p.value),
+      model = model_name
+    )
+  
+  # Model-level metrics
+  model_metrics <- tibble(
+    model = model_name,
+    response_intercept = intercept_val,
+    r_squared = s$r.sq,
+    deviance_explained = s$dev.expl
+  )
+  
+  list(pvalues = all_terms, metrics = model_metrics)
+}
+
+# Apply to models
+results <- map2(fin.models, names(fin.models), extract_gam_summary)
+
+# Wide format for significance codes
+pvals_signif <- map_dfr(results, "pvalues") %>%
+  select(model, term_clean, signif) %>%
+  pivot_wider(names_from = term_clean, values_from = signif)
+
+# Model metrics
+metrics_df <- bind_rows(map(results, "metrics"))
+
+# Join together
+final_results <- left_join(metrics_df, pvals_signif, by = "model")
+
+# View
+View(final_results)
+
+
+
+##### PLOT:  ---------------------------------------
+# 1️⃣ Function: Effect of time
+plot_time_effect <- function(model, response_label) {
+  pred <- ggpredict(model, terms = c("time_snc_full_disturbance [0:8]"),
+                    condition = list(level = "plot"))
+  
+  ggplot(pred, aes(x = x, y = predicted)) +
+    geom_line(linewidth = 1.1) +
+    geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2) +
+    labs(x = "Years since disturbance", y = response_label, title = "Effect of time") +
+    theme_classic(base_size = 10)
+}
+
+# 2️⃣ Function: Main effects (planting vs anti-browsing)
+plot_main_effects <- function(model, response_label) {
+  plant <- ggpredict(model, terms = "planting_intensity [all]",
+                     condition = list(level = "plot")) %>%
+    mutate(variable = "Planting")
+  
+  browse <- ggpredict(model, terms = "anti_browsing_intensity [all]",
+                      condition = list(level = "plot")) %>%
+    mutate(variable = "Anti-browsing")
+  
+  preds <- bind_rows(plant, browse)
+  
+  ggplot(preds, aes(x = x, y = predicted, color = variable, fill = variable)) +
+    geom_line(linewidth = 1.1) +
+    geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2, color = NA) +
+    scale_color_brewer(palette = "Dark2") +
+    scale_fill_brewer(palette = "Dark2") +
+    labs(x = "Management Intensity [0–1]", y = response_label, title = "Main effects") +
+    theme_classic(base_size = 10)
+}
+
+# 3️⃣ Function: Interaction surface
+plot_interaction_surface <- function(model, main_title) {
+  vis.gam(
+    model,
+    view = c("planting_intensity", "anti_browsing_intensity"),
+    plot.type = "contour",
+    too.far = 0.3,
+    color = "terrain",
+    n.grid = 150,
+    main = main_title,
+    type = "response"
+  )
+}
+
+# 4️⃣ Wrapper: create all three plots
+plot_all_views <- function(model, response_label) {
+  p_time <- plot_time_effect(model, response_label)
+  p_main <- plot_main_effects(model, response_label)
+  # p_surface is not ggplot, so shown separately
+  return(list(time = p_time, main = p_main))
+}
+
+
+# Apply to your updated models
+plots_hgt       <- plot_all_views(gam_mean_hgt_intensity, "Mean height [m]")
+plots_cv_bin    <- plot_all_views(gam_cv_hgt_bin_intensity, "Pr(CV > 0)")
+plots_cv_pos    <- plot_all_views(gam_cv_hgt_pos_intensity, "CV height (|CV > 0)")
+plots_eff       <- plot_all_views(gam_effective_intensity, "Effective diversity")
+plots_richness  <- plot_all_views(gam_richness_intensity, "Species richness")
+
+# Example: Show plots for height
+plots_hgt$time
+plots_hgt$main
+
+plots_eff$time
+plots_eff$main
+
+plots_richness$time
+plots_richness$main
+
+vis.gam(
+  gam_cv_hgt_bin_intensity,
+  view = c("planting_intensity", "anti_browsing_intensity"),
+  plot.type = "contour", #""
+  #plot.type = "persp", #""
+  color = "terrain",
+  too.far = 0.3,
+  n.grid = 100,  # default is 30; increase for smoother surface
+  #main = "Mean Height",
+  type = 'response'
+)
+
+vis.gam(
+  gam_cv_hgt_pos_intensity,
+  view = c("planting_intensity", "anti_browsing_intensity"),
+  plot.type = "contour", #""
+  #plot.type = "persp", #""
+  color = "terrain",
+  too.far = 0.3,
+  n.grid = 100,  # default is 30; increase for smoother surface
+  #main = "Mean Height",
+  type = 'response'
+)
+
+
+vis.gam(
+  gam_effective_intensity,
+  view = c("planting_intensity", "anti_browsing_intensity"),
+  plot.type = "contour", #""
+  #plot.type = "persp", #""
+  color = "terrain",
+  too.far = 0.3,
+  n.grid = 100,  # default is 30; increase for smoother surface
+  #main = "Mean Height",
+  type = 'response'
+)
+
+
+vis.gam(
+  gam_richness_intensity,
+  view = c("planting_intensity", "anti_browsing_intensity"),
+  plot.type = "contour", #""
+  #plot.type = "persp", #""
+  color = "terrain",
+  too.far = 0.3,
+  n.grid = 100,  # default is 30; increase for smoother surface
+  #main = "Mean Height",
+  type = 'response'
+)
+
+
+
+# Interaction surface: shown one at a time
+plot_interaction_surface(gam_mean_hgt_intensity, "Interaction: Height")
+
+# For CV, you’ll still want to combine bin × pos using your previous logic
+# Predict Pr(CV > 0) from binomial model
+pred_bin <- ggpredict(
+  gam_cv_hgt_bin_intensity,
+  terms = c("time_snc_full_disturbance [0:8]"),
+  condition = list(level = "plot")
+) %>%
+  rename(
+    prob = predicted,
+    prob_low = conf.low,
+    prob_high = conf.high
+  )
+
+# Predict mean CV (where CV > 0) from Tweedie model
+pred_pos <- ggpredict(
+  gam_cv_hgt_pos_intensity,
+  terms = c("time_snc_full_disturbance [0:8]"),
+  condition = list(level = "plot")
+) %>%
+  rename(
+    mean_pos = predicted,
+    pos_low = conf.low,
+    pos_high = conf.high
+  )
+
+# Merge predictions and compute expected CV
+pred_combined <- left_join(pred_bin, pred_pos, by = c("x", "group")) %>%
+  mutate(
+    expected_cv = prob * mean_pos,
+    lower = prob_low * pos_low,
+    upper = prob_high * pos_high
+  )
+
+# Plot combined expected CV (%)
+p_cv_combined <- ggplot(pred_combined,
+                        aes(x = x, y = expected_cv * 100, colour = group, fill = group)) +
+  geom_ribbon(aes(ymin = lower * 100, ymax = upper * 100),
+              alpha = 0.2, colour = NA) +
+  geom_line(linewidth = 1.1) +
+  labs(
+    x = "Years since disturbance",
+    y = "Height variability [CV, %]",
+    title = "Combined CV prediction",
+    colour = NULL,
+    fill = NULL
+  ) +
+  theme_classic(base_size = 10) +
+  theme(
+    legend.position = "top",
+    panel.border = element_rect(colour = "black", fill = NA, linewidth = 0.5)
+  )
+
+# Show plot
+p_cv_combined
+
+
+
+
+
 
 
 # Export model summaries to Word
