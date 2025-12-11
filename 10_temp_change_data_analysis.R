@@ -1365,7 +1365,8 @@ sub_df <- field_sub_summ %>%
                                        "year" = "year")) %>%  # need to separate here by year?
   left_join(spruce_share_sub, by = c("plot_id" = "plot",
                                      "year" = "year",
-                                     "ID" = 'subplot'))# %>%
+                                     "ID" = 'subplot')) %>%
+  distinct()
 
 nrow(sub_df)
 hist(sub_df$cv_hgt, breaks = 80)
@@ -1398,11 +1399,12 @@ plot_df <- plot_metrics_pooled %>%
   left_join(df_mng_plot, by = c("plot_id" = "plot",
                                        "year" = "year")) %>% 
   left_join(spruce_share_plot, by = c("plot_id" = "plot",
-                                       "year" = "year"))#
+                                       "year" = "year")) %>% 
+  distinct() # keep only unique rows
 
 
 names(plot_df)
-
+nrow(plot_df)
 
 #### Bind & clean final table with both levels ----------
 both_levels_re2 <- bind_rows(sub_df, plot_df) %>%
@@ -1459,7 +1461,6 @@ table(both_levels_re2$mng_f)
 
 # as binary/continuous part
 
-#  1. Binary part: presence/absence 
 both_levels_re2 <- both_levels_re2 %>%
   mutate(cv_hgt_present = as.integer(cv_hgt > 0))
 
@@ -1474,9 +1475,52 @@ both_levels_re2 %>%
   dplyr::filter(level == 'plot') %>% 
   ggplot(aes(x = planting_intensity, 
              y = anti_browsing_intensity,
-             color = factor(year))) +
+             color = factor(year),
+             fill = factor(year))) +
   geom_jitter() +
-  geom_smooth(method = "lm", se = FALSE) 
+  geom_smooth(method = "lm", se = TRUE) 
+
+# 1️⃣ Count combinations
+combo_counts <- both_levels_re2 %>%
+  filter(level == "plot") %>%
+  count(planting_intensity, anti_browsing_intensity)  # gives n per combo
+
+# density 2D plot
+both_levels_re2 %>%
+  filter(level == "plot") %>%
+  ggplot(aes(x = planting_intensity,
+             y = anti_browsing_intensity)) +
+  geom_density_2d_filled(contour_var = "ndensity")+
+  #facet_wrap(~year) +
+  #scale_fill_viridis_d(option = "inferno") +
+  #scale_fill_gradient(low = "grey90", high = "black")+
+  scale_fill_viridis_d(option = "magma", 
+                       begin = 0.2,
+                       direction = -1) +
+  geom_point(data = combo_counts, 
+             aes(x = planting_intensity, y = anti_browsing_intensity, 
+                 size = n), alpha = 0.9) +
+  scale_size_continuous(range = c(1, 8)) +
+  # geom_jitter(alpha = 0.5,
+  #             width = 0.02, height = 0.02) +
+  labs(
+    x = "Planting intensity",
+    y = "Anti-browsing intensity",
+    fill = "Density",
+    size = "Plots [#]"
+    #title = "Co-occurrence density of planting and anti-browsing"
+  ) +
+  theme_classic(base_size = 10) +
+  guides(
+    fill = guide_legend(ncol = 1),
+    size = guide_legend(ncol = 1)
+  ) +
+  theme(
+    legend.position = "right",
+    legend.box = "horizontal"
+  )
+
+
 
 # Spearman correlation using base R
 cor.test(both_levels_re2$planting_intensity,
@@ -1885,8 +1929,6 @@ vis.gam(
   main = "Mean Height",
   type = 'response'
 )
-
-# TEST -------------------------
 
 #### GAMs with continuous intensity variables and interaction ----
 gam_cv_hgt_bin_intensity <- gam(
