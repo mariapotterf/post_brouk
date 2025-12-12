@@ -1485,7 +1485,7 @@ combo_counts <- both_levels_re2 %>%
   filter(level == "plot") %>%
   count(planting_intensity, anti_browsing_intensity)  # gives n per combo
 
-# density 2D plot
+# density 2D plot - number of plots
 both_levels_re2 %>%
   filter(level == "plot") %>%
   ggplot(aes(x = planting_intensity,
@@ -1519,6 +1519,132 @@ both_levels_re2 %>%
     legend.position = "right",
     legend.box = "horizontal"
   )
+
+
+# how does spruce share behaves?
+
+# 1. Summarise spruce cover by intensity grid
+spruce_summary <- both_levels_re2 %>%
+  filter(level == "plot") %>%
+  group_by(planting_intensity, anti_browsing_intensity) %>%
+  summarise(spruce_share = mean(spruce_share, na.rm = TRUE),
+            n = n(),
+            .groups = "drop")
+
+ggplot(spruce_summary, aes(x = planting_intensity, y = anti_browsing_intensity)) +
+  geom_tile(aes(fill = spruce_share)) +
+ # geom_point(aes(size = n), shape = 21, fill = "black", color = "white", stroke = 0.3) +
+  scale_fill_viridis_c(option = "magma", 
+                       begin = 0.2,
+                       direction = -1,
+                       name = "Spruce share", limits = c(0, 1)) +
+  scale_size_continuous(range = c(2, 10), name = "Plots [#]") +
+  labs(
+    x = "Planting intensity",
+    y = "Anti-browsing intensity"
+  ) +
+  theme_classic(base_size = 10) +
+  guides(
+    fill = guide_colourbar(barwidth = 0.5, barheight = 8),
+    size = guide_legend(ncol = 1)
+  ) +
+  theme(
+    legend.position = "right",
+    legend.box = "horizontal"
+  )
+
+
+#### boxplot spruce shares across management intensities ----------
+spruce_long <- both_levels_re2 %>%
+  filter(level == "plot") %>%
+  select(planting_intensity, anti_browsing_intensity, spruce_share) %>%
+  pivot_longer(
+    cols = c(planting_intensity, anti_browsing_intensity),
+    names_to = "type",
+    values_to = "intensity"
+  ) 
+
+
+
+spruce_long %>%
+  ggplot(aes(x = factor(intensity),
+             y = spruce_share,
+             fill = type)) +
+  geom_boxplot(outlier.alpha = 0.2, color = "black", 
+               position = position_dodge(0.8)) +
+  geom_jitter(width = 0.2, alpha = 0.1, size = 0.8) + 
+  facet_wrap(.~type, ncol =2 ) #+
+  
+
+# check spruce share with richness&spcies diversity
+# 1. Filter plot level and select variables
+plot_long_spruce <- both_levels_re2 %>%
+  filter(level == "plot") %>%
+  select(
+    spruce_share,
+    mean_hgt,
+    cv_hgt,
+    sp_richness,
+    effective_numbers,
+    planting_intensity,
+    anti_browsing_intensity
+  ) %>%
+  pivot_longer(
+    cols = c(mean_hgt, cv_hgt, sp_richness, 
+             effective_numbers,
+             planting_intensity,
+             anti_browsing_intensity
+             ),
+    names_to = "response",
+    values_to = "value"
+  ) %>%
+  mutate(
+    response = recode(response,
+                      mean_hgt = "Mean height [m]",
+                      cv_hgt = "Height CV",
+                      sp_richness = "Species richness",
+                      effective_numbers = "Effective diversity")
+  )
+
+ggplot(plot_long_spruce, aes(x = spruce_share, y = value)) +
+  geom_jitter(alpha = 0.35) +
+  geom_smooth(method = "loess", se = TRUE, linewidth = 1) +
+  facet_wrap(~response, scales = "free_y", ncol = 3) +
+  theme_classic(base_size = 10) +
+  labs(
+    x = "Spruce share",
+    y = "",
+    title = "Spruce share vs. structure and diversity metrics"
+  )
+
+
+# just a boxplot with wilcox text
+
+# Boxplot: Spruce share by planting (binary)
+p_box_planting <- both_levels_re2 %>%
+  filter(level == "plot") %>%
+  ggplot(aes(x = plant_f, y = spruce_share, fill = plant_f)) +
+  geom_boxplot(outlier.alpha = 0.2) +
+  geom_jitter(alpha = 0.35, size = 0.7, width = 0.3) +
+  stat_compare_means(method = "wilcox.test", label = "p.signif") +
+  labs(x = "Planting", y = "Spruce share\n[% of stems]", 
+       title = "Planting") +
+  theme_classic(base_size = 10) +
+  theme(legend.position = "none")
+
+# Boxplot: Spruce share by anti-browsing (binary)
+p_box_antibrowsing <- both_levels_re2 %>%
+  filter(level == "plot") %>%
+  ggplot(aes(x = anti_brow_f, y = spruce_share, fill = anti_brow_f)) +
+  geom_boxplot(outlier.alpha = 0.2) +
+  geom_jitter(alpha = 0.35, size = 0.7, width = 0.3) +
+  stat_compare_means(method = "wilcox.test", label = "p.signif") +
+  labs(x = "Anti-browsing", y = "Spruce share\n[% of stems]", 
+       title = "Anti-browsing") +
+  theme_classic(base_size = 10)+
+  theme(legend.position = "none")
+
+ggarrange(p_box_planting, p_box_antibrowsing, common.legend = F)
 
 
 
@@ -2014,8 +2140,9 @@ appraise(gam_effective_intensity)
 summary(gam_richness_intensity)
 appraise(gam_richness_intensity)
 
-### Make plots : only time since disturbnace  ----------------------------
-# 1️⃣ Mean height
+### Make plots : 
+#### Time since disturbance  ----------------------------
+#  Mean height
 preds_hgt <- ggpredict(
   gam_mean_hgt_intensity,
   terms = c("time_snc_full_disturbance"),
@@ -2027,7 +2154,7 @@ p_hgt <- plot(preds_hgt) +
   theme_classic(base_size = 9)
 
 
-# 2️⃣ CV binary
+# 2️ CV binary
 pred_bin <- ggpredict(
   gam_cv_hgt_bin_intensity,
   terms = c("time_snc_full_disturbance"),
@@ -2035,7 +2162,7 @@ pred_bin <- ggpredict(
 ) %>%
   rename(prob = predicted, prob_low = conf.low, prob_high = conf.high)
 
-# 3️⃣ CV positive
+#  CV positive
 pred_pos <- ggpredict(
   gam_cv_hgt_pos_intensity,
   terms = c("time_snc_full_disturbance"),
@@ -2060,7 +2187,7 @@ p_cv <- ggplot(pred_cv_combined,
   theme(legend.position = "none")
 
 
-# 5️⃣ Effective species number
+#  Effective species number
 preds_eff <- ggpredict(
   gam_effective_intensity,
   terms = c("time_snc_full_disturbance"),
@@ -2072,7 +2199,7 @@ p_eff <- plot(preds_eff) +
   theme_classic(base_size = 9)
 
 
-# 6️⃣ Species richness
+# Species richness
 preds_rich <- ggpredict(
   gam_richness_intensity,
   terms = c("time_snc_full_disturbance"),
@@ -2103,9 +2230,176 @@ annotate_figure(
   bottom = text_grob("Years since disturbance", size = 11, face = "plain")
 )
 
+###### Plot for planting and anti-browsing intensity --------------------
 
-# how 
+# Get predictirons and df for anti_browsing and planting
+pred_seq <- seq(0, 1, by = 0.05)
+# Mean height predictors
+# pred_planting <- ggpredict(
+#   gam_mean_hgt_intensity,
+#   terms = "planting_intensity [pred_seq]"
+# )
+### average height
+pred_hgt_plant <- ggpredict(
+  gam_mean_hgt_intensity,
+  terms = "planting_intensity [pred_seq]",
+  condition = list(level = "plot")
+) %>% 
+  as.data.frame()%>%
+  mutate(variable = "Planting")
 
+pred_hgt_brow <- ggpredict(
+  gam_mean_hgt_intensity,
+  terms = "anti_browsing_intensity [pred_seq]",
+  condition = list(level = "plot")) %>% 
+  as.data.frame()%>% 
+  mutate(variable = "Anti-browsing")
+
+#plot(pred_hgt_brow)
+preds_hgt_combined <- bind_rows(pred_hgt_plant, pred_hgt_brow)
+
+#  CV binary - planting and anti-browsing
+pred_bin_planting <- ggpredict(
+  gam_cv_hgt_bin_intensity,
+  terms = c("planting_intensity [pred_seq]"),
+  condition = list(level = "plot")
+) %>%
+  as.data.frame() %>%
+  mutate(variable = "Planting") %>%
+  rename(prob = predicted, prob_low = conf.low, prob_high = conf.high)
+
+pred_bin_browsing <- ggpredict(
+  gam_cv_hgt_bin_intensity,
+  terms = c("anti_browsing_intensity [pred_seq]"),
+  condition = list(level = "plot")
+) %>%
+  as.data.frame() %>%
+  mutate(variable = "Anti-browsing") %>%
+  rename(prob = predicted, prob_low = conf.low, prob_high = conf.high)
+
+pred_bin_combined <- bind_rows(pred_bin_planting, pred_bin_browsing)
+
+
+# CV positive - planting and anti-browsing
+pred_pos_planting <- ggpredict(
+  gam_cv_hgt_pos_intensity,
+  terms = c("planting_intensity [pred_seq]"),
+  condition = list(level = "plot")
+) %>%
+  as.data.frame() %>%
+  mutate(variable = "Planting") %>%
+  rename(mean_pos = predicted, pos_low = conf.low, pos_high = conf.high)
+
+pred_pos_browsing <- ggpredict(
+  gam_cv_hgt_pos_intensity,
+  terms = c("anti_browsing_intensity [pred_seq]"),
+  condition = list(level = "plot")
+) %>%
+  as.data.frame() %>%
+  mutate(variable = "Anti-browsing") %>%
+  rename(mean_pos = predicted, pos_low = conf.low, pos_high = conf.high)
+
+pred_pos_combined <- bind_rows(pred_pos_planting, pred_pos_browsing)
+
+
+# 3️⃣ Combined CV expectations
+pred_cv_combined <- left_join(
+  pred_bin_combined %>% select(-std.error, -group),
+  pred_pos_combined %>% select(-std.error, -group),
+  by = c("x", "variable")
+) %>%
+  mutate(
+    expected_cv = prob * mean_pos*100,
+    lower = prob_low * pos_low*100,
+    upper = prob_high * pos_high*100
+  )
+
+
+# 4️⃣ Effective species number - planting and anti-browsing
+preds_eff_planting <- ggpredict(
+  gam_effective_intensity,
+  terms = c("planting_intensity [pred_seq]"),
+  condition = list(level = "plot")
+) %>%
+  as.data.frame() %>%
+  mutate(variable = "Planting")
+
+preds_eff_browsing <- ggpredict(
+  gam_effective_intensity,
+  terms = c("anti_browsing_intensity [pred_seq]"),
+  condition = list(level = "plot")
+) %>%
+  as.data.frame() %>%
+  mutate(variable = "Anti-browsing")
+
+preds_eff_combined <- bind_rows(preds_eff_planting, preds_eff_browsing)
+
+
+# 5️⃣ Species richness - planting and anti-browsing
+preds_rich_planting <- ggpredict(
+  gam_richness_intensity,
+  terms = c("planting_intensity [pred_seq]"),
+  condition = list(level = "plot")
+) %>%
+  as.data.frame() %>%
+  mutate(variable = "Planting")
+
+preds_rich_browsing <- ggpredict(
+  gam_richness_intensity,
+  terms = c("anti_browsing_intensity [pred_seq]"),
+  condition = list(level = "plot")
+) %>%
+  as.data.frame() %>%
+  mutate(variable = "Anti-browsing")
+
+preds_rich_combined <- bind_rows(preds_rich_planting, preds_rich_browsing)
+
+# Function to plot ggpredict outputs
+plot_ggeffects <- function(pred_df, yvar = "predicted", ymin = "conf.low", ymax = "conf.high",
+                           ylab = "Response", title = "Plot Title", show_legend = FALSE) {
+  ggplot(pred_df, aes(x = x, y = .data[[yvar]], colour = variable, fill = variable)) +
+    geom_line(linewidth = 0.9) +
+    geom_ribbon(aes(ymin = .data[[ymin]], ymax = .data[[ymax]]), alpha = 0.2, colour = NA) +
+    labs(x = "", y = ylab, title = title) +
+    scale_color_brewer(palette = "Dark2") +
+    scale_fill_brewer(palette = "Dark2") +
+    theme_classic(base_size = 9) +
+    theme(legend.position = if (show_legend) "right" else "none")
+}
+
+
+# Generate all plots
+p_hgt_int <- plot_ggeffects(
+  preds_hgt,
+  ylab = "Mean height [m]",
+  title = "[a] Mean height"
+)
+
+p_cv_int <- plot_ggeffects(
+  pred_cv_combined,
+  yvar = "expected_cv",
+  ymin = "lower",
+  ymax = "upper",
+  ylab = "Coefficient of variation (CV)",
+  title = "[b] CV of height"
+)
+
+p_eff_int <- plot_ggeffects(
+  preds_eff_combined,
+  ylab = "Effective species number",
+  title = "[c] Effective species\nnumber"
+)
+p_eff_int
+
+p_rich_int <- plot_ggeffects(
+  preds_rich_combined,
+  ylab = "Species richness [#]",
+  title = "[d] Species\nrichness [#]"
+)
+
+p_rich_int
+
+ggarrange(p_hgt_int, p_cv_int, p_eff_int, p_rich_int, common.legend = T )
 
 
 ###### Collect all values from models -----------------------------
