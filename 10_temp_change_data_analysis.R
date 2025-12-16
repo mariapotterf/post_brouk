@@ -54,17 +54,18 @@ dat_overlap  <- fread('outData/full_table_23_25.csv')  # accound for all data po
 
 # Summary --------------------------------------
 ## Analyze data: first check up ----------------------
-# get master table, having all unique plots and subplots - ven teh empty ones
+# get master table, having all unique plots and subplots - even teh empty ones
 dat_master_subplot <- dat_overlap %>% 
-  dplyr::select(plot, subplot, year) %>% 
+  dplyr::select(plot, subplot, year, status) %>% 
   distinct()
 
-table(dat_overlap$year)  
+table(dat_master_subplot$year)  
+table(dat_master_subplot$status)  
 
-n_plots_total <- length(unique(dat_master_subplot$plot))     # 126
-n_plots_total # 208
+n_plots_total <- length(unique(dat_master_subplot$plot))     # 208, 333
+n_plots_total # 208,. 333 over 2 years, 125 recoccurs
 
-n_subplots_total <-length(unique(dat_master_subplot$subplot))  # 1250
+n_subplots_total <-length(unique(dat_master_subplot$subplot))  # 1665
 n_subplots_total # 1665
 
 
@@ -578,9 +579,66 @@ p_combined_disturb_fig
 
 # Graphics: share of management per subplot and plot level --------------
 ## Subplot level -----------------------------------------------------------
-# Clean up management - if site has been mamaged in 2023, it needs to be managemt (cleared)
-# in 2025 as well!!
-df_mng_sub <- dat_overlap %>% 
+
+# my management differs between years on the same site (planting, anti-brosing occurence)
+# therefore, i keep records only from 2023, as they should be more representativve
+# when using both management data from 2025, i got duplicated records
+#library(dplyr)
+
+# Step 1: Identify plots that have both 2023 and 2025 entries for status == 'both'
+plots_with_both <- dat_overlap %>%
+  filter(status == "both", year %in% c(2023, 2025)) %>%
+  distinct(plot, year) %>%
+  count(plot) %>%
+  filter(n > 1) %>%
+  pull(plot)
+
+# Step 2: Extract 2023 management data for those plots
+management_vars <- c(
+  "clear", "grndwrk", "logging_trail", "planting", "anti_browsing",
+  "salvage_sum", "protection_sum", "clear_sum", "grndwrk_sum", 
+  "logging_trail_sum", "planting_sum", "anti_browsing_sum", 
+  "management_sum", "clear_intensity", "grndwrk_intensity", 
+  "logging_trail_intensity", "planting_intensity", 
+  "anti_browsing_intensity", "salvage_intensity", 
+  "protection_intensity", "management_intensity"
+)
+
+management_2023 <- dat_overlap %>%
+  filter(plot %in% plots_with_both & status == "both" & year == 2023) %>%
+  dplyr::select(plot, subplot,  all_of(management_vars)) %>% 
+  distinct()
+
+management_2025 <- dat_overlap %>%
+  filter(plot %in% plots_with_both & status == "both" & year == 2025) %>%
+  dplyr::select(plot, subplot,  all_of(management_vars)) %>% 
+  distinct()
+
+
+
+
+# Step 3: Replace 2025 management with 2023 values (join + mutate)
+dat_overlap_updated_2025 <- dat_overlap %>%
+  dplyr::filter(plot %in% plots_with_both, status == "both", year == 2025) %>%
+  dplyr::select(-all_of(management_vars)) %>%
+  left_join(management_2023, by = c("plot", "subplot"))
+
+# Step 4: Bind back with the rest of the dataset
+dat_overlap_cleaned <- dat_overlap %>%
+  filter(!(plot %in% plots_with_both & status == "both" & year == 2025)) %>%
+  bind_rows(dat_overlap_updated_2025)
+
+
+
+
+
+
+
+
+
+
+
+df_mng_sub <- dat_overlap_cleaned %>% 
   #dplyr::filter(year == "2023") %>% # keep management oionly frm 2023 for consistency
   distinct(plot, subplot,year,
            clear,
@@ -676,7 +734,7 @@ ggplot(mng_sub_conv, aes(x = proportion, y = activity, fill = applied)) +
 
 # 
 ### Plot level: binary  ------------------------------------
-df_master_mng_intensity <- dat_overlap %>% 
+df_master_mng_intensity <- dat_overlap_cleaned %>% 
   #dplyr::filter(year == "2023") %>% # keep management oionly frm 2023 for consistency
   distinct(plot, year,
              # intensities
@@ -962,7 +1020,7 @@ ggsave("outFigs/p_combined_management_intens.png", plot = p_combined_management_
 
 
 # Calculate spruce share at the plot level
-spruce_share_plot <- dat_overlap %>%
+spruce_share_plot <- dat_overlap_cleaned %>%
   filter(!is.na(n)) %>%  # Optional: remove NAs if present
   group_by(plot, year) %>%
   summarise(
@@ -975,7 +1033,7 @@ spruce_share_plot <- dat_overlap %>%
 hist(spruce_share_plot$spruce_share, breaks = 50)
 
 # Calculate spruce share at the subplot level
-spruce_share_sub <- dat_overlap %>%
+spruce_share_sub <- dat_overlap_cleaned %>%
   filter(!is.na(n)) %>%  # Optional: remove NAs if present
   group_by(plot, subplot, year) %>%
   summarise(
@@ -1002,8 +1060,9 @@ wvar <- "n"
 # helper to pull a numeric weight safely
 wfun <- function(x) ifelse(is.na(x) | x < 0, 0, x)
 
+# Continue from here to replace dat_overlap to dat_overlap_cleaned!
 # Subplot × year CWMs 
-cwm_subplot <- dat_overlap %>%
+cwm_subplot <- dat_overlap_cleaned %>%
   #filter(species != 'ots1') %>% 
   mutate(w = wfun(.data[[wvar]])) %>%
   # keep only rows that contribute weight and have trait scores
@@ -1119,7 +1178,7 @@ field_sub_summ <- dat_overlap %>%
     evenness_sp = if (sp_richness > 1) shannon_sp / log(sp_richness) else 0,
     effective_numbers = ifelse(stems_total > 0, exp(shannon_sp), NA_real_),
     # weighted mean height using only present stems
-    mean_hgt    = if (stems_total > 0) weighted.mean(hgt_est[n > 0], n[n > 0]) else NA_real_,
+    mean_hgt    = if (stems_total > 0) weighted.mean(hgt_est[n > 0], n[n > 0], na.rm = T) else NA_real_,
     
     # compute weighted variance whenever we have ≥2 stems and any finite heights
     var_hgt = {
@@ -1140,9 +1199,12 @@ field_sub_summ <- dat_overlap %>%
     .groups = "drop"  #,
     #range_hgt = if (sum(n > 0) >= 2) diff(range(hgt_est[n > 0], na.rm = TRUE)) else NA_real_,
     
-  )  %>% 
+  ) # %>% 
   left_join(cwm_subplot)
 
+  
+# Problem: issue that some sites have different management from 2023 - need to keep management 
+  # from 2023
 
 # is teh change in community shading/drought tolerance driven by planting????
 # Plot: Shade ~ Time since disturbance, by planting
@@ -1976,29 +2038,17 @@ draw(models_intensity[[4]])
 plot.gam(models_intensity[[4]], page = 1)
 
 ### GAM management interaction + time since disturbance smooths --------------
-
-model_time_main <- gam(
-  mean_hgt ~ 
-    planting_intensity * anti_browsing_intensity + 
-    s(time_snc_full_disturbance, k = 3) +
-    s(grndwrk_intensity, k = 3) +
-    level +
-    s(plot_id, bs = "re"),
-  data = both_levels_re2,
-  family = tw(link = "log"),
-  method = "REML"
-)
-
+# !!!!
 # kechk the effect of k
 gam_mean_hgt_intensity0 <- gam(
   mean_hgt ~ 
     s(planting_intensity, k = 3) +
     s(anti_browsing_intensity, k = 3) +
     #ti(planting_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
-    s(time_snc_full_disturbance, k = 3) +
+    s(time_snc_full_disturbance, k = 7) +
     s(grndwrk_intensity, k = 3) +
     year_f +
-    #level +
+    level +
     s(plot_id, bs = "re"),
   data = both_levels_re2,
   family = tw(link = "log"),
@@ -2024,78 +2074,6 @@ gam_mean_hgt_intensity02_int1 <- gam(
   method = "REML"
 )
 
-
-
-gam_mean_hgt_intensity02_6 <- gam(
-  mean_hgt ~ 
-    s(planting_intensity, k = 6) +
-    s(anti_browsing_intensity, k = 6) +
-    ti(planting_intensity, anti_browsing_intensity, k = 6) +      # nonlinear interaction
-    #ti(grndwrk_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
-    
-    s(time_snc_full_disturbance, k = 6) +
-    s(grndwrk_intensity, k = 6) +
-    year_f +
-    #level +
-    s(plot_id, bs = "re"),
-  data = both_levels_re2,
-  family = tw(link = "log"),
-  method = "REML"
-)
-
-gam_mean_hgt_intensity02_66 <- gam(
-  mean_hgt ~ 
-    s(planting_intensity, k = 6) +
-    s(anti_browsing_intensity, k = 6) +
-    ti(planting_intensity, anti_browsing_intensity, k = c(6, 6)) +      # nonlinear interaction
-    #ti(grndwrk_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
-    
-    s(time_snc_full_disturbance, k = 6) +
-    s(grndwrk_intensity, k = 6) +
-    year_f +
-    #level +
-    s(plot_id, bs = "re"),
-  data = both_levels_re2,
-  family = tw(link = "log"),
-  method = "REML"
-)
-
-
-gam_mean_hgt_intensity02_k <- gam(
-  mean_hgt ~ 
-    s(planting_intensity, k = 5) +
-    s(anti_browsing_intensity, k = 5) +
-    ti(planting_intensity, anti_browsing_intensity) +      # nonlinear interaction
-    #ti(grndwrk_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
-    
-    s(time_snc_full_disturbance, k = 5) +
-    s(grndwrk_intensity, k = 5) +
-    year_f +
-    #level +
-    s(plot_id, bs = "re"),
-  data = both_levels_re2,
-  family = tw(link = "log"),
-  method = "REML"
-)
-
-
-
-gam_mean_hgt_intensity02_k3 <- gam(
-  mean_hgt ~ 
-    s(planting_intensity, k = 6) +
-    s(anti_browsing_intensity, k = 3) +
-    ti(planting_intensity, anti_browsing_intensity) +      # nonlinear interaction
-    #ti(grndwrk_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
-    
-    s(time_snc_full_disturbance, k = 7) +
-    s(grndwrk_intensity, k = 3) +
-    year_f +
-    #level +
-    s(plot_id, bs = "re"),
-  data = both_levels_re2,
-  family = tw(link = "log"),
-  method = "REML"
-)
 
 gam_mean_hgt_intensity03_int2 <- gam(
   mean_hgt ~ 
@@ -2137,8 +2115,9 @@ AIC(gam_mean_hgt_intensity02_int1,
     gam_mean_hgt_intensity02_6, gam_mean_hgt_intensity02, gam_mean_hgt_intensity02_k3)
 
 
-out_pred <- ggpredict(gam_mean_hgt_intensity02_int1 ,
-          terms = 'time_snc_full_disturbance') 
+out_pred <- ggpredict(gam_mean_hgt_intensity0 ,
+          terms = 'time_snc_full_disturbance',
+          condition = list(level = "plot")) 
 
 plot(out_pred)
 
