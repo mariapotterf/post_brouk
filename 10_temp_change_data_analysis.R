@@ -478,7 +478,66 @@ dat_overlap %>%
 
 
 
-#  Update management share of management per subplot and plot level --------------
+##  Update management for shared sites: combine management ---------------------------------
+library(dplyr)
+
+# as subplots names do not fit, link subplots by row_id - almost randomly 
+# (as randomness was done in terrain - everyobe could choose where to start with first dot )
+
+# Step 1: Define management variables
+management_vars <- c(
+  "clear", "grndwrk", "logging_trail", "planting", "anti_browsing"#,
+  # "salvage_sum", "protection_sum", "clear_sum", "grndwrk_sum", 
+  # "logging_trail_sum", "planting_sum", "anti_browsing_sum", 
+  # "management_sum", "clear_intensity", "grndwrk_intensity", 
+  # "logging_trail_intensity", "planting_intensity", 
+  # "anti_browsing_intensity", "salvage_intensity", 
+  # "protection_intensity", "management_intensity"
+)
+
+# Step 2: Identify plots with both 2023 and 2025 entries for status == "both"
+plots_with_both <- dat_overlap %>%
+  dplyr::filter(status == "both", year %in% c(2023, 2025)) %>%
+  distinct(plot, year) %>%
+  count(plot) %>%
+  filter(n > 1) %>%
+  pull(plot)
+
+# Step 3: Get 2023 & 2025 management data
+mng_both23 <- dat_overlap %>%
+  filter(plot %in% plots_with_both, status == "both", year == 2023) %>%
+  dplyr::select(plot, subplot, all_of(management_vars)) %>%
+  distinct() %>% 
+  group_by(plot) %>%
+  arrange(plot, subplot) %>%
+  mutate(row_id = row_number()) 
+
+nrow(mng_both23)
+
+# somehow i have duplicated values - keep only the higher value (presence, if nboth presence and absence are recorded on 
+# same )
+mng_both25 <- dat_overlap %>%
+  filter(plot %in% plots_with_both, status == "both", year == 2025) %>%
+  dplyr::select(plot, subplot, all_of(management_vars)) %>%
+ # distinct() %>% 
+  group_by(plot, subplot) %>%
+  summarise(across(all_of(management_vars), ~ max(.x, na.rm = TRUE)), .groups = "drop") %>% 
+  group_by(plot) %>%
+  arrange(plot, subplot) %>%
+  mutate(row_id = row_number()) 
+nrow(mng_both25)
+
+# continue from heer!!!!
+
+# Step 4: Combine by row order and take max per variable
+mng_combined <- bind_rows(mng_both23, mng_both25) %>%
+  group_by(plot, row_id) %>%
+  summarise(
+    subplot = subplot[year == 2025][1],  # use 2025 subplot name
+    across(all_of(management_vars), ~ max(.x, na.rm = TRUE)),
+    .groups = "drop"
+  )
+
 
 ## Subplot level -----------------------------------------------------------
 
@@ -486,49 +545,6 @@ dat_overlap %>%
 # therefore, i keep records only from 2023, as they should be more representativve
 # when using both management data from 2025, i got duplicated records
 #library(dplyr)
-
-# Step 1: Identify plots that have both 2023 and 2025 entries for status == 'both'
-plots_with_both <- dat_overlap %>%
-  filter(status == "both", year %in% c(2023, 2025)) %>%
-  distinct(plot, year) %>%
-  count(plot) %>%
-  filter(n > 1) %>%
-  pull(plot)
-
-# Step 2: Extract 2023 management data for those plots
-management_vars <- c(
-  "clear", "grndwrk", "logging_trail", "planting", "anti_browsing",
-  "salvage_sum", "protection_sum", "clear_sum", "grndwrk_sum", 
-  "logging_trail_sum", "planting_sum", "anti_browsing_sum", 
-  "management_sum", "clear_intensity", "grndwrk_intensity", 
-  "logging_trail_intensity", "planting_intensity", 
-  "anti_browsing_intensity", "salvage_intensity", 
-  "protection_intensity", "management_intensity"
-)
-
-management_2023 <- dat_overlap %>%
-  filter(plot %in% plots_with_both & status == "both" & year == 2023) %>%
-  dplyr::select(plot, subplot,  all_of(management_vars)) %>% 
-  distinct()
-
-management_2025 <- dat_overlap %>%
-  filter(plot %in% plots_with_both & status == "both" & year == 2025) %>%
-  dplyr::select(plot, subplot,  all_of(management_vars)) %>% 
-  distinct()
-
-
-
-
-# Step 3: Replace 2025 management with 2023 values (join + mutate)
-dat_overlap_updated_2025 <- dat_overlap %>%
-  dplyr::filter(plot %in% plots_with_both, status == "both", year == 2025) %>%
-  dplyr::select(-all_of(management_vars)) %>%
-  left_join(management_2023, by = c("plot", "subplot"))
-
-# Step 4: Bind back with the rest of the dataset
-dat_overlap_cleaned <- dat_overlap %>%
-  filter(!(plot %in% plots_with_both & status == "both" & year == 2025)) %>%
-  bind_rows(dat_overlap_updated_2025)
 
 
 
