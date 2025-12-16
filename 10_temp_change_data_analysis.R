@@ -478,106 +478,8 @@ dat_overlap %>%
 
 
 
-## Get context and disturbance characteristics (plot) --------------
-plot_context_chars <- dat_overlap %>% 
-  dplyr::select(plot, year,
-                status,
-                disturbance_year, 
-                forest_year, 
-                disturbance_length, 
-                time_snc_full_disturbance, 
-                time_snc_part_disturbance,
-                planting_intensity,
-                clear_intensity,          
-                grndwrk_intensity,         
-                logging_trail_intensity,
-                planting_intensity,
-                anti_browsing_intensity,
-                salvage_intensity,
-                protection_intensity,
-                management_intensity  
-                #clear, grndwrk, logging_trail, planting, anti_browsing
-  )  %>%  
-  distinct()
+#  Update management share of management per subplot and plot level --------------
 
-
-plot_context_chars <- plot_context_chars %>%
-  mutate(disturbance_year = case_when(
-    disturbance_year < 2018 ~ 2018,
-    disturbance_year > 2022 ~ 2022,
-    TRUE ~ disturbance_year
-  )) %>% 
-  mutate(time_since_disturbance = year - disturbance_year)
-
-
-# p_hist_dist_length <- plot_context_chars %>% 
-#  # filter(year == 2023) %>%  # to keep half of values
-#   ggplot(aes(disturbance_length)) + 
-#   geom_histogram(fill = 'grey90', color = 'black') 
-
-p_hist_dist_year <- plot_context_chars %>%
-  #filter(year == 2023) %>%  # to keep half of values
-  #filter(disturbance_year > 2012) %>% 
-  ggplot(aes(disturbance_year)) + 
-  geom_histogram(fill = 'grey90', color = 'black') 
-
-
-p_hist_time_since_dist <- plot_context_chars %>%
- # filter(year == 2023) %>%  # to keep half of values
-  #filter(disturbance_year > 2012) %>% 
-  ggplot(aes(time_since_disturbance)) + 
-  geom_histogram(fill = 'grey90', color = 'black') 
-
-ggarrange(p_hist_dist_year, p_hist_time_since_dist,
-          ncol = 2)
-
-
-p_hist_dist_year <- plot_context_chars %>%
-  group_by(disturbance_year) %>% 
-  summarise(n = n()) %>% 
-  ggplot(aes(x = disturbance_year, y = n)) +
-  geom_col(fill = 'grey80', color = 'black',  width = 0.8) +
-  #geom_histogram(binwidth = 0.8, ) +
-  scale_x_continuous(breaks = seq(2018, 2022, 2)) +
-  labs(x = "Disturbance Year\n", y = "Number of Plots [#]") +
-  theme_classic2() +
-  theme(
-    axis.text = element_text(size = 8),
-    panel.grid.major.x = element_blank(),
-    panel.grid.minor = element_blank(),
-    axis.title = element_text(size = 8)
-  )
-
-# Histogram: Time Since Disturbance
-p_hist_time_since_dist <- plot_context_chars %>%
-  group_by(time_since_disturbance) %>% 
-  summarise(n = n()) %>% 
-  
-    ggplot(aes(x = time_since_disturbance, y = n)) +
-  geom_col(fill = 'grey80', color = 'black', width = 0.8) +
-  labs(x = "Time since disturbance\n[years]", 
-       y = "Number of Plots [#]") +
-  theme_classic2() +
-  theme(
-    panel.grid.major.x = element_blank(),
-    panel.grid.minor = element_blank(),
-    axis.text = element_text(size = 8),
-    axis.title = element_text(size = 8)
-  )
-
-# Combine
-p_combined_disturb_fig <- ggarrange(
-  p_hist_dist_year, p_hist_time_since_dist,
-  # p_management_bin_plot,
-  labels = c("[a]", "[b]"),
-  font.label = list(size = 10, face = 'plain'),
-  widths = c(0.9,1.1),
-  ncol = 2, nrow = 1
-)
-p_combined_disturb_fig
-
-
-# Graphics: share of management per subplot and plot level --------------
 ## Subplot level -----------------------------------------------------------
 
 # my management differs between years on the same site (planting, anti-brosing occurence)
@@ -951,6 +853,105 @@ p_combined_management_intens
 # Save as PNG
 ggsave("outFigs/p_combined_management_intens.png", plot = p_combined_management_intens,
        width = 6, height = 5, units = "in", dpi = 300)
+
+
+## Get context and disturbance characteristics (plot) --------------
+plot_context_chars <- dat_overlap %>% 
+  dplyr::select(plot, year,
+                status,
+                disturbance_year, 
+                forest_year, 
+                disturbance_length, 
+                time_snc_full_disturbance, 
+                time_snc_part_disturbance,
+                planting_intensity,
+                clear_intensity,          
+                grndwrk_intensity,         
+                logging_trail_intensity,
+                planting_intensity,
+                anti_browsing_intensity,
+                salvage_intensity,
+                protection_intensity,
+                management_intensity  
+                #clear, grndwrk, logging_trail, planting, anti_browsing
+  )  %>%  
+  distinct()
+
+
+plot_context_chars <- plot_context_chars %>%
+  mutate(disturbance_year = case_when(
+    disturbance_year < 2018 ~ 2018,
+    disturbance_year > 2022 ~ 2022,
+    TRUE ~ disturbance_year
+  )) %>% 
+  mutate(time_since_disturbance = year - disturbance_year)
+
+
+# p_hist_dist_length <- plot_context_chars %>% 
+#  # filter(year == 2023) %>%  # to keep half of values
+#   ggplot(aes(disturbance_length)) + 
+#   geom_histogram(fill = 'grey90', color = 'black') 
+
+p_hist_dist_year <- plot_context_chars %>%
+  #filter(year == 2023) %>%  # to keep half of values
+  #filter(disturbance_year > 2012) %>% 
+  ggplot(aes(disturbance_year)) + 
+  geom_histogram(fill = 'grey90', color = 'black') 
+
+
+p_hist_time_since_dist <- plot_context_chars %>%
+  # filter(year == 2023) %>%  # to keep half of values
+  #filter(disturbance_year > 2012) %>% 
+  ggplot(aes(time_since_disturbance)) + 
+  geom_histogram(fill = 'grey90', color = 'black') 
+
+ggarrange(p_hist_dist_year, p_hist_time_since_dist,
+          ncol = 2)
+
+
+p_hist_dist_year <- plot_context_chars %>%
+  group_by(disturbance_year) %>% 
+  summarise(n = n()) %>% 
+  ggplot(aes(x = disturbance_year, y = n)) +
+  geom_col(fill = 'grey80', color = 'black',  width = 0.8) +
+  #geom_histogram(binwidth = 0.8, ) +
+  scale_x_continuous(breaks = seq(2018, 2022, 2)) +
+  labs(x = "Disturbance Year\n", y = "Number of Plots [#]") +
+  theme_classic2() +
+  theme(
+    axis.text = element_text(size = 8),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.title = element_text(size = 8)
+  )
+
+# Histogram: Time Since Disturbance
+p_hist_time_since_dist <- plot_context_chars %>%
+  group_by(time_since_disturbance) %>% 
+  summarise(n = n()) %>% 
+  
+  ggplot(aes(x = time_since_disturbance, y = n)) +
+  geom_col(fill = 'grey80', color = 'black', width = 0.8) +
+  labs(x = "Time since disturbance\n[years]", 
+       y = "Number of Plots [#]") +
+  theme_classic2() +
+  theme(
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text = element_text(size = 8),
+    axis.title = element_text(size = 8)
+  )
+
+# Combine
+p_combined_disturb_fig <- ggarrange(
+  p_hist_dist_year, p_hist_time_since_dist,
+  # p_management_bin_plot,
+  labels = c("[a]", "[b]"),
+  font.label = list(size = 10, face = 'plain'),
+  widths = c(0.9,1.1),
+  ncol = 2, nrow = 1
+)
+p_combined_disturb_fig
 
 
 
