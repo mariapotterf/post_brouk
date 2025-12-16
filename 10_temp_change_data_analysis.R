@@ -1990,15 +1990,15 @@ model_time_main <- gam(
 )
 
 # kechk the effect of k
-gam_mean_hgt_intensity <- gam(
+gam_mean_hgt_intensity0 <- gam(
   mean_hgt ~ 
     s(planting_intensity, k = 3) +
     s(anti_browsing_intensity, k = 3) +
-    te(planting_intensity, anti_browsing_intensity) +      # nonlinear interaction
+    #ti(planting_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
     s(time_snc_full_disturbance, k = 3) +
     s(grndwrk_intensity, k = 3) +
     year_f +
-    level +
+    #level +
     s(plot_id, bs = "re"),
   data = both_levels_re2,
   family = tw(link = "log"),
@@ -2007,69 +2007,140 @@ gam_mean_hgt_intensity <- gam(
 
 
 
-gam_mean_hgt_intensity2 <- gam(
+gam_mean_hgt_intensity02_int1 <- gam(
+  mean_hgt ~ 
+    s(planting_intensity, k = 3) +
+    s(anti_browsing_intensity, k = 3) +
+    ti(planting_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
+    #ti(grndwrk_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
+    
+    s(time_snc_full_disturbance, k = 7) +
+    s(grndwrk_intensity, k = 3) +
+    year_f +
+    #level +
+    s(plot_id, bs = "re"),
+  data = both_levels_re2,
+  family = tw(link = "log"),
+  method = "REML"
+)
+
+
+
+gam_mean_hgt_intensity02_6 <- gam(
   mean_hgt ~ 
     s(planting_intensity, k = 6) +
     s(anti_browsing_intensity, k = 6) +
-    te(planting_intensity, anti_browsing_intensity, k = c(5, 5)) +      # nonlinear interaction
+    ti(planting_intensity, anti_browsing_intensity, k = 6) +      # nonlinear interaction
+    #ti(grndwrk_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
+    
     s(time_snc_full_disturbance, k = 6) +
     s(grndwrk_intensity, k = 6) +
     year_f +
-    level +
+    #level +
     s(plot_id, bs = "re"),
   data = both_levels_re2,
   family = tw(link = "log"),
   method = "REML"
 )
 
-# is model better with interaction or without?
-gam_mean_hgt_intensity3 <- gam(
+gam_mean_hgt_intensity02_66 <- gam(
   mean_hgt ~ 
     s(planting_intensity, k = 6) +
     s(anti_browsing_intensity, k = 6) +
-    #te(planting_intensity, anti_browsing_intensity, k = c(5, 5)) +      # nonlinear interaction
+    ti(planting_intensity, anti_browsing_intensity, k = c(6, 6)) +      # nonlinear interaction
+    #ti(grndwrk_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
+    
     s(time_snc_full_disturbance, k = 6) +
     s(grndwrk_intensity, k = 6) +
     year_f +
-    level +
+    #level +
     s(plot_id, bs = "re"),
   data = both_levels_re2,
   family = tw(link = "log"),
   method = "REML"
 )
 
-# use just ti
-# is model better with interaction or without?
-gam_mean_hgt_intensity4 <- gam(
+
+gam_mean_hgt_intensity02_k <- gam(
+  mean_hgt ~ 
+    s(planting_intensity, k = 5) +
+    s(anti_browsing_intensity, k = 5) +
+    ti(planting_intensity, anti_browsing_intensity) +      # nonlinear interaction
+    #ti(grndwrk_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
+    
+    s(time_snc_full_disturbance, k = 5) +
+    s(grndwrk_intensity, k = 5) +
+    year_f +
+    #level +
+    s(plot_id, bs = "re"),
+  data = both_levels_re2,
+  family = tw(link = "log"),
+  method = "REML"
+)
+
+
+
+gam_mean_hgt_intensity02_k3 <- gam(
   mean_hgt ~ 
     s(planting_intensity, k = 6) +
-    s(anti_browsing_intensity, k = 6) +
-    ti(planting_intensity, anti_browsing_intensity, k = c(5, 5)) +      # nonlinear interaction
-    s(time_snc_full_disturbance, k = 6) +
-    s(grndwrk_intensity, k = 6) +
+    s(anti_browsing_intensity, k = 3) +
+    ti(planting_intensity, anti_browsing_intensity) +      # nonlinear interaction
+    #ti(grndwrk_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
+    
+    s(time_snc_full_disturbance, k = 7) +
+    s(grndwrk_intensity, k = 3) +
     year_f +
-    level +
+    #level +
     s(plot_id, bs = "re"),
   data = both_levels_re2,
   family = tw(link = "log"),
   method = "REML"
 )
-AIC(gam_mean_hgt_intensity4,gam_mean_hgt_intensity3,gam_mean_hgt_intensity2,gam_mean_hgt_intensity)
 
-# df      AIC
-# gam_mean_hgt_intensity4 188.47  2040.33  # with ti()
-# gam_mean_hgt_intensity3 185.75  2038.07  # no interaction
-# gam_mean_hgt_intensity2 189.92  2043.80  # with te(), k=6
-# gam_mean_hgt_intensity  188.85  2043.37  # with te(), k=3
+gam_mean_hgt_intensity03_int2 <- gam(
+  mean_hgt ~ 
+    s(planting_intensity, k = 6) +
+    s(anti_browsing_intensity, k = 3) +
+    #ti(planting_intensity, anti_browsing_intensity) +      # nonlinear interaction
+    ti(planting_intensity, grndwrk_intensity) +      # nonlinear interaction
+    s(time_snc_full_disturbance, k = 7) +
+    s(grndwrk_intensity, k = 3) +
+    year_f +
+    #level +
+    s(plot_id, bs = "re"),
+  data = both_levels_re2,
+  family = tw(link = "log"),
+  method = "REML"
+)
+
+gam_mean_hgt_intensity03_int3 <- gam(
+  mean_hgt ~ 
+    s(planting_intensity, k = 6) +
+    s(anti_browsing_intensity, k = 3) +
+    #ti(planting_intensity, anti_browsing_intensity) +      # nonlinear interaction
+   # ti(planting_intensity, grndwrk_intensity) +      # nonlinear interaction
+    ti(anti_browsing_intensity, grndwrk_intensity) +      # nonlinear interaction
+    
+     s(time_snc_full_disturbance, k = 7) +
+    s(grndwrk_intensity, k = 3) +
+    year_f +
+    #level +
+    s(plot_id, bs = "re"),
+  data = both_levels_re2,
+  family = tw(link = "log"),
+  method = "REML"
+)
+
+AIC(gam_mean_hgt_intensity02_int1,
+  gam_mean_hgt_intensity03_int2,
+    gam_mean_hgt_intensity03_int3,
+    gam_mean_hgt_intensity02_6, gam_mean_hgt_intensity02, gam_mean_hgt_intensity02_k3)
 
 
+out_pred <- ggpredict(gam_mean_hgt_intensity02_int1 ,
+          terms = 'time_snc_full_disturbance') 
 
-# Check whether ti() improves fit enough to keep
-anova(gam_mean_hgt_intensity3, gam_mean_hgt_intensity4, test = "Chisq")
-
-plot.gam(gam_mean_hgt_intensity, page = 1)
-draw(gam_mean_hgt_intensity)  # plots the te() surface
-
+plot(out_pred)
 
 # START --------------
 
@@ -2082,73 +2153,48 @@ pred_planting_m3_add <- ggpredict(
 plot(pred_planting_m3)
 
 # Marginal predictions from best model (no interaction)
-pred_planting_m4_ti <- ggpredict(
-  gam_mean_hgt_intensity4,
+pred_planting_m5_ti <- ggpredict(
+  gam_mean_hgt_intensity5,
   terms = c("planting_intensity [all]"),
   condition = list(level = "plot")
 ) 
-plot(pred_planting_m4_ti)
+plot(pred_planting_m5_ti)
 
-gam.check(gam_mean_hgt_intensity4)
+gam.check(gam_mean_hgt_intensity5)
 gam.check(gam_mean_hgt_intensity3)
 gam.check(gam_mean_hgt_intensity)
 
 
+plt <- ggpredict(
+  gam_mean_hgt_intensity5,
+  terms = c("time_snc_full_disturbance [all]"),
+  condition = list(level = "plot")
+) #%>%
+plot(plt)
 
-
-# Marginal predictions from best model (no interaction)
-pred_planting_m3 <- ggpredict(
-  gam_mean_hgt_intensity3,
+plt <- ggpredict(
+  gam_mean_hgt_intensity5,
   terms = c("planting_intensity [all]"),
   condition = list(level = "plot")
-) %>%
-  mutate(variable = "Planting", model = "No interaction")
+) #%>%
+plot(plt)
 
-pred_browsing_m3 <- ggpredict(
-  gam_mean_hgt_intensity3,
+plt <- ggpredict(
+  gam_mean_hgt_intensity5,
   terms = c("anti_browsing_intensity [all]"),
   condition = list(level = "plot")
-) %>%
-  mutate(variable = "Anti-browsing", model = "No interaction")
+) #%>%
+plot(plt)
 
-# Marginal predictions from model with ti() interaction
-pred_planting_m4 <- ggpredict(
-  gam_mean_hgt_intensity4,
-  terms = c("planting_intensity [all]"),
+plt <- ggpredict(
+  gam_mean_hgt_intensity5,
+  terms = c("grndwrk_intensity [all]"),
   condition = list(level = "plot")
-) %>%
-  mutate(variable = "Planting", model = "With interaction")
+) #%>%
+plot(plt)
 
-pred_browsing_m4 <- ggpredict(
-  gam_mean_hgt_intensity4,
-  terms = c("anti_browsing_intensity [all]"),
-  condition = list(level = "plot")
-) %>%
-  mutate(variable = "Anti-browsing", model = "With interaction")
 
-# Combine all
-preds_hgt_all <- bind_rows(
-  pred_planting_m3,
-  pred_browsing_m3,
-  pred_planting_m4,
-  pred_browsing_m4
-)
 
-# Plot
-ggplot(preds_hgt_all, aes(x = x, y = predicted, colour = model, fill = model)) +
-  geom_line(linewidth = 1) +
-  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2, colour = NA) +
-  facet_wrap(~variable, scales = "free_x") +
-  scale_color_brewer(palette = "Dark2") +
-  scale_fill_brewer(palette = "Dark2") +
-  labs(
-    x = "Management Intensity [0–1]",
-    y = "Predicted Mean Height [m]",
-    title = "Marginal Effects of Planting and Anti-Browsing Intensity",
-    color = "Model",
-    fill = "Model"
-  ) +
-  theme_classic(base_size = 10)
 
 
 
@@ -3713,12 +3759,16 @@ p2 <- both_levels_re2 %>%
 
 # Combine with ggarrange
 windows(width = 7, height = 3.2)
-ggarrange(p1, p2, 
-          labels = c("[a]", "[b]"), ncol = 2, align = "v",
-          font.label = list(face = "plain"))
+# Create the arranged plot object
+p_spruce_shares_boxplot <- ggarrange(p1, p2, 
+                           labels = c("[a]", "[b]"), 
+                           ncol = 2, align = "v",
+                           font.label = list(face = "plain"))
 
-
-
+# Save to PNG
+ggsave("outFigs/spruce_share_boxplots.png", 
+       plot = p_spruce_shares_boxplot, 
+       width = 7, height = 3.2, units = "in", dpi = 300)
 
 
 both_levels_re2 %>% 
