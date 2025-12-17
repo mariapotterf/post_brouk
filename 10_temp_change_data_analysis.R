@@ -2643,7 +2643,7 @@ AIC(gam_effective_intensity_re, gam_effective_intensity_base,
 
 summary(gam_effective_intensity_re)
 
-fin.m.eff <- gam_effective_intensity_re_lev_int1
+fin.m.eff <- gam_effective_intensity_re_int1_plot #gam_effective_intensity_re_lev_int1
 
 
 ##### Species Richness -----------
@@ -2667,7 +2667,7 @@ gam_richness_intensity_nb <- gam(
   sp_richness ~
     s(planting_intensity, k = 3) +
     s(anti_browsing_intensity, k = 3) +
-    s(time_snc_full_disturbance, k = 7) +
+    #s(time_snc_full_disturbance, k = 7) +
     ti(planting_intensity, anti_browsing_intensity) +
     s(grndwrk_intensity, k = 4) +
     level +
@@ -2677,6 +2677,38 @@ gam_richness_intensity_nb <- gam(
   method = "REML",
   family = nb(link = "log")
 )
+
+gam_richness_intensity_nb_plot <- gam(
+  sp_richness ~
+    s(planting_intensity, k = 3) +
+    s(anti_browsing_intensity, k = 3) +
+    s(time_snc_full_disturbance, k = 7) +
+    ti(planting_intensity, anti_browsing_intensity) +
+    s(grndwrk_intensity, k = 4) +
+   # level +
+    year_f +
+    s(plot_id, bs = "re"),
+  data = df_plot_clean,
+  method = "REML",
+  family = nb(link = "log")
+)
+
+gam_richness_intensity_nb_sub <- gam(
+  sp_richness ~
+    s(planting_intensity, k = 3) +
+    s(anti_browsing_intensity, k = 3) +
+    s(time_snc_full_disturbance, k = 7) +
+    ti(planting_intensity, anti_browsing_intensity) +
+    s(grndwrk_intensity, k = 4) +
+    # level +
+    year_f +
+    s(plot_id, bs = "re"),
+  data = df_sub_clean,
+  method = "REML",
+  family = nb(link = "log")
+)
+
+
 fin.m.rich <- gam_richness_intensity_nb
 
 ##### Summaries and Export -----------
