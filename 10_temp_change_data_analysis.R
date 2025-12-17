@@ -1560,13 +1560,15 @@ both_levels_re2 <- bind_rows(sub_df, plot_df) %>%
          year_f = factor(year)
            )
 
+# 1663
+
 
 # add small value to CV = 0
 both_levels_re2 <- both_levels_re2 %>%
   mutate(
     cv_hgt_pos = ifelse(cv_hgt <= 0, 1e-4, cv_hgt)#is.na(cv_hgt) | 
-  ) %>% 
-  filter(!is.na(mean_hgt), !is.na(w), !is.na(cv_hgt), !is.na(dens_m2))
+  ) #%>% 
+  #filter(!is.na(mean_hgt), !is.na(w), !is.na(cv_hgt)) #, !is.na(dens_m2)
 
 
 both_levels_re2 <- both_levels_re2 %>%
@@ -1618,7 +1620,7 @@ combo_counts <- both_levels_re2 %>%
   count(planting_intensity, anti_browsing_intensity)  # gives n per combo
 
 # density 2D plot - number of plots
-both_levels_re2 %>%
+p_density_mng <- both_levels_re2 %>%
   filter(level == "plot") %>%
   ggplot(aes(x = planting_intensity,
              y = anti_browsing_intensity)) +
@@ -1651,8 +1653,15 @@ both_levels_re2 %>%
     legend.position = "right",
     legend.box = "horizontal"
   )
+windows(width = 6,4)
+p_density_mng
+ggsave("outFigs/density_plot.png", 
+       plot = p_density_mng, 
+       width = 6, 
+       height = 4, 
+       units = "in", dpi = 300)
 
-
+dev.off()
 # how does spruce share behaves?
 
 # 1. Summarise spruce cover by intensity grid
@@ -1687,27 +1696,6 @@ ggplot(spruce_summary, aes(x = planting_intensity, y = anti_browsing_intensity))
 
 
 #### boxplot spruce shares across management intensities ----------
-spruce_long <- both_levels_re2 %>%
-  filter(level == "plot") %>%
-  select(planting_intensity, anti_browsing_intensity, spruce_share) %>%
-  pivot_longer(
-    cols = c(planting_intensity, anti_browsing_intensity),
-    names_to = "type",
-    values_to = "intensity"
-  ) 
-
-
-
-spruce_long %>%
-  ggplot(aes(x = factor(intensity),
-             y = spruce_share,
-             fill = type)) +
-  geom_boxplot(outlier.alpha = 0.2, color = "black", 
-               position = position_dodge(0.8)) +
-  geom_jitter(width = 0.2, alpha = 0.1, size = 0.8) + 
-  facet_wrap(.~type, ncol =2 ) #+
-  
-
 # check spruce share with richness&spcies diversity
 # 1. Filter plot level and select variables
 plot_long_spruce <- both_levels_re2 %>%
@@ -1738,16 +1726,6 @@ plot_long_spruce <- both_levels_re2 %>%
                       effective_numbers = "Effective diversity")
   )
 
-ggplot(plot_long_spruce, aes(x = spruce_share, y = value)) +
-  geom_jitter(alpha = 0.35) +
-  geom_smooth(method = "loess", se = TRUE, linewidth = 1) +
-  facet_wrap(~response, scales = "free_y", ncol = 3) +
-  theme_classic(base_size = 10) +
-  labs(
-    x = "Spruce share",
-    y = "",
-    title = "Spruce share vs. structure and diversity metrics"
-  )
 
 
 # just a boxplot with wilcox text
@@ -1776,11 +1754,16 @@ p_box_antibrowsing <- both_levels_re2 %>%
   theme_classic(base_size = 10)+
   theme(legend.position = "none")
 
-ggarrange(p_box_planting, p_box_antibrowsing, common.legend = F)
+p_spruce_mng <- ggarrange(p_box_planting, p_box_antibrowsing, common.legend = F)
+ggsave("outFigs/p_spruce_mng.png", 
+       plot = p_spruce_mng, 
+       width = 7, 
+       height = 4, 
+       units = "in", dpi = 300)
 
 
 
-# Spearman correlation using base R
+### Spearman correlation between management intensities using base R ----------------------------------
 cor.test(both_levels_re2$planting_intensity,
          both_levels_re2$anti_browsing_intensity,
          method = "spearman")
@@ -1880,118 +1863,6 @@ both_levels_re2 %>%
   ggplot(aes(x = anti_brow_f,
              y = mean_hgt)) +
   geom_boxplot()
-
-##### GAM: test  management activity :binary ----------------------------
-library(broom)
-library(dplyr)
-library(purrr)
-
-models <- both_levels_re2 %>%
-  filter(level == "plot") %>%
-  {
-    list(
-      # shannon_sp   = lm(shannon_sp ~ plant_f + anti_brow_f + grndwrk_f, data = .),
-      # sp_richness  = lm(sp_richness ~ plant_f + anti_brow_f + grndwrk_f, data = .),
-      # mean_hgt     = lm(mean_hgt ~ plant_f + anti_brow_f + grndwrk_f, data = .),
-      # cv_hgt       = lm(cv_hgt ~ plant_f + anti_brow_f + grndwrk_f, data = .)
-      effective_numbers  = gam(effective_numbers ~ plant_f + anti_brow_f + grndwrk_f +
-                          s(plot_id, bs = "re"),
-                        data = ., family = tw(link = "log"), method = "REML"),
-      
-      sp_richness = gam(sp_richness ~ plant_f + anti_brow_f + grndwrk_f +
-                          s(plot_id, bs = "re"),
-                        data = ., family = nb(link = "log"), method = "REML"),
-      
-      mean_hgt    = gam(mean_hgt ~ plant_f + anti_brow_f + grndwrk_f +
-                          s(plot_id, bs = "re"),
-                        data = ., family = tw(link = "log"), method = "REML"),
-      
-      cv_hgt      = gam(cv_hgt_pos ~ plant_f + anti_brow_f + grndwrk_f +
-                          s(plot_id, bs = "re"),
-                        data = ., family = tw(link = "log"), method = "REML")
-    )
-  }
-
-##### check model assumptions  - from gam model
-
-# Extract model summaries
-model_stats <- map_dfr(names(models), function(nm) {
-  m <- models[[nm]]
-  sm <- summary(m)
-  
-  tibble(
-    response = nm,
-    r2_adj = sm$r.sq,                     # adjusted R² for GAM
-    dev_expl = sm$dev.expl * 100          # explained deviance in %
-  )
-})
-
-model_stats
-
-
-model_results_df <- map_dfr(models, tidy, parametric = TRUE, .id = "response") %>%
-  filter(term != "(Intercept)") %>%
-  mutate(
-    lower = estimate - 1.96 * std.error,
-    upper = estimate + 1.96 * std.error,
-    term = recode(term,
-                  "plant_fyes" = "Planting",
-                  "anti_brow_fyes" = "Anti-browsing",
-                  "grndwrk_fyes" = "Groundwork"),
-    # Add a tiny offset so very small bars are still visible
-    estimate_adj = ifelse(abs(estimate) < 0.01, sign(estimate + 1e-6) * 0.01, estimate),
-    lower_adj = ifelse(abs(estimate) < 0.01, 0, lower),
-    upper_adj = ifelse(abs(estimate) < 0.01, 0, upper),
-    response = recode(response,
-                      "effective_numbers" = "Species diversity\n[Effective #]",
-                      "sp_richness"       = "Species richness\n[#]",
-                      "mean_hgt"          = "Mean height\n[m]",
-                      "cv_hgt"            = "Height variability\n[CV, %]"
-                      ),
-    # order facets manually
-    response = factor(response,
-                      levels = c("Mean height\n[m]",
-                                 "Height variability\n[CV, %]",
-                                 "Species diversity\n[Effective #]",
-                                 "Species richness\n[#]"))
-  )
-
-ggplot(model_results_df, aes(x = term, y = estimate, fill = term)) +
-  geom_hline(yintercept = 0, col = 'grey', lwd = 0.5, lty = 'solid') +
-  geom_col(position = "dodge", width = 0.7) +
-   geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.15, linewidth = 0.5) +
-  facet_wrap(~ response, ncol = 4) + #scales = "free_y"
-  theme_classic2(base_size = 8) +
-  labs(
-    x = "",
-    y = "Estimated effect (parametric term)",
-    title = ""
-  ) +
-  theme(
-    legend.position = "none",
-    strip.text = element_text( size = 10),
-    axis.text.x = element_text(angle = 25, hjust = 1),
-    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.6),
-    panel.grid.major.y = element_line(color = "grey90", linewidth = 0.3)
-  )
-
-
-# how much is the change in %? 
-
-effects_df <- model_results_df %>%
-  select(response, term, estimate) %>%
-  mutate(
-    perc_change = (exp(estimate) - 1) * 100
-  ) %>%
-  group_by(response, term) %>%
-  summarise(mean_effect = mean(perc_change), .groups = "drop")
-effects_df
-
-
-table(both_levels_re2$treatment_grp)
-table(both_levels_re2$plant_browse_f )
-
-
 
 ##### GAMs : identify main management drivers: intensities -------------------------
 
