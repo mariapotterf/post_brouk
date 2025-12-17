@@ -1261,7 +1261,29 @@ field_sub_summ <- dat_overlap_mng_upd2%>%
 
 field_sub_summ %>% 
   filter(subplot == "628_T2_AH_20250827") %>% 
-  print()
+  str()
+
+safe_max <- function(x) {
+  if (all(is.na(x))) {
+    NA_real_
+  } else {
+    max(x, na.rm = TRUE)
+  }
+}
+
+field_sub_summ_cleaned <- field_sub_summ %>%
+  group_by(plot, subplot, year) %>%
+  summarise(
+    across(
+      where(is.numeric),
+      safe_max
+    ),
+    .groups = "drop"
+  )
+
+field_sub_summ_cleaned %>% 
+  filter(subplot == "628_T2_AH_20250827") %>% 
+  str()
 
 
 
