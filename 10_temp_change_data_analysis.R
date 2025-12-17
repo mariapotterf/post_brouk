@@ -44,7 +44,7 @@ theme_set(theme_classic2(base_size = 10) +
 
 
 # Read data -----------------------------
-#dat_overlap  <- fread('outData/full_table_overlap_23_25.csv')
+#dat_overlap_mng_upd2 <- fread('outData/full_table_overlap_23_25.csv')
 
 # test 2025/11/03 -> then needs to rename the layer to 'dat'!
 dat_overlap  <- fread('outData/full_table_23_25.csv')  # accound for all data points, not just the ovelapping ones
@@ -488,17 +488,10 @@ dat_overlap %>%
 
 #  Define management variables
 management_vars <- c(
-  "clear", "grndwrk", "logging_trail", "planting", "anti_browsing"#,
-  # "salvage_sum", "protection_sum", "clear_sum", "grndwrk_sum", 
-  # "logging_trail_sum", "planting_sum", "anti_browsing_sum", 
-  # "management_sum", "clear_intensity", "grndwrk_intensity", 
-  # "logging_trail_intensity", "planting_intensity", 
-  # "anti_browsing_intensity", "salvage_intensity", 
-  # "protection_intensity", "management_intensity"
+  "clear", "grndwrk", "logging_trail", "planting", "anti_browsing"
 )
 
 management_vars_rmv <- c(
-  #"clear", "grndwrk", "logging_trail", "planting", "anti_browsing"#,
    "salvage_sum", "protection_sum", "clear_sum", "grndwrk_sum", 
    "logging_trail_sum", "planting_sum", "anti_browsing_sum", 
    "management_sum", "clear_intensity", "grndwrk_intensity", 
@@ -506,6 +499,7 @@ management_vars_rmv <- c(
    "anti_browsing_intensity", "salvage_intensity", 
    "protection_intensity", "management_intensity"
 )
+
 dat_overlap_mng <- dat_overlap %>% 
   dplyr::select(-all_of(management_vars_rmv))
 
@@ -558,7 +552,7 @@ mng_both25_upd <- bind_rows(mng_both23, mng_both25) %>%
 nrow(mng_combined)
 head(mng_combined)
 
-# remove rows from 2025 from overall table, update management
+# remove rows from 2025 from overall table, update management ---
 dat_overlap_mng_25 <-
   dat_overlap_mng %>% 
   filter(status == 'both' & year == 2025) %>% 
@@ -567,7 +561,7 @@ dat_overlap_mng_25 <-
   left_join(mng_both25_upd) %>% 
   dplyr::select(all_of(colnames(dat_overlap_mng))) # reorder columns in proper order
   
-# 2. Keep all other rows (i.e., everything except 2025 "both")
+# Keep all other rows (i.e., everything except 2025 "both")
 dat_overlap_mng_rest <- dat_overlap_mng %>%
   dplyr::filter(!(status == "both" & year == 2025))
 
@@ -575,24 +569,33 @@ dat_overlap_mng_rest <- dat_overlap_mng %>%
 dat_overlap_mng_upd <- bind_rows(dat_overlap_mng_rest, 
                                  dat_overlap_mng_25)
 
-## Subplot level -----------------------------------------------------------
 
-# my management differs between years on the same site (planting, anti-brosing occurence)
-# therefore, i keep records only from 2023, as they should be more representativve
-# when using both management data from 2025, i got duplicated records
-#library(dplyr)
+### Calculate intensity per plot & year - --------------------
+# Collapse to one row per subplot (presence-based)
+mng_subplot <- dat_overlap_mng_upd %>%
+  dplyr::select(plot, subplot, year, n_subplots, all_of(management_vars)) %>%
+  distinct() 
 
+# plot based management intensity with updates 2025 values 
+management_intensity <- mng_subplot %>%
+  group_by(plot, year) %>%
+  summarise(
+    n_subplots = first(n_subplots),
+    clear_intensity = sum(clear == 1, na.rm = TRUE) / n_subplots,
+    grndwrk_intensity = sum(grndwrk == 1, na.rm = TRUE) / n_subplots,
+    logging_trail_intensity = sum(logging_trail == 1, na.rm = TRUE) / n_subplots,
+    planting_intensity = sum(planting == 1, na.rm = TRUE) / n_subplots,
+    anti_browsing_intensity = sum(anti_browsing == 1, na.rm = TRUE) / n_subplots,
+    .groups = "drop"
+  )
 
+# Optional: Join back to main table (if needed per-row)
+dat_overlap_mng_upd2 <- dat_overlap_mng_upd %>%
+  left_join(management_intensity, by = c("plot", "year", "n_subplots"))
 
+## Management Subplot level -----------------------------------------------------------
 
-
-
-
-
-
-
-
-df_mng_sub <- dat_overlap_cleaned %>% 
+df_mng_sub <- dat_overlap_mng_upd2 %>% 
   #dplyr::filter(year == "2023") %>% # keep management oionly frm 2023 for consistency
   distinct(plot, subplot,year,
            clear,
@@ -606,16 +609,17 @@ df_mng_sub <- dat_overlap_cleaned %>%
            grndwrk_intensity,         
            logging_trail_intensity,  
            planting_intensity ,       
-           anti_browsing_intensity,   
-           salvage_intensity,         
-           protection_intensity,      
-           management_intensity
-           
+           anti_browsing_intensity#,   
+           # salvage_intensity,         
+           # protection_intensity,      
+           # management_intensity
+           # 
            )
 
 
 df_mng_plot <- df_mng_sub %>% 
-  select(plot, year, clear_intensity,           
+  select(plot, year, 
+         clear_intensity,           
          grndwrk_intensity,         
          logging_trail_intensity,  
          planting_intensity ,       
@@ -623,12 +627,15 @@ df_mng_plot <- df_mng_sub %>%
   distinct()
 
 
-mng_sub_props <- df_mng_sub %>%
+mng_sub_props <- 
+  df_mng_sub %>%
   # group by year???
   pivot_longer(cols = c(clear, grndwrk, logging_trail, planting, anti_browsing),
                names_to = "activity",
                values_to = "applied") %>%
+    mutate(applied = replace_na(applied, 0)) %>% 
   group_by(activity, applied, year) %>%
+   # View()
   summarise(n = n(), .groups = "drop") %>%
   group_by(activity) %>%
   mutate(proportion = n / sum(n)*100)
@@ -688,7 +695,7 @@ ggplot(mng_sub_conv, aes(x = proportion, y = activity, fill = applied)) +
 
 # 
 ### Plot level: binary  ------------------------------------
-df_master_mng_intensity <- dat_overlap_cleaned %>% 
+df_master_mng_intensity <- dat_overlap_mng_upd2 %>% 
   #dplyr::filter(year == "2023") %>% # keep management oionly frm 2023 for consistency
   distinct(plot, year,
              # intensities
@@ -696,10 +703,7 @@ df_master_mng_intensity <- dat_overlap_cleaned %>%
            grndwrk_intensity,         
            logging_trail_intensity,  
            planting_intensity ,      
-           anti_browsing_intensity,   
-           salvage_intensity,         
-           protection_intensity,      
-           management_intensity
+           anti_browsing_intensity
            
   )
 nrow(df_master_mng_intensity)
@@ -908,7 +912,7 @@ ggsave("outFigs/p_combined_management_intens.png", plot = p_combined_management_
 
 
 ## Get context and disturbance characteristics (plot) --------------
-plot_context_chars <- dat_overlap %>% 
+plot_context_chars <- dat_overlap_mng_upd2%>% 
   dplyr::select(plot, year,
                 status,
                 disturbance_year, 
@@ -921,10 +925,7 @@ plot_context_chars <- dat_overlap %>%
                 grndwrk_intensity,         
                 logging_trail_intensity,
                 planting_intensity,
-                anti_browsing_intensity,
-                salvage_intensity,
-                protection_intensity,
-                management_intensity  
+                anti_browsing_intensity
                 #clear, grndwrk, logging_trail, planting, anti_browsing
   )  %>%  
   distinct()
@@ -1013,7 +1014,7 @@ p_combined_disturb_fig
 # 
 # # Calculate stem counts by recovery type at the plot level
 # share_early_vs_late <- 
-#   dat_overlap %>%
+#   dat_overlap_mng_upd2%>%
 #   filter(!is.na(n)) %>%  # Optional: remove NAs if present
 #   group_by(plot, seral_stage, time_snc_full_disturbance) %>%
 #   summarise(n_stems = n(), .groups = "drop") %>%
@@ -1030,7 +1031,7 @@ p_combined_disturb_fig
 # 
 # ### Early vs late: plot level  
 # df_plot_share_early <-  
-#   dat_overlap %>%
+#   dat_overlap_mng_upd2%>%
 #   filter(!is.na(n)) %>%  # Optional: remove NAs if present
 #   group_by(plot,year, seral_stage, time_snc_full_disturbance) %>%
 #   summarise(n_stems = n(), .groups = "drop") %>%
@@ -1043,7 +1044,7 @@ p_combined_disturb_fig
 #   select(plot, year, share_early, share_late,time_snc_full_disturbance) 
 # 
 # ### early vs late : subplot level 
-# df_sub_share_early <-  dat_overlap %>%
+# df_sub_share_early <-  dat_overlap_mng_upd2%>%
 #   filter(!is.na(n)) %>%  # Optional: remove NAs if present
 #   group_by(subplot, plot,year, seral_stage, time_snc_full_disturbance) %>%
 #   summarise(n_stems = n(), .groups = "drop") %>%
@@ -1073,7 +1074,7 @@ p_combined_disturb_fig
 
 
 # Calculate spruce share at the plot level
-spruce_share_plot <- dat_overlap_cleaned %>%
+spruce_share_plot <- dat_overlap_mng_upd2 %>%
   filter(!is.na(n)) %>%  # Optional: remove NAs if present
   group_by(plot, year) %>%
   summarise(
@@ -1086,7 +1087,7 @@ spruce_share_plot <- dat_overlap_cleaned %>%
 hist(spruce_share_plot$spruce_share, breaks = 50)
 
 # Calculate spruce share at the subplot level
-spruce_share_sub <- dat_overlap_cleaned %>%
+spruce_share_sub <- dat_overlap_mng_upd2 %>%
   filter(!is.na(n)) %>%  # Optional: remove NAs if present
   group_by(plot, subplot, year) %>%
   summarise(
@@ -1113,9 +1114,9 @@ wvar <- "n"
 # helper to pull a numeric weight safely
 wfun <- function(x) ifelse(is.na(x) | x < 0, 0, x)
 
-# Continue from here to replace dat_overlap to dat_overlap_cleaned!
+# Continue from here to replace dat_overlap_mng_upd2to dat_overlap_cleaned!
 # Subplot × year CWMs 
-cwm_subplot <- dat_overlap_cleaned %>%
+cwm_subplot <- dat_overlap_mng_upd2 %>%
   #filter(species != 'ots1') %>% 
   mutate(w = wfun(.data[[wvar]])) %>%
   # keep only rows that contribute weight and have trait scores
@@ -1134,7 +1135,7 @@ cwm_subplot <- dat_overlap_cleaned %>%
   select(-stems_total, - stems_with_traits, -trait_coverage)
 
 # 2) Plot × year CWMs
-cwm_plot <- dat_overlap %>%
+cwm_plot <- dat_overlap_mng_upd2%>%
   filter(species != 'ots1') %>% 
   mutate(w = wfun(.data[[wvar]])) %>%
   filter(w > 0) %>%
@@ -1209,7 +1210,7 @@ trait_labs <- c(CWM_shade = "Shade tolerance",
 
 # Create table on subplot and plot level ----------------------------------------
 ## Field data summary: subplot metrics ----------------------------------------------------------
-field_sub_summ <- dat_overlap %>%
+field_sub_summ <- dat_overlap_mng_upd2%>%
   mutate(n = coalesce(n, 0L)) %>% # change NAs to 0 (0L = literrary 0 = integer (not double))
   # mutate(year = as.factor(year)) %>% 
   group_by(plot, subplot, year, 
@@ -1222,8 +1223,7 @@ field_sub_summ <- dat_overlap %>%
            grndwrk,
            logging_trail,
            planting,
-           anti_browsing,
-           management_intensity) %>%
+           anti_browsing) %>%
   summarise(
     stems_total = sum(n, na.rm = TRUE),
     sp_richness = if (stems_total > 0) n_distinct(species[n > 0]) else 0,
@@ -1252,12 +1252,18 @@ field_sub_summ <- dat_overlap %>%
     .groups = "drop"  #,
     #range_hgt = if (sum(n > 0) >= 2) diff(range(hgt_est[n > 0], na.rm = TRUE)) else NA_real_,
     
-  ) # %>% 
+  )  %>% 
   left_join(cwm_subplot)
 
   
 # Problem: issue that some sites have different management from 2023 - need to keep management 
   # from 2023
+
+field_sub_summ %>% 
+  filter(subplot == "628_T2_AH_20250827") %>% 
+  print()
+
+
 
 # is teh change in community shading/drought tolerance driven by planting????
 # Plot: Shade ~ Time since disturbance, by planting
@@ -1393,7 +1399,7 @@ plot_metrics_mean <- field_sub_summ %>%
 
 
 # --- pooled CV directly from dat23_subplot_recode ---
-plot_metrics_pooled  <- dat_overlap %>%
+plot_metrics_pooled  <- dat_overlap_mng_upd2%>%
   mutate(n = coalesce(n, 0L)) %>%                # no NA counts
   group_by(plot, year) %>%
   summarise(
@@ -1428,7 +1434,7 @@ plot_metrics_pooled  <- dat_overlap %>%
 #mutate(cv_hgt = ifelse(is.na(cv_hgt), 0L, cv_hgt)) # replace NA by 0 if stems are missing
 
 # get only context and disturbance information on plot level
-df_plot_context <- dat_overlap %>%
+df_plot_context <- dat_overlap_mng_upd2%>%
   dplyr::select(plot,year,  
                 pre_dist_trees_n,  
                 area_m2, 
