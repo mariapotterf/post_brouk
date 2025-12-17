@@ -1292,7 +1292,7 @@ field_sub_summ_cleaned %>%
 x_lab_time_snc_full_dist = "Time since stand\nreplacing disturbance (years)"
 # 
 # #### Effect of planting? 
-# p_shade_planting <- field_sub_summ %>% 
+# p_shade_planting <- field_sub_summ_cleaned%>% 
 #   ggplot(aes(x = as.factor(time_snc_full_disturbance),
 #              y = CWM_shade,
 #              fill = factor(planting))) +
@@ -1305,7 +1305,7 @@ x_lab_time_snc_full_dist = "Time since stand\nreplacing disturbance (years)"
 #   theme(text  = element_text(size = 10))
 # 
 # # Plot: Drought ~ Time since disturbance, by planting
-# p_shade_drought <- field_sub_summ %>% 
+# p_shade_drought <- field_sub_summ_cleaned%>% 
 #   ggplot(aes(x = as.factor(time_snc_full_disturbance),
 #              y = CWM_drought,
 #              fill = factor(planting))) +
@@ -1317,7 +1317,7 @@ x_lab_time_snc_full_dist = "Time since stand\nreplacing disturbance (years)"
 #   theme(text  = element_text(size = 10))
 # 
 # # Plot: Shade ~ Planting
-# p_shade_total <- field_sub_summ %>% 
+# p_shade_total <- field_sub_summ_cleaned%>% 
 #   ggplot(aes(x = factor(planting),
 #              y = CWM_shade,
 #              fill = factor(planting))) +
@@ -1332,7 +1332,7 @@ x_lab_time_snc_full_dist = "Time since stand\nreplacing disturbance (years)"
 #   theme(text  = element_text(size = 10))
 # 
 # # Plot: Drought ~ Planting
-# p_drought_total <- field_sub_summ %>% 
+# p_drought_total <- field_sub_summ_cleaned%>% 
 #   ggplot(aes(x = factor(planting),
 #              y = CWM_drought,
 #              fill = factor(planting))) +
@@ -1358,7 +1358,7 @@ x_lab_time_snc_full_dist = "Time since stand\nreplacing disturbance (years)"
 
 
 #### Subplot quick plotting: all vars ---------------------
-df_sub_long <- field_sub_summ %>%
+df_sub_long <- field_sub_summ_cleaned%>%
   dplyr::filter(stems_total > 0) %>% 
   filter(cv_hgt >0) %>% 
   #ungroup() %>%
@@ -1369,7 +1369,6 @@ df_sub_long <- field_sub_summ %>%
          planting,
          anti_browsing,
          time_snc_full_disturbance, time_snc_part_disturbance, 
-         management_intensity,
          stems_total,
          mean_hgt, cv_hgt, shannon_sp, sp_richness,
          CWM_shade ,
@@ -1383,8 +1382,7 @@ df_sub_long <- field_sub_summ %>%
                   grndwrk,
                   logging_trail,
                   planting,
-                  anti_browsing,
-                  management_intensity),
+                  anti_browsing),
                names_to = "metric", values_to = "value") %>%
   # keep mean_hgt > 0, leave others as-is
   filter(!(metric == "mean_hgt" & (is.na(value) | value <= 0))) %>%
@@ -1401,7 +1399,7 @@ area_plot_m2    <- 5*4    # 20 m²
 
 
 ## --- Plot-level metrics (aggregate over subplots) ---
-plot_metrics_mean <- field_sub_summ %>%
+plot_metrics_mean <- field_sub_summ_cleaned%>%
   group_by(plot, year) %>%
   summarise(
     mean_sp_richness = mean(sp_richness, na.rm = TRUE),
@@ -1465,23 +1463,14 @@ df_plot_context <- dat_overlap_mng_upd2%>%
                # time_snc_part_disturbance,
                 disturbance_year, 
                 forest_year, 
-                disturbance_length,
-                protection_intensity, 
-               # salvage_intensity, 
-               # clear_intensity, 
-               # grndwrk_intensity        ,
-               # logging_trail_intensity  ,
-               # planting_intensity       ,
-               # anti_browsing_intensity  ,
-               # 
-                management_intensity) %>% 
+                disturbance_length) %>% 
   distinct() 
 
 
 
 ## create final table for both levels -----------------------------------------------------
 # 1) Subplot table (has subplot mean_hgt and stems_total as weights)
-sub_df <- field_sub_summ %>%
+sub_df <- field_sub_summ_cleaned%>%
   filter(stems_total > 0) %>% #, cv_hgt > 0
   transmute(
     ID       = subplot,
