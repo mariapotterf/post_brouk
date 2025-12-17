@@ -1421,7 +1421,7 @@ plot_metrics_mean <- field_sub_summ_cleaned%>%
 
 
 # --- pooled CV directly from dat23_subplot_recode ---
-plot_metrics_pooled  <- dat_overlap_mng_upd2%>%
+plot_metrics_pooled  <- dat_overlap_mng_upd2 %>%
   mutate(n = coalesce(n, 0L)) %>%                # no NA counts
   group_by(plot, year) %>%
   summarise(
@@ -1472,8 +1472,8 @@ df_plot_context <- dat_overlap_mng_upd2%>%
 
 ## create final table for both levels -----------------------------------------------------
 # 1) Subplot table (has subplot mean_hgt and stems_total as weights)
-sub_df <- field_sub_summ_cleaned%>%
-  filter(stems_total > 0) %>% #, cv_hgt > 0
+sub_df <- field_sub_summ_cleaned %>%
+ # filter(stems_total > 0) %>% #, cv_hgt > 0
   transmute(
     ID       = subplot,
     plot_id  = plot, #str_replace(subplot, "^[^_]+_([^_]+_[^_]+)_.*$", "\\1"),
@@ -1549,51 +1549,55 @@ both_levels_re2 <- bind_rows(sub_df, plot_df) %>%
       plot_id = factor(plot_id),
       w       = pmin(pmax(w, 1), 50)   # cap weights so a few dense plots don't dominate
   ) %>% 
-  mutate(time_since_f = ifelse(time_snc_full_disturbance <= 2, "early", "later") %>% 
-           factor(levels = c("early", "later")),
-         dist_length_f = ifelse(disturbance_length <= 2, "abrupt", "continuous") %>% 
-           factor(levels = c( "abrupt", "continuous")),
-         plant_f = ifelse(planting_intensity < 0.2, "no", "yes") %>% 
-           factor(levels = c("no", "yes")), 
-         anti_brow_f = ifelse(anti_browsing_intensity < 0.2, "no", "yes") %>% 
-           factor(levels = c("no", "yes")),
-         grndwrk_f = ifelse(grndwrk_intensity < 0.2, "no", "yes") %>% 
-           factor(levels = c("no", "yes")),
+  mutate(#time_since_f = ifelse(time_snc_full_disturbance <= 2, "early", "later") %>% 
+        #   factor(levels = c("early", "later")),
+         #dist_length_f = ifelse(disturbance_length <= 2, "abrupt", "continuous") %>% 
+          # factor(levels = c( "abrupt", "continuous")),
+         #plant_f = ifelse(planting_intensity < 0.2, "no", "yes") %>% 
+          # factor(levels = c("no", "yes")), 
+         #anti_brow_f = ifelse(anti_browsing_intensity < 0.2, "no", "yes") %>% 
+        #   factor(levels = c("no", "yes")),
+         #grndwrk_f = ifelse(grndwrk_intensity < 0.2, "no", "yes") %>% 
+        #   factor(levels = c("no", "yes")),
          year_f = factor(year)
-           )
+           ) %>% 
+  mutate(
+    across(all_of(c("cv_hgt", "mean_hgt", "sp_richness", "effective_numbers")), ~ replace_na(.x, 0))
+  ) #%>%
 
-# 1663
+# 1998
 
 
 # add small value to CV = 0
 both_levels_re2 <- both_levels_re2 %>%
   mutate(
-    cv_hgt_pos = ifelse(cv_hgt <= 0, 1e-4, cv_hgt)#is.na(cv_hgt) | 
+    cv_hgt_pos = ifelse(cv_hgt <= 0, 1e-4, cv_hgt),
+    effective_numbers = ifelse(effective_numbers == 0, 1e-4, effective_numbers)#is.na(cv_hgt) | 
   ) #%>% 
   #filter(!is.na(mean_hgt), !is.na(w), !is.na(cv_hgt)) #, !is.na(dens_m2)
 
 
-both_levels_re2 <- both_levels_re2 %>%
-  mutate(plant_browse_f = interaction(plant_f, anti_brow_f, sep = "_")) %>% 
-  mutate(treatment_grp = case_when(
-    plant_f == "yes" & anti_brow_f == "yes" ~ "yes",
-    TRUE ~ "no"
-  ) %>% factor(levels = c("yes", "no")))
+# both_levels_re2 <- both_levels_re2 %>%
+#   mutate(plant_browse_f = interaction(plant_f, anti_brow_f, sep = "_")) %>% 
+#   mutate(treatment_grp = case_when(
+#     plant_f == "yes" & anti_brow_f == "yes" ~ "yes",
+#     TRUE ~ "no"
+#   ) %>% factor(levels = c("yes", "no")))
 
 
-both_levels_re2$mng_f <- dplyr::case_when(
-  both_levels_re2$plant_browse_f == "no_no"   ~ "none",
-  both_levels_re2$plant_browse_f == "yes_yes" ~ "both",
-  TRUE                                        ~ "some"
-)
+# both_levels_re2$mng_f <- dplyr::case_when(
+#   both_levels_re2$plant_browse_f == "no_no"   ~ "none",
+#   both_levels_re2$plant_browse_f == "yes_yes" ~ "both",
+#   TRUE                                        ~ "some"
+# )
 
 
-both_levels_re2$mng_f <- factor(
-  both_levels_re2$mng_f,
-  levels = c("none", "some", "both")
-)
+# both_levels_re2$mng_f <- factor(
+#   both_levels_re2$mng_f,
+#   levels = c("none", "some", "both")
+# )
 
-table(both_levels_re2$mng_f)
+#table(both_levels_re2$mng_f)
 
 # as binary/continuous part
 
@@ -1805,12 +1809,17 @@ both_levels_re2 %>%
 both_levels_long <- both_levels_re2 %>%
   filter(level == 'plot') %>% 
   select(plot_id, level,
-         dens_m2, cv_hgt, mean_hgt, sp_richness, shannon_sp,
-         time_since_f, dist_length_f, plant_f, 
-         anti_brow_f,
-         grndwrk_f) %>%
+         cv_hgt, mean_hgt, sp_richness, effective_numbers,
+         planting_intensity,
+         clear_intensity,
+         anti_browsing_intensity,
+         grndwrk_intensity 
+         #time_since_f, dist_length_f, plant_f, 
+         #anti_brow_f,
+         #grndwrk_f
+         ) %>%
   pivot_longer(
-    cols = c(dens_m2, cv_hgt, mean_hgt, sp_richness, shannon_sp),
+    cols = c( mean_hgt, cv_hgt, effective_numbers, sp_richness),
     names_to = "variable",
     values_to = "value"
   )
@@ -1818,42 +1827,41 @@ both_levels_long <- both_levels_re2 %>%
 # check which one of management activities is more important for species richness 
 # and vertical structure?
 p1<-ggplot(both_levels_long %>% filter(level == "plot"),
-       aes(x = plant_f, y = value, fill = plant_f)) +
+       aes(x = factor(planting_intensity) , y = value, fill = factor(planting_intensity) )) +
   geom_boxplot(outlier.shape = NA) +
   stat_compare_means(
     aes(label = paste0("p = ", ..p.format..)),  # nicely formatted p-values
-    method = "wilcox.test",                     # or "t.test" depending on data
+    method = "kruskal.test",                     # or "t.test" depending on data
     label.y.npc = 0.95,                         # position near top of panel
     size = 3
   ) +
-  facet_wrap(~ variable, scales = "free_y", ncol = 5) +
+  facet_wrap(~ variable, scales = "free_y", ncol = 4) +
   theme_bw() + 
   theme(legend.position = 'none')
 
 p2<-ggplot(both_levels_long %>% filter(level == "plot"),
-       aes(x = anti_brow_f, y = value,
-           fill = anti_brow_f)) +
+       aes(x = factor(anti_browsing_intensity) , y = value, fill = factor(anti_browsing_intensity) )) +
   geom_boxplot(outlier.shape = NA) +
   stat_compare_means(
     aes(label = paste0("p = ", ..p.format..)),  # nicely formatted p-values
-    method = "wilcox.test",                     # or "t.test" depending on data
+    method = "kruskal.test",                     # or "t.test" depending on data
     label.y.npc = 0.95,                         # position near top of panel
     size = 3
   ) +
-  facet_wrap(~ variable, scales = "free_y", ncol = 5) +  theme_bw() +
+  facet_wrap(~ variable, scales = "free_y", ncol = 4) +  
+  theme_bw() +
   theme(legend.position = 'none')
 
 p3<-ggplot(both_levels_long %>% filter(level == "plot"),
-       aes(x = grndwrk_f, y = value,
-           fill = grndwrk_f)) +
+           aes(x = factor(grndwrk_intensity ) , y = value, fill = factor(grndwrk_intensity ) )) +
   geom_boxplot(outlier.shape = NA) +
   stat_compare_means(
     aes(label = paste0("p = ", ..p.format..)),  # nicely formatted p-values
-    method = "wilcox.test",                     # or "t.test" depending on data
+    method = "kruskal.test",                     # or "t.test" depending on data
     label.y.npc = 0.95,                         # position near top of panel
     size = 3
   ) +
-  facet_wrap(~ variable, scales = "free_y", ncol = 5) +
+  facet_wrap(~ variable, scales = "free_y", ncol = 4) +
   theme_bw() +
   theme(legend.position = 'none')
 
@@ -1873,12 +1881,14 @@ models_intensity <- both_levels_re2 %>%
   filter(level == "plot") %>%
   {
     list(
-      effective_numbers  = gam(effective_numbers ~ planting_intensity * anti_browsing_intensity + grndwrk_intensity +
+      effective_numbers  = gam(effective_numbers ~ planting_intensity * anti_browsing_intensity + 
+                                 grndwrk_intensity +
                                 s(year_f, bs = 're') +
                                  s(plot_id, bs = "re"),
                                data = ., family = tw(link = "log"), method = "REML"),
       
-      sp_richness = gam(sp_richness ~ planting_intensity * anti_browsing_intensity + grndwrk_intensity +
+      sp_richness = gam(sp_richness ~ planting_intensity * anti_browsing_intensity + 
+                          grndwrk_intensity +
                           s(year_f, bs = 're') +
                           s(plot_id, bs = "re"),
                         data = ., family = nb(link = "log"), method = "REML"),
@@ -1894,6 +1904,8 @@ models_intensity <- both_levels_re2 %>%
                         data = ., family = tw(link = "log"), method = "REML")
     )
   }
+library(broom)
+
 
 model_intensity_df <- map_dfr(models_intensity, tidy, parametric = TRUE, .id = "response") %>%
   filter(term != "(Intercept)") %>%
@@ -1958,7 +1970,7 @@ ggplot(model_intensity_df_pct, aes(x = term, y = estimate_pct, fill = term)) +
     aes(label = p_signif, 
         y = ifelse(estimate_pct >= 0, 
                                      upper_pct + 7, 
-                                     lower_pct - 7)),
+                                     lower_pct - 10)),
     vjust = 0,
     size = 3
   ) +
@@ -1978,6 +1990,153 @@ ggplot(model_intensity_df_pct, aes(x = term, y = estimate_pct, fill = term)) +
 appraise(models_intensity[[1]])
 draw(models_intensity[[4]])
 plot.gam(models_intensity[[4]], page = 1)
+
+### Models bulk & time since disturbvance --------------------------
+
+
+
+# add time since disturbance
+models_intensity_all <- both_levels_re2 %>%
+  {
+    list(
+      effective_numbers = gam(
+        effective_numbers ~ planting_intensity * anti_browsing_intensity + 
+          grndwrk_intensity +
+          s(time_snc_full_disturbance, k = 7) +
+          s(plot_id, bs = "re") + 
+          level +
+          year_f,
+        data = ., family = tw(link = "log"), method = "REML"
+      ),
+      
+      sp_richness = gam(
+        sp_richness ~ planting_intensity * anti_browsing_intensity + 
+          grndwrk_intensity +
+          s(time_snc_full_disturbance, k = 7) +
+          s(plot_id, bs = "re") + 
+          level +
+          year_f,
+        data = ., family = nb(link = "log"), method = "REML"
+      ),
+      
+      mean_hgt = gam(
+        mean_hgt ~ planting_intensity * anti_browsing_intensity + 
+          grndwrk_intensity +
+          s(time_snc_full_disturbance, k = 7) +
+          s(plot_id, bs = "re") + 
+          level +
+          year_f,
+        data = ., family = tw(link = "log"), method = "REML"
+      ),
+      
+      cv_hgt = gam(
+        cv_hgt_pos ~ planting_intensity * anti_browsing_intensity + 
+          grndwrk_intensity +
+          s(time_snc_full_disturbance, k = 7) +
+          s(plot_id, bs = "re") + 
+          level +
+          year_f,
+        data = subset(both_levels_re2, cv_hgt > 0), family = tw(link = "log"), method = "REML"
+      )
+    )
+  }
+
+summary(models_intensity_all$cv_hgt)
+
+# Extract parametric terms
+model_intensity_all_df <- map_dfr(models_intensity_all, tidy, parametric = TRUE, .id = "response") %>%
+  filter(term != "(Intercept)") %>%
+  mutate(
+    lower = estimate - 1.96 * std.error,
+    upper = estimate + 1.96 * std.error,
+    
+    # Relabel terms nicely
+    term = dplyr::recode(term,
+                         "planting_intensity" = "Planting",
+                         "anti_browsing_intensity" = "Anti-browsing",
+                         "grndwrk_intensity" = "Groundwork",
+                         "planting_intensity:anti_browsing_intensity" = "Planting × Anti-browsing",
+                         "levelplot" = "Level: Plot",
+                         "year_f2025" = "Year: 2025",
+                         .default = term
+    ),
+    
+    response = dplyr::recode(response,
+                             "effective_numbers" = "Species diversity\n[Effective #]",
+                             "sp_richness"       = "Species richness\n[#]",
+                             "mean_hgt"          = "Mean height\n[m]",
+                             "cv_hgt"            = "Height variability\n[CV, %]",
+                             .default = response
+    ),
+    
+    estimate_adj = ifelse(abs(estimate) < 0.01, sign(estimate + 1e-6) * 0.01, estimate),
+    lower_adj = ifelse(abs(estimate) < 0.01, 0, lower),
+    upper_adj = ifelse(abs(estimate) < 0.01, 0, upper),
+    
+    response = factor(response, levels = c(
+      "Mean height\n[m]",
+      "Height variability\n[CV, %]",
+      "Species diversity\n[Effective #]",
+      "Species richness\n[#]"
+    ))
+  )
+
+# Convert to percentage change (on log-link scale)
+model_intensity_all_df_pct <- model_intensity_all_df %>%
+  mutate(
+    estimate_pct = (exp(estimate) - 1) * 100,
+    lower_pct = (exp(lower) - 1) * 100,
+    upper_pct = (exp(upper) - 1) * 100,
+    
+    p_signif = case_when(
+      p.value <= 0.001 ~ "***",
+      p.value <= 0.01  ~ "**",
+      p.value <= 0.05  ~ "*",
+      TRUE             ~ "n.s."
+    )
+  )
+
+# Filter to include only management terms (not year or level)
+management_terms <- c("Planting", "Anti-browsing", "Groundwork", "Planting × Anti-browsing")
+
+model_intensity_all_df_pct_mng <- model_intensity_all_df_pct %>%
+  filter(term %in% management_terms)
+
+ggplot(model_intensity_all_df_pct_mng, aes(x = term, y = estimate_pct, fill = term)) +
+  geom_hline(yintercept = 0, color = "gray40", linewidth = 0.5) +
+  geom_col(position = "dodge", width = 0.7) +
+  geom_errorbar(aes(ymin = lower_pct, ymax = upper_pct), width = 0.15, linewidth = 0.5) +
+  facet_wrap(~ response, ncol = 4) +
+  theme_classic(base_size = 9) +
+  scale_fill_brewer(palette = "Dark2") +
+  # NEW: Add stars above bars
+  geom_text(
+    aes(label = p_signif, 
+        y = ifelse(estimate_pct >= 0, 
+                   upper_pct + 7, 
+                   lower_pct - 10)),
+    vjust = 0,
+    size = 3
+  ) +
+  labs(
+    x = "Management Intensity",
+    y = "Effect on response (%)",
+    title = "Effect of Management Intensities on Forest Structure and Diversity"
+  ) +
+  theme(
+    legend.position = "none",
+    strip.text = element_text(size = 10),
+    axis.text.x = element_text(angle = 30, hjust = 1),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.6),
+    panel.grid.major.y = element_line(color = "gray90", linewidth = 0.3)
+  )
+
+appraise(models_intensity_all[[4]])
+draw(models_intensity[[4]])
+plot.gam(models_intensity[[4]], page = 1)
+
+
+
 
 ### GAM management interaction + time since disturbance smooths --------------
 #### Mean height -----------------------------------------------------
@@ -2019,8 +2178,25 @@ gam_mean_hgt_intensity0 <- gam(
 
 AIC(gam_mean_hgt_intensity0, gam_mean_hgt_intensity_base)
 
+# test also only for plot vs subplot!
+gam_mean_hgt_intensity02_int1_plot <- gam(
+  mean_hgt ~ 
+    s(planting_intensity, k = 3) +
+    s(anti_browsing_intensity, k = 3) +
+    ti(planting_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
+    #ti(grndwrk_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
+    
+    s(time_snc_full_disturbance, k = 4) +
+    s(grndwrk_intensity, k = 3) +
+    year_f +
+   # level +
+    s(plot_id, bs = "re"),
+  data = filter(both_levels_re2, level == 'plot'),
+  family = tw(link = "log"),
+  method = "REML"
+)
 
-gam_mean_hgt_intensity02_int1 <- gam(
+gam_mean_hgt_intensity02_int1_sub <- gam(
   mean_hgt ~ 
     s(planting_intensity, k = 3) +
     s(anti_browsing_intensity, k = 3) +
@@ -2030,9 +2206,9 @@ gam_mean_hgt_intensity02_int1 <- gam(
     s(time_snc_full_disturbance, k = 7) +
     s(grndwrk_intensity, k = 3) +
     year_f +
-    #level +
+    # level +
     s(plot_id, bs = "re"),
-  data = both_levels_re2,
+  data = filter(both_levels_re2, level == 'subplot'),
   family = tw(link = "log"),
   method = "REML"
 )
@@ -2078,10 +2254,21 @@ AIC(gam_mean_hgt_intensity02_int1,
   gam_mean_hgt_intensity0,
   gam_mean_hgt_intensity_base)
 
-fin.m.hgt <- gam_mean_hgt_intensity02_int1
+fin.m.hgt <- gam_mean_hgt_intensity02_int1_plot#gam_mean_hgt_intensity02_int1
 
+vis.gam(
+  fin.m.hgt,
+  view = c("planting_intensity", "anti_browsing_intensity"), 
+  plot.type = "contour",
+  theta = 30, phi = 30, # viewing angle
+  color = "terrain",
+  main = "Interaction: Planting x Anti-browsing",
+  xlab = "Planting intensity",
+  ylab = "Anti-browsing intensity",
+  zlab = "Partial effect"
+)
 out_pred <- ggpredict(fin.m.hgt ,
-          terms = 'time_snc_full_disturbance',
+          terms = 'planting_intensity',
           condition = list(level = "plot")) 
 
 plot(out_pred)
@@ -2167,7 +2354,39 @@ gam_cv_hgt_bin_intensity_re_int1 <- gam(
   method = "REML",
   family = binomial(link = "logit")
 )
-fin.m.cv.bin <- gam_cv_hgt_bin_intensity_re_int1
+
+gam_cv_hgt_bin_intensity_re_int1_plot <- gam(
+  cv_hgt_present ~
+    s(time_snc_full_disturbance, k = 7) +
+    s(planting_intensity, k = 3) +
+    s(anti_browsing_intensity, k = 3) +
+    ti(planting_intensity, anti_browsing_intensity) +
+    s(grndwrk_intensity, k = 3) +
+    #level +
+    year_f +
+    s(plot_id, bs = "re"),
+  data = filter(both_levels_re2, level == 'plot'),
+  method = "REML",
+  family = binomial(link = "logit")
+)
+
+gam_cv_hgt_bin_intensity_re_int1_sub <- gam(
+  cv_hgt_present ~
+    s(time_snc_full_disturbance, k = 7) +
+    s(planting_intensity, k = 3) +
+    s(anti_browsing_intensity, k = 3) +
+    ti(planting_intensity, anti_browsing_intensity) +
+    s(grndwrk_intensity, k = 3) +
+    #level +
+    year_f +
+    s(plot_id, bs = "re"),
+  data = filter(both_levels_re2, level == 'subplot'),
+  method = "REML",
+  family = binomial(link = "logit")
+)
+
+
+fin.m.cv.bin <- gam_cv_hgt_bin_intensity_re_int1_plot#gam_cv_hgt_bin_intensity_re_int1
 
 AIC(gam_cv_hgt_bin_intensity_re, gam_cv_hgt_bin_intensity_base, gam_cv_hgt_bin_intensity_re_int1)
 draw(gam_cv_hgt_bin_intensity_re_int1)
@@ -2176,27 +2395,190 @@ draw(gam_cv_hgt_bin_intensity_re_int1)
 ##### CV Height (Positive Part) -----------
 
 
-
-
-gam_cv_hgt_pos_intensity <- gam(
+gam_cv_hgt_pos_base <- gam(
   cv_hgt_pos ~
     s(planting_intensity, k = 3) +
     s(anti_browsing_intensity, k = 3) +
     s(time_snc_full_disturbance, k = 7) +
-    ti(planting_intensity, anti_browsing_intensity) +
+   # ti(planting_intensity, anti_browsing_intensity) +
     s(grndwrk_intensity, k = 3) +
     level +
-    year_f +
-    s(plot_id, bs = "re"),
+    year_f , #+
+   # s(plot_id, bs = "re"),
   data = subset(both_levels_re2, cv_hgt > 0),
   method = "REML",
   family = tw(link = "log")
 )
-draw(gam_cv_hgt_pos_intensity)
-summary(gam_cv_hgt_pos_intensity)
+
+gam_cv_hgt_pos_base_plot <- gam(
+  cv_hgt_pos ~
+    s(planting_intensity, k = 3) +
+    s(anti_browsing_intensity, k = 3) +
+    s(time_snc_full_disturbance, k = 7) +
+    # ti(planting_intensity, anti_browsing_intensity) +
+    s(grndwrk_intensity, k = 3) +
+    #level +
+    year_f , #+
+  # s(plot_id, bs = "re"),
+  data = df_plot_clean,
+  method = "REML",
+  family = tw(link = "log")
+)
+
+gam_cv_hgt_pos_base_sub <- gam(
+  cv_hgt_pos ~
+    s(planting_intensity, k = 3) +
+    s(anti_browsing_intensity, k = 3) +
+    s(time_snc_full_disturbance, k = 7) +
+    # ti(planting_intensity, anti_browsing_intensity) +
+    s(grndwrk_intensity, k = 3) +
+    #level +
+    year_f , #+
+  # s(plot_id, bs = "re"),
+  data = df_sub_clean,
+  method = "REML",
+  family = tw(link = "log")
+)
+
+gam_cv_hgt_pos_re <- gam(
+  cv_hgt_pos ~
+    s(planting_intensity, k = 3) +
+    s(anti_browsing_intensity, k = 3) +
+    s(time_snc_full_disturbance, k = 7) +
+    # ti(planting_intensity, anti_browsing_intensity) +
+    s(grndwrk_intensity, k = 3) +
+    level +
+    year_f +
+   s(plot_id, bs = "re"),
+  data = subset(both_levels_re2, cv_hgt > 0, sp_richness > 1),
+  method = "REML",
+  family = tw(link = "log")
+)
+AIC(gam_cv_hgt_pos_base, gam_cv_hgt_pos_re)
+# get data for plot and subplot 
+df_plot_clean <- both_levels_re2 %>% 
+  filter( level == 'plot')
+
+df_sub_clean <- both_levels_re2 %>% 
+  filter( level == 'subplot')
+
+gam_cv_hgt_pos_re_plot <- gam(
+  cv_hgt_pos ~
+    s(planting_intensity, k = 3) +
+    s(anti_browsing_intensity, k = 3) +
+    s(time_snc_full_disturbance, k = 7) +
+    # ti(planting_intensity, anti_browsing_intensity) +
+    s(grndwrk_intensity, k = 3) +
+   # level +
+    year_f +
+    s(plot_id, bs = "re"),
+  data = df_plot_clean,
+  method = "REML",
+  family = tw(link = "log")
+)
+
+
+gam_cv_hgt_pos_re_sub <- gam(
+  cv_hgt_pos ~
+    s(planting_intensity, k = 3) +
+    s(anti_browsing_intensity, k = 3) +
+    s(time_snc_full_disturbance, k = 7) +
+    # ti(planting_intensity, anti_browsing_intensity) +
+    s(grndwrk_intensity, k = 3) +
+    # level +
+    year_f +
+    s(plot_id, bs = "re"),
+  data = df_sub_clean,
+  method = "REML",
+  family = tw(link = "log")
+)
+
+AIC(gam_cv_hgt_pos_re, gam_cv_hgt_pos_re_lev)
+
+gam_cv_hgt_pos_re_lev <- gam(
+  cv_hgt_pos ~ 
+    s(time_snc_full_disturbance, by = level, k = 7) +
+    s(planting_intensity,  k = 3) +  
+    s(anti_browsing_intensity, k = 3) +  
+    s(grndwrk_intensity, k = 3) + 
+    level +  # include the parametric effect
+    year_f +
+    s(plot_id, bs = "re"),
+  data = subset(both_levels_re2, cv_hgt > 0, sp_richness > 1),
+  family = tw(link = "log"),
+  method = "REML"
+)
+
+
+gam_cv_hgt_pos_re_lev_int1 <- gam(
+  cv_hgt_pos ~ 
+    s(time_snc_full_disturbance, by = level, k = 7) +
+    s(planting_intensity,  k = 3) +  
+    s(anti_browsing_intensity, k = 3) +  
+    s(grndwrk_intensity, k = 3) + 
+    ti(planting_intensity,anti_browsing_intensity) + 
+    level +  # include the parametric effect
+    year_f +
+    s(plot_id, bs = "re"),
+  data = subset(both_levels_re2, cv_hgt > 0, sp_richness > 1),
+  family = tw(link = "log"),
+  method = "REML"
+)
+AIC(gam_cv_hgt_pos_re_lev, gam_cv_hgt_pos_re, gam_cv_hgt_pos_re_lev_int1)
+draw(gam_cv_hgt_pos_re)
+
+fin.m.cv.pos <- gam_cv_hgt_pos_base_plot #gam_cv_hgt_pos_re
 
 ##### Species Diversity (Effective Number) -----------
-gam_effective_intensity <- gam(
+
+gam_effective_intensity_base <- gam(
+  effective_numbers ~
+    s(planting_intensity, k = 3) +
+    s(anti_browsing_intensity, k = 3) +
+    s(time_snc_full_disturbance, k = 7) +
+    #ti(planting_intensity, anti_browsing_intensity) +
+    s(grndwrk_intensity, k = 3) +
+    level +
+    year_f ,#+
+    #s(plot_id, bs = "re"),
+  data = both_levels_re2,
+  method = "REML",
+  family = tw() #Gamma(link = "log")
+)
+
+
+gam_effective_intensity_re <- gam(
+  effective_numbers ~
+    s(planting_intensity, k = 3) +
+    s(anti_browsing_intensity, k = 3) +
+    s(time_snc_full_disturbance, k = 7) +
+    #ti(planting_intensity, anti_browsing_intensity) +
+    s(grndwrk_intensity, k = 3) +
+    level +
+    year_f +
+  s(plot_id, bs = "re"),
+  data = both_levels_re2,
+  method = "REML",
+  family = tw(link = "log")
+)
+
+gam_effective_intensity_re_lev <- gam(
+  effective_numbers ~
+    s(planting_intensity, k = 3) +
+    s(anti_browsing_intensity, k = 3) +
+    s(time_snc_full_disturbance, by = level, k = 7) +
+    #ti(planting_intensity, anti_browsing_intensity) +
+    s(grndwrk_intensity, k = 3) +
+    level +
+    year_f +
+    s(plot_id, bs = "re"),
+  data = both_levels_re2,
+  method = "REML",
+  family = tw(link = "log")
+)
+
+
+gam_effective_intensity_re_int1 <- gam(
   effective_numbers ~
     s(planting_intensity, k = 3) +
     s(anti_browsing_intensity, k = 3) +
@@ -2208,8 +2590,60 @@ gam_effective_intensity <- gam(
     s(plot_id, bs = "re"),
   data = both_levels_re2,
   method = "REML",
-  family = Gamma(link = "log")
+  family = tw(link = "log")
 )
+
+gam_effective_intensity_re_int1_plot <- gam(
+  effective_numbers ~
+    s(planting_intensity, k = 3) +
+    s(anti_browsing_intensity, k = 3) +
+    s(time_snc_full_disturbance, k = 7) +
+    ti(planting_intensity, anti_browsing_intensity) +
+    s(grndwrk_intensity, k = 3) +
+    #level +
+    year_f +
+    s(plot_id, bs = "re"),
+  data = df_plot_clean, #both_levels_re2,
+  method = "REML",
+  family = tw(link = "log")
+)
+
+gam_effective_intensity_re_int1_sub <- gam(
+  effective_numbers ~
+    s(planting_intensity, k = 3) +
+    s(anti_browsing_intensity, k = 3) +
+    s(time_snc_full_disturbance, k = 7) +
+    ti(planting_intensity, anti_browsing_intensity) +
+    s(grndwrk_intensity, k = 3) +
+    #level +
+    year_f +
+    s(plot_id, bs = "re"),
+  data = df_sub_clean, #both_levels_re2,
+  method = "REML",
+  family = tw(link = "log")
+)
+
+gam_effective_intensity_re_int2 <- gam(
+  effective_numbers ~
+    s(planting_intensity, k = 3) +
+    s(anti_browsing_intensity, k = 3) +
+    s(time_snc_full_disturbance, k = 7) +
+    ti(planting_intensity, grndwrk_intensity) +
+    s(grndwrk_intensity, k = 3) +
+    level +
+    year_f +
+    s(plot_id, bs = "re"),
+  data = both_levels_re2,
+  method = "REML",
+  family = tw(link = "log")
+)
+AIC(gam_effective_intensity_re, gam_effective_intensity_base, 
+    gam_effective_intensity_re_lev_int1,
+    gam_effective_intensity_re_lev_int2)
+
+summary(gam_effective_intensity_re)
+
+fin.m.eff <- gam_effective_intensity_re_lev_int1
 
 
 ##### Species Richness -----------
@@ -2217,7 +2651,7 @@ gam_richness_intensity <- gam(
   sp_richness ~
     s(planting_intensity, k = 3) +
     s(anti_browsing_intensity, k = 3) +
-    s(time_snc_full_disturbance, k = 3) +
+    s(time_snc_full_disturbance, k = 7) +
     ti(planting_intensity, anti_browsing_intensity) +
     s(grndwrk_intensity, k = 3) +
     level +
@@ -2229,9 +2663,25 @@ gam_richness_intensity <- gam(
 )
 
 
+gam_richness_intensity_nb <- gam(
+  sp_richness ~
+    s(planting_intensity, k = 3) +
+    s(anti_browsing_intensity, k = 3) +
+    s(time_snc_full_disturbance, k = 7) +
+    ti(planting_intensity, anti_browsing_intensity) +
+    s(grndwrk_intensity, k = 4) +
+    level +
+    year_f +
+    s(plot_id, bs = "re"),
+  data = both_levels_re2,
+  method = "REML",
+  family = nb(link = "log")
+)
+fin.m.rich <- gam_richness_intensity_nb
+
 ##### Summaries and Export -----------
-summary(gam_mean_hgt_intensity)
-appraise(gam_mean_hgt_intensity)
+summary(fin.m.hgt)
+appraise(fin.m.hgt)
 
 summary(gam_cv_hgt_bin_intensity)
 appraise(gam_cv_hgt_bin_intensity)
