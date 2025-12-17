@@ -2677,7 +2677,7 @@ gam_richness_intensity_nb <- gam(
   method = "REML",
   family = nb(link = "log")
 )
-
+vis.gam(gam_richness_intensity_nb)
 gam_richness_intensity_nb_plot <- gam(
   sp_richness ~
     s(planting_intensity, k = 3) +
