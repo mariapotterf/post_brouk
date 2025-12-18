@@ -1982,13 +1982,17 @@ model_intensity_all_df_pct <- model_intensity_all_df %>%
     lower_pct = (exp(lower) - 1) * 100,
     upper_pct = (exp(upper) - 1) * 100,
     
-    p_signif = case_when(
-      p.value <= 0.001 ~ "***",
-      p.value <= 0.01  ~ "**",
-      p.value <= 0.05  ~ "*",
-      TRUE             ~ "n.s."
-    )
-  )
+    # p_signif = case_when(
+    #   p.value <= 0.001 ~ "***",
+    #   p.value <= 0.01  ~ "**",
+    #   p.value <= 0.05  ~ "*",
+    #   TRUE             ~ "n.s."
+    # ),
+    # format p-values: max 3 decimals, always shown
+    p_label = paste0(
+      "",
+      formatC(p.value, format = "f", digits = 3)
+  ))
 
 # Filter to include only management terms (not year or level)
 management_terms <- c("Planting", "Anti-browsing", 
@@ -2002,18 +2006,19 @@ p_model_response <-ggplot(model_intensity_all_df_pct_mng,
        aes(x = term, y = estimate_pct, fill = term)) +
   geom_hline(yintercept = 0, color = "gray40", linewidth = 0.5) +
   geom_col(position = "dodge", width = 0.7) +
-  geom_errorbar(aes(ymin = lower_pct, ymax = upper_pct), width = 0.15, linewidth = 0.5) +
+  geom_errorbar(aes(ymin = lower_pct, ymax = upper_pct), 
+                width = 0.15, linewidth = 0.5) +
   facet_wrap(~ response, ncol = 4) +
   theme_classic(base_size = 9) +
   scale_fill_brewer(palette = "Dark2") +
   # NEW: Add stars above bars
   geom_text(
-    aes(label = p_signif, 
+    aes(label = p_label, #p_signif, 
         y = ifelse(estimate_pct >= 0, 
                    upper_pct + 5, 
                    lower_pct - 14)),
     vjust = 0,
-    size = 3
+    size = 2.5
   ) +
   labs(
     x = "Management Intensity",
@@ -2030,7 +2035,7 @@ p_model_response <-ggplot(model_intensity_all_df_pct_mng,
 
 p_model_response
 
-ggsave('outFigs/p_model_response.png',,
+ggsave('outFigs/p_model_response.png',
        plot =  p_model_response, 
        width = 7, height = 5)
 
