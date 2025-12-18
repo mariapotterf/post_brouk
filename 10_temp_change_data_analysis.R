@@ -1874,134 +1874,8 @@ both_levels_re2 %>%
              y = mean_hgt)) +
   geom_boxplot()
 
-##### Bulk models: GAMs : identify main management drivers: intensities -------------------------
-
-# Build GAMs with continuous intensities
-models_intensity <- both_levels_re2 %>%
-  filter(level == "plot") %>%
-  {
-    list(
-      effective_numbers  = gam(effective_numbers ~ planting_intensity * anti_browsing_intensity + 
-                                 grndwrk_intensity +
-                               # s(year_f, bs = 're') +
-                                 s(plot_id, bs = "re"),
-                               data = ., family = tw(link = "log"), method = "REML"),
-      
-      sp_richness = gam(sp_richness ~ planting_intensity * anti_browsing_intensity + 
-                          grndwrk_intensity +
-                          #s(year_f, bs = 're') +
-                          s(plot_id, bs = "re"),
-                        data = ., family = nb(link = "log"), method = "REML"),
-      
-      mean_hgt    = gam(mean_hgt ~ planting_intensity * anti_browsing_intensity + grndwrk_intensity +
-                         # s(year_f, bs = 're') +
-                          s(plot_id, bs = "re"),
-                        data = ., family = tw(link = "log"), method = "REML"),
-      
-      cv_hgt      = gam(cv_hgt_pos ~ planting_intensity * anti_browsing_intensity + grndwrk_intensity +
-                         # s(year_f, bs = 're') +
-                          s(plot_id, bs = "re"),
-                        data = ., family = tw(link = "log"), method = "REML")
-    )
-  }
-library(broom)
-
-
-model_intensity_df <- map_dfr(models_intensity, tidy, parametric = TRUE, .id = "response") %>%
-  filter(term != "(Intercept)") %>%
-  mutate(
-    lower = estimate - 1.96 * std.error,
-    upper = estimate + 1.96 * std.error,
-    
-    # Add readable labels including interaction term
-    term = dplyr::recode(term,
-                         "planting_intensity" = "Planting",
-                         "anti_browsing_intensity" = "Anti-browsing",
-                         "grndwrk_intensity" = "Groundwork",
-                         "planting_intensity:anti_browsing_intensity" = "Planting × Anti-browsing",
-                         .default = term),
-    
-    response = dplyr::recode(response,
-                             "effective_numbers" = "Species diversity\n[Effective #]",
-                             "sp_richness"       = "Species richness\n[#]",
-                             "mean_hgt"          = "Mean height\n[m]",
-                             "cv_hgt"            = "Height variability\n[CV, %]",
-                             .default = response),
-    
-    estimate_adj = ifelse(abs(estimate) < 0.01, sign(estimate + 1e-6) * 0.01, estimate),
-    lower_adj = ifelse(abs(estimate) < 0.01, 0, lower),
-    upper_adj = ifelse(abs(estimate) < 0.01, 0, upper),
-    
-    response = factor(response, levels = c("Mean height\n[m]",
-                                           "Height variability\n[CV, %]",
-                                           "Species diversity\n[Effective #]",
-                                           "Species richness\n[#]"))
-  )
-
-###### convert effect sizes to percentage change ------------
-model_intensity_df_pct <- model_intensity_df %>%
-  mutate(
-    estimate_pct = (exp(estimate) - 1) * 100,
-    lower_pct = (exp(lower) - 1) * 100,
-    upper_pct = (exp(upper) - 1) * 100
-  )
-
-# add stars to classify p values
-model_intensity_df_pct <- model_intensity_df_pct %>%
-  mutate(
-    p_signif = case_when(
-      p.value <= 0.001 ~ "***",
-      p.value <= 0.01  ~ "**",
-      p.value <= 0.05  ~ "*",
-      TRUE             ~ "n.s."
-    )
-  )
-
-
-ggplot(model_intensity_df_pct, aes(x = term, y = estimate_pct, fill = term)) +
-  geom_hline(yintercept = 0, color = "gray40", linewidth = 0.5) +
-  geom_col(position = "dodge", width = 0.7) +
-  geom_errorbar(aes(ymin = lower_pct, ymax = upper_pct), width = 0.15, linewidth = 0.5) +
-  facet_wrap(~ response, ncol = 4) +
-  theme_classic(base_size = 9) +
-  scale_fill_brewer(palette = "Dark2") +
-  # NEW: Add stars above bars
-  geom_text(
-    aes(label = p_signif, 
-        y = ifelse(estimate_pct >= 0, 
-                                     upper_pct + 7, 
-                                     lower_pct - 10)),
-    vjust = 0,
-    size = 3
-  ) +
-  labs(
-    x = "Management Intensity",
-    y = "Effect on response (%)",
-    title = "Effect of Management Intensities on Forest Structure and Diversity"
-  ) +
-  theme(
-    legend.position = "none",
-    strip.text = element_text(size = 10),
-    axis.text.x = element_text(angle = 30, hjust = 1),
-    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.6),
-    panel.grid.major.y = element_line(color = "gray90", linewidth = 0.3)
-  )
-
-appraise(models_intensity[[1]])
-draw(models_intensity[[4]])
-plot.gam(models_intensity[[4]], page = 1)
 
 ### Models bulk & time since disturbvance --------------------------
-
-
-
-
-
-# model buld following best practice -------
-
-### Models bulk & time since disturbvance --------------------------
-
-
 
 # add time since disturbance
 models_intensity_all <- both_levels_re2 %>%
@@ -2077,7 +1951,7 @@ model_intensity_all_df <- map_dfr(models_intensity_all, tidy, parametric = TRUE,
                          "planting_intensity:anti_browsing_intensity" = "Planting × Anti-browsing",
                         # "levelplot" = "Level: Plot",
                          #"year_f2025" = "Year: 2025",
-                        #"time_snc_full_disturbance" = "Time since disturbance",
+                        "time_snc_full_disturbance" = "Time since disturbance",
                          .default = term
     ),
     
@@ -2117,12 +1991,15 @@ model_intensity_all_df_pct <- model_intensity_all_df %>%
   )
 
 # Filter to include only management terms (not year or level)
-management_terms <- c("Planting", "Anti-browsing", "Groundwork", "Planting × Anti-browsing")
+management_terms <- c("Planting", "Anti-browsing", 
+                      "Groundwork", "Planting × Anti-browsing",
+                      "Time since disturbance")
 
 model_intensity_all_df_pct_mng <- model_intensity_all_df_pct %>%
   filter(term %in% management_terms)
 
-ggplot(model_intensity_all_df_pct, aes(x = term, y = estimate_pct, fill = term)) +
+p_model_response <-ggplot(model_intensity_all_df_pct_mng, 
+       aes(x = term, y = estimate_pct, fill = term)) +
   geom_hline(yintercept = 0, color = "gray40", linewidth = 0.5) +
   geom_col(position = "dodge", width = 0.7) +
   geom_errorbar(aes(ymin = lower_pct, ymax = upper_pct), width = 0.15, linewidth = 0.5) +
@@ -2140,8 +2017,8 @@ ggplot(model_intensity_all_df_pct, aes(x = term, y = estimate_pct, fill = term))
   ) +
   labs(
     x = "Management Intensity",
-    y = "Effect on response (%)",
-    title = "Effect of Management Intensities on Forest Structure and Diversity"
+    y = "Effect on response [%]",
+    title = ""
   ) +
   theme(
     legend.position = "none",
@@ -2150,6 +2027,12 @@ ggplot(model_intensity_all_df_pct, aes(x = term, y = estimate_pct, fill = term))
     panel.border = element_rect(color = "black", fill = NA, linewidth = 0.6),
     panel.grid.major.y = element_line(color = "gray90", linewidth = 0.3)
   )
+
+p_model_response
+
+ggsave('outFigs/p_model_response.png',,
+       plot =  p_model_response, 
+       width = 7, height = 5)
 
 appraise(models_intensity_all[[4]])
 draw(models_intensity[[4]])
