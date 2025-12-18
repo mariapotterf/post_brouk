@@ -2739,8 +2739,20 @@ preds_hgt <- ggpredict(
 
 p_hgt <- plot(preds_hgt) +
   labs(y = "", x = "", title = "[a] Mean\nheight [m]") +
-  theme_classic(base_size = 9)
-
+  theme_classic(base_size = 9) +
+  coord_cartesian(ylim = c(0, 5)) +  # preserve data but fix visible y-range
+  scale_y_continuous(breaks = seq(0, 5, by = 2.5)) +
+  
+  annotate(
+    "text",
+    x = 4,
+    y = Inf,  # small padding above plo
+    label = "0.000",       # your p-value here
+    #hjust = 1.1,               # center from right
+    vjust = 1.5,               # slightly below top
+    size = 3
+  )
+p_hgt
 
 # 2️ CV binary
 pred_bin <- ggpredict(
@@ -2769,11 +2781,23 @@ pred_cv_combined <- left_join(pred_bin, pred_pos, by = c("x")) %>%
 p_cv <- ggplot(pred_cv_combined,
                aes(x = x, y = expected_cv * 100)) +
   geom_ribbon(aes(ymin = lower * 100, ymax = upper * 100), alpha = 0.2, colour = NA) +
-  geom_line(linewidth = 0.9) +
+  geom_line(linewidth = 0.7) +
   labs(y = "", x = "", title = "[b] Height\nvariability [CV, %]") +
   theme_classic(base_size = 9) +
-  theme(legend.position = "none")
-
+  theme(legend.position = "none") +
+  coord_cartesian(ylim = c(0, 100)) +  # preserve data but fix visible y-range
+  scale_y_continuous(breaks = seq(0, 100, by = 25)) +
+  
+  annotate(
+    "text",
+    x = 4,
+    y = Inf,  # small padding above plo
+    label = "0.938",       # your p-value here
+    #hjust = 1.1,               # center from right
+    vjust = 1.5,               # slightly below top
+    size = 3
+  )
+p_cv
 
 #  Effective species number
 preds_eff <- ggpredict(
@@ -2783,8 +2807,18 @@ preds_eff <- ggpredict(
 )
 
 p_eff <- plot(preds_eff) +
-  labs(y = "", x = "", title = "[c] Effective\ndiversity") +
-  theme_classic(base_size = 9)
+  labs(y = "", x = "", title = "[c] Effective\nspecies [#]") +
+  scale_y_continuous(breaks = seq(0, 10, by = 2)) +
+  theme_classic(base_size = 9) +
+  annotate(
+    "text",
+    x = 4,
+    y = Inf,  # small padding above plo
+    label = "0.471",       # your p-value here
+    #hjust = 1.1,               # center from right
+    vjust = 1.5,               # slightly below top
+    size = 3
+  )
 
 
 # Species richness
@@ -2796,27 +2830,45 @@ preds_rich <- ggpredict(
 
 p_rich <- plot(preds_rich) +
   labs(y = "", x = "", title = "[d] Species\nrichness [#]") +
-  theme_classic(base_size = 9)
-
+  coord_cartesian(ylim = c(0, 10)) +  # preserve data but fix visible y-range
+  scale_y_continuous(breaks = seq(0, 10, by = 2)) +
+  
+  theme_classic(base_size = 9) +
+  annotate(
+    "text",
+    x = 4,
+    y = Inf,  # small padding above plo
+    label = "0.872",       # your p-value here
+    #hjust = 1.1,               # center from right
+    vjust = 1.5,               # slightly below top
+    size = 3
+  )
+p_rich
 
 combined_plot <- ggarrange(
   p_hgt, p_cv,
   p_eff, p_rich,
 #  labels = c("[a]", "[b]", "[c]", "[d]"),
-  ncol = 2, nrow = 2,
+  ncol = 4, nrow = 1,
   align = "hv",
   common.legend = TRUE,
   legend = "top",
-  font.label = list(size = 11, face = "plain", color = "black"),
+  font.label = list(size = 9, face = "plain", color = "black"),
   label.x = 0.1,
   label.y = 0.95
 )
 
 # Optional: annotate bottom
-annotate_figure(
+p_time <- annotate_figure(
   combined_plot,
-  bottom = text_grob("Years since disturbance", size = 11, face = "plain")
+  bottom = text_grob("Years since disturbance", size = 10, face = "plain")
 )
+
+p_time
+
+ggsave('outFigs/time_since.png',
+       p_time, 
+       width = 7, height = 2.5)
 
 ###### Plot for planting and anti-browsing intensity --------------------
 
