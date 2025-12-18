@@ -1874,7 +1874,7 @@ both_levels_re2 %>%
              y = mean_hgt)) +
   geom_boxplot()
 
-##### GAMs : identify main management drivers: intensities -------------------------
+##### Bulk models: GAMs : identify main management drivers: intensities -------------------------
 
 # Build GAMs with continuous intensities
 models_intensity <- both_levels_re2 %>%
@@ -1883,23 +1883,23 @@ models_intensity <- both_levels_re2 %>%
     list(
       effective_numbers  = gam(effective_numbers ~ planting_intensity * anti_browsing_intensity + 
                                  grndwrk_intensity +
-                                s(year_f, bs = 're') +
+                               # s(year_f, bs = 're') +
                                  s(plot_id, bs = "re"),
                                data = ., family = tw(link = "log"), method = "REML"),
       
       sp_richness = gam(sp_richness ~ planting_intensity * anti_browsing_intensity + 
                           grndwrk_intensity +
-                          s(year_f, bs = 're') +
+                          #s(year_f, bs = 're') +
                           s(plot_id, bs = "re"),
                         data = ., family = nb(link = "log"), method = "REML"),
       
       mean_hgt    = gam(mean_hgt ~ planting_intensity * anti_browsing_intensity + grndwrk_intensity +
-                          s(year_f, bs = 're') +
+                         # s(year_f, bs = 're') +
                           s(plot_id, bs = "re"),
                         data = ., family = tw(link = "log"), method = "REML"),
       
       cv_hgt      = gam(cv_hgt_pos ~ planting_intensity * anti_browsing_intensity + grndwrk_intensity +
-                          s(year_f, bs = 're') +
+                         # s(year_f, bs = 're') +
                           s(plot_id, bs = "re"),
                         data = ., family = tw(link = "log"), method = "REML")
     )
@@ -1995,51 +1995,70 @@ plot.gam(models_intensity[[4]], page = 1)
 
 
 
+
+
+# model buld following best practice -------
+
+### Models bulk & time since disturbvance --------------------------
+
+
+
 # add time since disturbance
 models_intensity_all <- both_levels_re2 %>%
+  #filter(level == "plot") %>%
   {
     list(
       effective_numbers = gam(
         effective_numbers ~ planting_intensity * anti_browsing_intensity + 
           grndwrk_intensity +
-          s(time_snc_full_disturbance, k = 7) +
-          s(plot_id, bs = "re") + 
-          level +
-          year_f,
-        data = ., family = tw(link = "log"), method = "REML"
+          #time_snc_full_disturbance +
+          # s(time_snc_full_disturbance, k = 7) +
+          s(plot_id, bs = "re")# + 
+          # level +
+        #  year_f
+        ,
+        data = both_levels_re2 %>% filter(level == "plot") , 
+        family = nb(link = "log"), method = "REML"
       ),
       
       sp_richness = gam(
         sp_richness ~ planting_intensity * anti_browsing_intensity + 
           grndwrk_intensity +
-          s(time_snc_full_disturbance, k = 7) +
+          #time_snc_full_disturbance +
+          # s(time_snc_full_disturbance, k = 7) +
           s(plot_id, bs = "re") + 
           level +
           year_f,
-        data = ., family = nb(link = "log"), method = "REML"
+        data = both_levels_re2, family = nb(link = "log"), method = "REML"
       ),
       
       mean_hgt = gam(
         mean_hgt ~ planting_intensity * anti_browsing_intensity + 
           grndwrk_intensity +
+          #time_snc_full_disturbance+
           s(time_snc_full_disturbance, k = 7) +
           s(plot_id, bs = "re") + 
-          level +
+          #level +
           year_f,
-        data = ., family = tw(link = "log"), method = "REML"
+        data = both_levels_re2 %>% filter(level == "plot") , family = tw(link = "log"), method = "REML"
       ),
       
       cv_hgt = gam(
         cv_hgt_pos ~ planting_intensity * anti_browsing_intensity + 
           grndwrk_intensity +
+          #time_snc_full_disturbance +
           s(time_snc_full_disturbance, k = 7) +
           s(plot_id, bs = "re") + 
-          level +
+          # level +
           year_f,
-        data = subset(both_levels_re2, cv_hgt > 0), family = tw(link = "log"), method = "REML"
+        data = subset(both_levels_re2, cv_hgt > 0), family = tw(link = "log"), 
+        method = "REML"
       )
     )
   }
+
+
+
 
 summary(models_intensity_all$cv_hgt)
 
@@ -2056,8 +2075,9 @@ model_intensity_all_df <- map_dfr(models_intensity_all, tidy, parametric = TRUE,
                          "anti_browsing_intensity" = "Anti-browsing",
                          "grndwrk_intensity" = "Groundwork",
                          "planting_intensity:anti_browsing_intensity" = "Planting × Anti-browsing",
-                         "levelplot" = "Level: Plot",
-                         "year_f2025" = "Year: 2025",
+                        # "levelplot" = "Level: Plot",
+                         #"year_f2025" = "Year: 2025",
+                        #"time_snc_full_disturbance" = "Time since disturbance",
                          .default = term
     ),
     
@@ -2102,7 +2122,7 @@ management_terms <- c("Planting", "Anti-browsing", "Groundwork", "Planting × An
 model_intensity_all_df_pct_mng <- model_intensity_all_df_pct %>%
   filter(term %in% management_terms)
 
-ggplot(model_intensity_all_df_pct_mng, aes(x = term, y = estimate_pct, fill = term)) +
+ggplot(model_intensity_all_df_pct, aes(x = term, y = estimate_pct, fill = term)) +
   geom_hline(yintercept = 0, color = "gray40", linewidth = 0.5) +
   geom_col(position = "dodge", width = 0.7) +
   geom_errorbar(aes(ymin = lower_pct, ymax = upper_pct), width = 0.15, linewidth = 0.5) +
@@ -2113,8 +2133,8 @@ ggplot(model_intensity_all_df_pct_mng, aes(x = term, y = estimate_pct, fill = te
   geom_text(
     aes(label = p_signif, 
         y = ifelse(estimate_pct >= 0, 
-                   upper_pct + 7, 
-                   lower_pct - 10)),
+                   upper_pct + 5, 
+                   lower_pct - 14)),
     vjust = 0,
     size = 3
   ) +
@@ -2138,8 +2158,26 @@ plot.gam(models_intensity[[4]], page = 1)
 
 
 
-### GAM management interaction + time since disturbance smooths --------------
-#### Mean height -----------------------------------------------------
+#### GAM management interaction + time since disturbance smooths --------------
+##### Mean height -----------------------------------------------------
+gam_mean_hgt_intensity_base <- gam(
+  mean_hgt ~ 
+    #s(planting_intensity, k = 3) +
+    #s(anti_browsing_intensity, k = 3) +
+    #ti(planting_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
+    s(time_snc_full_disturbance, k = 5) +
+   # s(grndwrk_intensity, k = 3) +
+    year_f +
+    level +
+    s(plot_id, bs = "re")
+  ,
+  data = both_levels_re2,
+  family = tw(link = "log"),
+  method = "REML"
+)
+
+
+
 
 gam_mean_hgt_intensity_base <- gam(
   mean_hgt ~ 
@@ -2186,7 +2224,7 @@ gam_mean_hgt_intensity02_int1_plot <- gam(
     ti(planting_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
     #ti(grndwrk_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
     
-    s(time_snc_full_disturbance, k = 4) +
+    s(time_snc_full_disturbance, by = year_f, k = 4) +
     s(grndwrk_intensity, k = 3) +
     year_f +
    # level +
@@ -2195,6 +2233,29 @@ gam_mean_hgt_intensity02_int1_plot <- gam(
   family = tw(link = "log"),
   method = "REML"
 )
+
+
+gam_mean_hgt_intensity02_int1_plot2 <- gam(
+  mean_hgt ~ 
+    s(planting_intensity, k = 3) +
+    s(anti_browsing_intensity, k = 3) +
+    ti(planting_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
+    #ti(grndwrk_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
+    
+    s(time_snc_full_disturbance, by = year_f, k = 4) +
+    s(grndwrk_intensity, k = 3) +
+    year_f +
+    # level +
+    s(plot_id, bs = "re"),
+  data = filter(both_levels_re2, level == 'plot'),
+  family = tw(link = "log"),
+  method = "REML"
+)
+
+pp <- ggpredict(gam_mean_hgt_intensity02_int1_plot, 
+          'time_snc_full_disturbance')
+
+plot(pp)
 
 gam_mean_hgt_intensity02_int1_sub <- gam(
   mean_hgt ~ 
@@ -2273,6 +2334,14 @@ out_pred <- ggpredict(fin.m.hgt ,
 
 plot(out_pred)
 
+# height 
+
+plt <- ggpredict(
+  fin.m.hgt,
+  terms = c("time_snc_full_disturbance [all]"),
+  condition = list(level = "plot")
+) #%>%
+plot(plt)
 plt <- ggpredict(
   fin.m.hgt,
   terms = c("planting_intensity [all]"),
@@ -2295,19 +2364,59 @@ plt <- ggpredict(
 plot(plt)
 
 
-vis.gam(
-  fin.m.hgt,
-  view = c("planting_intensity", "anti_browsing_intensity"),
-  plot.type = "contour", #""
-  #plot.type = "persp", #""
-  color = "terrain",
-  too.far = 0.3,
-  n.grid = 100,  # default is 30; increase for smoother surface
-  main = "Mean Height",
-  type = 'response'
-)
 
-#### GAMs with continuous intensity variables and interaction ----
+
+
+
+
+
+plt <- ggpredict(
+  fin.m.rich,
+  terms = c("planting_intensity [all]"),
+  condition = list(level = "plot")
+) #%>%
+plot(plt)
+
+plt <- ggpredict(
+  fin.m.rich,
+  terms = c("anti_browsing_intensity [all]"),
+  condition = list(level = "plot")
+) #%>%
+plot(plt)
+
+plt <- ggpredict(
+  fin.m.rich,
+  terms = c("grndwrk_intensity [all]"),
+  condition = list(level = "plot")
+) #%>%
+plot(plt)
+
+# effiecinet 
+
+plt <- ggpredict(
+  fin.m.eff,
+  terms = c("planting_intensity [all]"),
+  condition = list(level = "plot")
+) #%>%
+plot(plt)
+
+plt <- ggpredict(
+  fin.m.eff,
+  terms = c("anti_browsing_intensity [all]"),
+  condition = list(level = "plot")
+) #%>%
+plot(plt)
+
+plt <- ggpredict(
+  fin.m.eff,
+  terms = c("grndwrk_intensity [all]"),
+  condition = list(level = "plot")
+) #%>%
+plot(plt)
+
+
+
+##### CV hgt bin  ----
 gam_cv_hgt_bin_intensity_base <- gam(
   cv_hgt_present ~
     s(time_snc_full_disturbance, k = 7) +
@@ -2455,6 +2564,7 @@ gam_cv_hgt_pos_re <- gam(
   family = tw(link = "log")
 )
 AIC(gam_cv_hgt_pos_base, gam_cv_hgt_pos_re)
+
 # get data for plot and subplot 
 df_plot_clean <- both_levels_re2 %>% 
   filter( level == 'plot')
@@ -2715,17 +2825,17 @@ fin.m.rich <- gam_richness_intensity_nb
 summary(fin.m.hgt)
 appraise(fin.m.hgt)
 
-summary(gam_cv_hgt_bin_intensity)
-appraise(gam_cv_hgt_bin_intensity)
+summary(fin.m.cv.bin)
+appraise(fin.m.cv.bin)
 
-summary(gam_cv_hgt_pos_intensity)
-appraise(gam_cv_hgt_pos_intensity)
+summary(fin.m.cv.pos)
+appraise(fin.m.cv.pos)
 
-summary(gam_effective_intensity)
-appraise(gam_effective_intensity)
+summary(fin.m.eff)
+appraise(fin.m.eff)
 
-summary(gam_richness_intensity)
-appraise(gam_richness_intensity)
+summary(fin.m.rich)
+appraise(fin.m.rich)
 
 
 
@@ -2734,7 +2844,7 @@ appraise(gam_richness_intensity)
 #### Time since disturbance  ----------------------------
 #  Mean height
 preds_hgt <- ggpredict(
-  gam_mean_hgt_intensity,
+  fin.m.hgt,
   terms = c("time_snc_full_disturbance"),
   condition = list(level = "plot")
 )
@@ -2746,7 +2856,7 @@ p_hgt <- plot(preds_hgt) +
 
 # 2️ CV binary
 pred_bin <- ggpredict(
-  gam_cv_hgt_bin_intensity,
+  fin.m.cv.bin,
   terms = c("time_snc_full_disturbance"),
   condition = list(level = "plot")
 ) %>%
@@ -2754,7 +2864,7 @@ pred_bin <- ggpredict(
 
 #  CV positive
 pred_pos <- ggpredict(
-  gam_cv_hgt_pos_intensity,
+  fin.m.cv.pos,
   terms = c("time_snc_full_disturbance"),
   condition = list(level = "plot")
 ) %>%
@@ -2779,7 +2889,7 @@ p_cv <- ggplot(pred_cv_combined,
 
 #  Effective species number
 preds_eff <- ggpredict(
-  gam_effective_intensity,
+  fin.m.eff,
   terms = c("time_snc_full_disturbance"),
   condition = list(level = "plot")
 )
@@ -2791,7 +2901,7 @@ p_eff <- plot(preds_eff) +
 
 # Species richness
 preds_rich <- ggpredict(
-  gam_richness_intensity,
+  fin.m.rich,
   terms = c("time_snc_full_disturbance"),
   condition = list(level = "plot")
 )
@@ -2831,7 +2941,7 @@ pred_seq <- seq(0, 1, by = 0.05)
 # )
 ### average height
 pred_hgt_plant <- ggpredict(
-  gam_mean_hgt_intensity,
+  fin.m.hgt,
   terms = "planting_intensity [pred_seq]",
   condition = list(level = "plot")
 ) %>% 
@@ -2839,18 +2949,19 @@ pred_hgt_plant <- ggpredict(
   mutate(variable = "Planting")
 
 pred_hgt_brow <- ggpredict(
-  gam_mean_hgt_intensity,
+  fin.m.hgt,
   terms = "anti_browsing_intensity [pred_seq]",
   condition = list(level = "plot")) %>% 
   as.data.frame()%>% 
   mutate(variable = "Anti-browsing")
 
 #plot(pred_hgt_brow)
-preds_hgt_combined <- bind_rows(pred_hgt_plant, pred_hgt_brow)
+preds_hgt_combined <- bind_rows(pred_hgt_plant, 
+                                pred_hgt_brow)
 
 #  CV binary - planting and anti-browsing
 pred_bin_planting <- ggpredict(
-  gam_cv_hgt_bin_intensity,
+  fin.m.cv.bin,
   terms = c("planting_intensity [pred_seq]"),
   condition = list(level = "plot")
 ) %>%
@@ -2859,7 +2970,7 @@ pred_bin_planting <- ggpredict(
   rename(prob = predicted, prob_low = conf.low, prob_high = conf.high)
 
 pred_bin_browsing <- ggpredict(
-  gam_cv_hgt_bin_intensity,
+  fin.m.cv.bin,
   terms = c("anti_browsing_intensity [pred_seq]"),
   condition = list(level = "plot")
 ) %>%
@@ -2872,7 +2983,7 @@ pred_bin_combined <- bind_rows(pred_bin_planting, pred_bin_browsing)
 
 # CV positive - planting and anti-browsing
 pred_pos_planting <- ggpredict(
-  gam_cv_hgt_pos_intensity,
+  fin.m.cv.pos,
   terms = c("planting_intensity [pred_seq]"),
   condition = list(level = "plot")
 ) %>%
@@ -2881,7 +2992,7 @@ pred_pos_planting <- ggpredict(
   rename(mean_pos = predicted, pos_low = conf.low, pos_high = conf.high)
 
 pred_pos_browsing <- ggpredict(
-  gam_cv_hgt_pos_intensity,
+  fin.m.cv.pos,
   terms = c("anti_browsing_intensity [pred_seq]"),
   condition = list(level = "plot")
 ) %>%
@@ -2892,7 +3003,7 @@ pred_pos_browsing <- ggpredict(
 pred_pos_combined <- bind_rows(pred_pos_planting, pred_pos_browsing)
 
 
-# 3️⃣ Combined CV expectations
+# Combined CV expectations
 pred_cv_combined <- left_join(
   pred_bin_combined %>% select(-std.error, -group),
   pred_pos_combined %>% select(-std.error, -group),
@@ -2905,9 +3016,9 @@ pred_cv_combined <- left_join(
   )
 
 
-# 4️⃣ Effective species number - planting and anti-browsing
+#  Effective species number - planting and anti-browsing
 preds_eff_planting <- ggpredict(
-  gam_effective_intensity,
+  fin.m.eff,
   terms = c("planting_intensity [pred_seq]"),
   condition = list(level = "plot")
 ) %>%
@@ -2915,7 +3026,7 @@ preds_eff_planting <- ggpredict(
   mutate(variable = "Planting")
 
 preds_eff_browsing <- ggpredict(
-  gam_effective_intensity,
+  fin.m.eff,
   terms = c("anti_browsing_intensity [pred_seq]"),
   condition = list(level = "plot")
 ) %>%
@@ -2925,9 +3036,9 @@ preds_eff_browsing <- ggpredict(
 preds_eff_combined <- bind_rows(preds_eff_planting, preds_eff_browsing)
 
 
-# 5️⃣ Species richness - planting and anti-browsing
+#  Species richness - planting and anti-browsing
 preds_rich_planting <- ggpredict(
-  gam_richness_intensity,
+  fin.m.rich,
   terms = c("planting_intensity [pred_seq]"),
   condition = list(level = "plot")
 ) %>%
@@ -2935,7 +3046,7 @@ preds_rich_planting <- ggpredict(
   mutate(variable = "Planting")
 
 preds_rich_browsing <- ggpredict(
-  gam_richness_intensity,
+  fin.m.rich,
   terms = c("anti_browsing_intensity [pred_seq]"),
   condition = list(level = "plot")
 ) %>%
@@ -2997,6 +3108,16 @@ ggarrange(p_hgt_int, p_cv_int, p_eff_int, p_rich_int, common.legend = T )
 
 
 ###### Collect all values from models -----------------------------
+library(tibble)
+
+fin.models <- list(
+  hgt   = fin.m.hgt,
+  cvbin = fin.m.cv.bin,
+  cvpos = fin.m.cv.pos,
+  eff   = fin.m.eff,
+  rich  = fin.m.rich
+)
+
 # Function to clean term names
 clean_term <- function(x) {
   x %>%
@@ -3082,6 +3203,79 @@ final_results <- left_join(metrics_df, pvals_signif, by = "model")
 
 # View
 View(final_results)
+
+
+# test to see effect sizes
+
+library(gratia)
+library(dplyr)
+library(purrr)
+library(tibble)
+library(stringr)
+
+# maybe remove?? 
+
+
+# Function to get effect size + direction for smooth terms
+summarize_smooth_effects <- function(model, model_name) {
+  smooths <- gratia::smooth_estimates(model) %>%
+    group_by(.smooth) %>%
+    summarise(
+      min_est = min(.estimate, na.rm = TRUE),
+      max_est = max(.estimate, na.rm = TRUE),
+      min_ci = min(.estimate - 2 * .se, na.rm = TRUE),
+      max_ci = max(.estimate + 2 * .se, na.rm = TRUE),
+      effect_range = max_est - min_est,
+      direction = case_when(
+        max_est > abs(min_est) ~ "positive",
+        abs(min_est) > max_est ~ "negative",
+        TRUE ~ "mixed/flat"
+      ),
+      model = model_name,
+      .groups = "drop"
+    )
+  return(smooths)
+}
+
+# Function to get parametric term effects
+summarize_parametric_effects <- function(model, model_name) {
+  s <- summary(model)
+  param <- as.data.frame(s$p.table) %>%
+    rownames_to_column("term") %>%
+    filter(term != "(Intercept)") %>%
+    transmute(
+      .smooth = term,
+      min_est = Estimate - 2 * `Std. Error`,
+      max_est = Estimate + 2 * `Std. Error`,
+      min_ci = min_est,
+      max_ci = max_est,
+      effect_range = abs(max_est - min_est),
+      direction = case_when(
+        Estimate > 0 ~ "positive",
+        Estimate < 0 ~ "negative",
+        TRUE ~ "neutral"
+      ),
+      model = model_name
+    )
+  return(param)
+}
+
+# Combine for one model
+extract_effects <- function(model, model_name) {
+  bind_rows(
+    summarize_parametric_effects(model, model_name),
+    summarize_smooth_effects(model, model_name)
+  )
+}
+
+# Apply to all models
+effect_sizes_all <- map2_dfr(fin.models, names(fin.models), extract_effects)
+
+# View
+print(effect_sizes_all)
+
+
+
 
 
 
