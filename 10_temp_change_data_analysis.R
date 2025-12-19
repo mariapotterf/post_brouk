@@ -572,7 +572,7 @@ dat_overlap_mng_upd <- bind_rows(dat_overlap_mng_rest,
                                  dat_overlap_mng_25)
 
 
-### Calculate intensity per plot & year - --------------------
+### Calculate intensity per plot & year --------------------
 # Collapse to one row per subplot (presence-based)
 mng_subplot <- dat_overlap_mng_upd %>%
   dplyr::select(plot, subplot, year, n_subplots, all_of(management_vars)) %>%
@@ -664,9 +664,9 @@ mng_sub_conv <-  mng_sub_props %>%
 
 activity_labels <- c(
   "clear" = "Salvage logging",
-  "grndwrk" = "Soil preparation",
+  "grndwrk" = "Soil\npreparation", # "Groundwork", #
   "planting" = "Planting",
-  "anti_browsing" = "Browsing protection",
+  "anti_browsing" = "Browsing\nprotection",
   "logging_trail" = "Logging trail"
 )
 
@@ -799,7 +799,7 @@ mng_shifted <- mng_sub_intensity %>%
 
 activity_intens_labels <- c(
   "clear_intensity" = "Salvage\nlogging",
-  "grndwrk_intensity" = "Soil\npreparation",
+  "grndwrk_intensity" =  "Soil\npreparation", #"Groundwork", 
   "planting_intensity" = "Planting",
   "anti_browsing_intensity" = "Browsing\nprotection"#,
   #"logging_trail_intensity" = "Logging trail"
@@ -858,8 +858,8 @@ p_management_intensity_plot <- mng_shifted %>%
 
 p_management_intensity_plot
 
-# Save as PNG
-ggsave("outFigs/mng_intensity_plot.png", plot = p_management_intensity_plot,
+# # Save as PNG
+ ggsave("outFigs/mng_intensity_plot.png", plot = p_management_intensity_plot,
        width = 5, height = 2.1, units = "in", dpi = 300)
 
 
@@ -867,6 +867,56 @@ ggsave("outFigs/mng_intensity_plot.png", plot = p_management_intensity_plot,
 
 
 ### Graphics: disturbance chars, species composition and management
+ 
+ 
+ # 1️⃣ Count combinations
+ combo_counts <- both_levels_re2 %>%
+   filter(level == "plot") %>%
+   count(planting_intensity, anti_browsing_intensity)  # gives n per combo
+ 
+ # density 2D plot - number of plots
+ p_density_mng <- both_levels_re2 %>%
+   filter(level == "plot") %>%
+   ggplot(aes(x = planting_intensity,
+              y = anti_browsing_intensity)) +
+   geom_density_2d_filled(contour_var = "ndensity")+
+   #facet_wrap(~year) +
+   #scale_fill_viridis_d(option = "inferno") +
+   #scale_fill_gradient(low = "grey90", high = "black")+
+   scale_fill_viridis_d(option = "magma", 
+                        begin = 0.2,
+                        direction = -1) +
+   geom_point(data = combo_counts, 
+              aes(x = planting_intensity, y = anti_browsing_intensity, 
+                  size = n), alpha = 0.9) +
+   scale_size_continuous(range = c(1, 8)) +
+   # geom_jitter(alpha = 0.5,
+   #             width = 0.02, height = 0.02) +
+   labs(
+     x = "Planting intensity",
+     y = "Anti-browsing intensity",
+     fill = "Density",
+     size = "Plots [#]"
+     #title = "Co-occurrence density of planting and anti-browsing"
+   ) +
+   theme_classic(base_size = 10) +
+   guides(
+     fill = guide_legend(ncol = 1),
+     size = guide_legend(ncol = 1)
+   ) +
+   theme(
+     legend.position = "right",
+     legend.box = "horizontal"
+   )
+ windows(width = 6,4)
+ p_density_mng
+ ggsave("outFigs/density_plot.png", 
+        plot = p_density_mng, 
+        width = 6, 
+        height = 4, 
+        units = "in", dpi = 300)
+ 
+ dev.off() 
 
 
 # Combine
@@ -897,7 +947,7 @@ ggsave("outFigs/combined_management_bin.png", plot = combined_management_bin,
 p_combined_management_intens <- ggarrange(
   #p_hist_dist_year, p_hist_time_since_dist,
   p_combined_disturb_fig,
-  p_management_intensity_plot,
+  p_management_intensity_plot,#p_density_mng,
   labels = c(" ", "[c]"),
   font.label = list(size = 10, face = 'plain'),
   ncol = 1, nrow = 2,
@@ -905,6 +955,8 @@ p_combined_management_intens <- ggarrange(
   widths = c(1,1.6),  
   heights = c(1.2,1.2)  
 )
+
+p_combined_management_intens
 
 windows(6,5)
 p_combined_management_intens
@@ -1620,54 +1672,7 @@ both_levels_re2 %>%
   geom_jitter() +
   geom_smooth(method = "lm", se = TRUE) 
 
-# 1️⃣ Count combinations
-combo_counts <- both_levels_re2 %>%
-  filter(level == "plot") %>%
-  count(planting_intensity, anti_browsing_intensity)  # gives n per combo
 
-# density 2D plot - number of plots
-p_density_mng <- both_levels_re2 %>%
-  filter(level == "plot") %>%
-  ggplot(aes(x = planting_intensity,
-             y = anti_browsing_intensity)) +
-  geom_density_2d_filled(contour_var = "ndensity")+
-  #facet_wrap(~year) +
-  #scale_fill_viridis_d(option = "inferno") +
-  #scale_fill_gradient(low = "grey90", high = "black")+
-  scale_fill_viridis_d(option = "magma", 
-                       begin = 0.2,
-                       direction = -1) +
-  geom_point(data = combo_counts, 
-             aes(x = planting_intensity, y = anti_browsing_intensity, 
-                 size = n), alpha = 0.9) +
-  scale_size_continuous(range = c(1, 8)) +
-  # geom_jitter(alpha = 0.5,
-  #             width = 0.02, height = 0.02) +
-  labs(
-    x = "Planting intensity",
-    y = "Anti-browsing intensity",
-    fill = "Density",
-    size = "Plots [#]"
-    #title = "Co-occurrence density of planting and anti-browsing"
-  ) +
-  theme_classic(base_size = 10) +
-  guides(
-    fill = guide_legend(ncol = 1),
-    size = guide_legend(ncol = 1)
-  ) +
-  theme(
-    legend.position = "right",
-    legend.box = "horizontal"
-  )
-windows(width = 6,4)
-p_density_mng
-ggsave("outFigs/density_plot.png", 
-       plot = p_density_mng, 
-       width = 6, 
-       height = 4, 
-       units = "in", dpi = 300)
-
-dev.off()
 # how does spruce share behaves?
 
 # 1. Summarise spruce cover by intensity grid
@@ -1946,9 +1951,9 @@ model_intensity_all_df <- map_dfr(models_intensity_all, tidy, parametric = TRUE,
     # Relabel terms nicely
     term = dplyr::recode(term,
                          "planting_intensity" = "Planting",
-                         "anti_browsing_intensity" = "Anti-browsing",
-                         "grndwrk_intensity" = "Groundwork",
-                         "planting_intensity:anti_browsing_intensity" = "Planting × Anti-browsing",
+                         "anti_browsing_intensity" = "Browsing\nprotection",
+                         "grndwrk_intensity" = "Soil\npreparation",
+                         "planting_intensity:anti_browsing_intensity" = "Planting×Browsing\nprotection",
                         # "levelplot" = "Level: Plot",
                          #"year_f2025" = "Year: 2025",
                         "time_snc_full_disturbance" = "Time since disturbance",
@@ -1992,11 +1997,15 @@ model_intensity_all_df_pct <- model_intensity_all_df %>%
     p_label = paste0(
       "",
       formatC(p.value, format = "f", digits = 3)
-  ))
+  ),
+  sig_col = ifelse(p.value < 0.05, "sig", "n.s.")
+  )
 
 # Filter to include only management terms (not year or level)
-management_terms <- c("Planting", "Anti-browsing", 
-                      "Groundwork", "Planting × Anti-browsing",
+management_terms <- c("Planting", 
+                      "Browsing\nprotection", 
+                      "Soil\npreparation", 
+                      "Planting×Browsing\nprotection",
                       "Time since disturbance")
 
 model_intensity_all_df_pct_mng <- model_intensity_all_df_pct %>%
@@ -2016,10 +2025,13 @@ p_model_response <-ggplot(model_intensity_all_df_pct_mng,
     aes(label = p_label, #p_signif, 
         y = ifelse(estimate_pct >= 0, 
                    upper_pct + 5, 
-                   lower_pct - 14)),
+                   lower_pct - 14),
+        #color = sig_col,
+        fontface = ifelse(p.value < 0.05, "bold", "plain")),
     vjust = 0,
     size = 2.5
   ) +
+ # scale_color_manual(values = c("sig" = "black", "n.s." = "grey60")) +
   labs(
     x = "Management Intensity",
     y = "Effect on response [%]",
@@ -2028,7 +2040,7 @@ p_model_response <-ggplot(model_intensity_all_df_pct_mng,
   theme(
     legend.position = "none",
     strip.text = element_text(size = 10),
-    axis.text.x = element_text(angle = 30, hjust = 1),
+    axis.text.x = element_text(angle = 30, hjust = 1, face = 'italic'),
     panel.border = element_rect(color = "black", fill = NA, linewidth = 0.6),
     panel.grid.major.y = element_line(color = "gray90", linewidth = 0.3)
   )
