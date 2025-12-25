@@ -1941,6 +1941,9 @@ models_intensity_all <- both_levels_re2 %>%
 
 summary(models_intensity_all$cv_hgt)
 
+
+models_intensity_all <- fin.models
+
 # Extract parametric terms
 model_intensity_all_df <- map_dfr(models_intensity_all, tidy, parametric = TRUE, .id = "response") %>%
   filter(term != "(Intercept)") %>%
@@ -1960,24 +1963,27 @@ model_intensity_all_df <- map_dfr(models_intensity_all, tidy, parametric = TRUE,
                          .default = term
     ),
     
-    response = dplyr::recode(response,
-                             "effective_numbers" = "Species diversity\n[Effective #]",
-                             "sp_richness"       = "Species richness\n[#]",
-                             "mean_hgt"          = "Mean height\n[m]",
-                             "cv_hgt"            = "Height variability\n[CV, %]",
-                             .default = response
-    ),
+    # response = dplyr::recode(response,
+    #                          "effective_numbers" = "Species diversity\n[Effective #]",
+    #                          "sp_richness"       = "Species richness\n[#]",
+    #                          "mean_hgt"          = "Mean height\n[m]",
+    #                          "cv_hgt_present"    = "Presence Height\nvariability [CV, %]",
+    #                          "cv_hgt_pos "       = "Height variability\n[CV, %]",
+    #                          .default = response
+    # ),
     
     estimate_adj = ifelse(abs(estimate) < 0.01, sign(estimate + 1e-6) * 0.01, estimate),
     lower_adj = ifelse(abs(estimate) < 0.01, 0, lower),
-    upper_adj = ifelse(abs(estimate) < 0.01, 0, upper),
+    upper_adj = ifelse(abs(estimate) < 0.01, 0, upper)#,
     
-    response = factor(response, levels = c(
-      "Mean height\n[m]",
-      "Height variability\n[CV, %]",
-      "Species diversity\n[Effective #]",
-      "Species richness\n[#]"
-    ))
+    # response = factor(response, levels = c(
+    #   "Mean height\n[m]",
+    #   "Presence Height\nvariability [CV, %]",
+    #   "Height variability\n[CV, %]",
+    #   "Species diversity\n[Effective #]",
+    #   "Species richness\n[#]"
+    # )
+    #)
   )
 
 # Convert to percentage change (on log-link scale)
@@ -2005,8 +2011,9 @@ model_intensity_all_df_pct <- model_intensity_all_df %>%
 management_terms <- c("Planting", 
                       "Browsing\nprotection", 
                       "Soil\npreparation", 
-                      "Planting×Browsing\nprotection",
-                      "Time since disturbance")
+                      "Planting×Browsing\nprotection"#,
+                      #"Time since disturbance"
+                      )
 
 model_intensity_all_df_pct_mng <- model_intensity_all_df_pct %>%
   filter(term %in% management_terms)
@@ -2135,6 +2142,24 @@ gam_mean_hgt_intensity02_int1_plot <- gam(
 )
 
 
+# test linear model
+gam_mean_hgt_intensity02_int1_plot_lin <- gam(
+  mean_hgt ~ 
+    planting_intensity*anti_browsing_intensity +
+    #ti(planting_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
+    #ti(grndwrk_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
+    
+    s(time_snc_full_disturbance, by = year_f, k = 4) +
+    grndwrk_intensity+
+    year_f +
+    # level +
+    s(plot_id, bs = "re"),
+  data = filter(both_levels_re2, level == 'plot'),
+  family = tw(link = "log"),
+  method = "REML"
+)
+AIC(gam_mean_hgt_intensity02_int1_plot_lin, gam_mean_hgt_intensity02_int1_plot)
+
 gam_mean_hgt_intensity02_int1_plot2 <- gam(
   mean_hgt ~ 
     s(planting_intensity, k = 3) +
@@ -2215,7 +2240,7 @@ AIC(gam_mean_hgt_intensity02_int1,
   gam_mean_hgt_intensity0,
   gam_mean_hgt_intensity_base)
 
-fin.m.hgt <- gam_mean_hgt_intensity02_int1_plot#gam_mean_hgt_intensity02_int1
+fin.m.hgt <- gam_mean_hgt_intensity02_int1_plot_lin #gam_mean_hgt_intensity02_int1_plot#gam_mean_hgt_intensity02_int1
 
 vis.gam(
   fin.m.hgt,
@@ -2379,6 +2404,21 @@ gam_cv_hgt_bin_intensity_re_int1_plot <- gam(
   family = binomial(link = "logit")
 )
 
+
+gam_cv_hgt_bin_intensity_re_int1_plot_lin <- gam(
+  cv_hgt_present ~
+    s(time_snc_full_disturbance, k = 7) +
+    planting_intensity*anti_browsing_intensity +
+    #ti(planting_intensity, anti_browsing_intensity) +
+    grndwrk_intensity +
+    #level +
+    year_f +
+    s(plot_id, bs = "re"),
+  data = filter(both_levels_re2, level == 'plot'),
+  method = "REML",
+  family = binomial(link = "logit")
+)
+AIC(gam_cv_hgt_bin_intensity_re_int1_plot_lin, gam_cv_hgt_bin_intensity_re_int1_plot)
 gam_cv_hgt_bin_intensity_re_int1_sub <- gam(
   cv_hgt_present ~
     s(time_snc_full_disturbance, k = 7) +
@@ -2395,7 +2435,7 @@ gam_cv_hgt_bin_intensity_re_int1_sub <- gam(
 )
 
 
-fin.m.cv.bin <- gam_cv_hgt_bin_intensity_re_int1_plot#gam_cv_hgt_bin_intensity_re_int1
+fin.m.cv.bin <- gam_cv_hgt_bin_intensity_re_int1_plot_lin #gam_cv_hgt_bin_intensity_re_int1_plot#gam_cv_hgt_bin_intensity_re_int1
 
 AIC(gam_cv_hgt_bin_intensity_re, gam_cv_hgt_bin_intensity_base, gam_cv_hgt_bin_intensity_re_int1)
 draw(gam_cv_hgt_bin_intensity_re_int1)
@@ -2434,6 +2474,20 @@ gam_cv_hgt_pos_base_plot <- gam(
   family = tw(link = "log")
 )
 
+gam_cv_hgt_pos_base_plot_lin <- gam(
+  cv_hgt_pos ~
+    planting_intensity*anti_browsing_intensity +
+    time_snc_full_disturbance +
+    # ti(planting_intensity, anti_browsing_intensity) +
+    grndwrk_intensity +
+    #level +
+    year_f ,# +
+   #s(plot_id, bs = "re"),
+  data = df_plot_clean,
+  method = "REML",
+  family = tw(link = "log")
+)
+AIC(gam_cv_hgt_pos_base_plot_lin, gam_cv_hgt_pos_base_plot)
 gam_cv_hgt_pos_base_sub <- gam(
   cv_hgt_pos ~
     s(planting_intensity, k = 3) +
@@ -2537,7 +2591,7 @@ gam_cv_hgt_pos_re_lev_int1 <- gam(
 AIC(gam_cv_hgt_pos_re_lev, gam_cv_hgt_pos_re, gam_cv_hgt_pos_re_lev_int1)
 draw(gam_cv_hgt_pos_re)
 
-fin.m.cv.pos <- gam_cv_hgt_pos_base_plot #gam_cv_hgt_pos_re
+fin.m.cv.pos <- gam_cv_hgt_pos_base_plot_lin #gam_cv_hgt_pos_base_plot #gam_cv_hgt_pos_re
 
 ##### Species Diversity (Effective Number) -----------
 
@@ -2618,6 +2672,21 @@ gam_effective_intensity_re_int1_plot <- gam(
   family = tw(link = "log")
 )
 
+gam_effective_intensity_re_int1_plot_lin <- gam(
+  effective_numbers ~
+    planting_intensity*anti_browsing_intensity +
+    s(time_snc_full_disturbance, k = 7) +
+    #planting_intensity, anti_browsing_intensity) +
+    grndwrk_intensity +
+    #level +
+    year_f +
+    s(plot_id, bs = "re"),
+  data = df_plot_clean, #both_levels_re2,
+  method = "REML",
+  family = tw(link = "log")
+)
+AIC(gam_effective_intensity_re_int1_plot_lin, gam_effective_intensity_re_int1_plot
+    )
 gam_effective_intensity_re_int1_sub <- gam(
   effective_numbers ~
     s(planting_intensity, k = 3) +
@@ -2653,7 +2722,7 @@ AIC(gam_effective_intensity_re, gam_effective_intensity_base,
 
 summary(gam_effective_intensity_re)
 
-fin.m.eff <- gam_effective_intensity_re_int1_plot #gam_effective_intensity_re_lev_int1
+fin.m.eff <- gam_effective_intensity_re_int1_plot_lin #gam_effective_intensity_re_int1_plot #gam_effective_intensity_re_lev_int1
 
 
 ##### Species Richness -----------
@@ -2687,6 +2756,22 @@ gam_richness_intensity_nb <- gam(
   method = "REML",
   family = nb(link = "log")
 )
+
+gam_richness_intensity_nb_lin <- gam(
+  sp_richness ~
+    planting_intensity*anti_browsing_intensity +
+    s(time_snc_full_disturbance, k = 7) +
+    #ti(planting_intensity, anti_browsing_intensity) +
+    grndwrk_intensity +
+    level +
+    year_f +
+    s(plot_id, bs = "re"),
+  data = both_levels_re2,
+  method = "REML",
+  family = nb(link = "log")
+)
+
+AIC(gam_richness_intensity_nb_lin, gam_richness_intensity_nb)
 vis.gam(gam_richness_intensity_nb)
 gam_richness_intensity_nb_plot <- gam(
   sp_richness ~
@@ -2719,7 +2804,48 @@ gam_richness_intensity_nb_sub <- gam(
 )
 
 
-fin.m.rich <- gam_richness_intensity_nb
+fin.m.rich <- gam_richness_intensity_nb_lin #gam_richness_intensity_nb
+
+
+##### CV hurdle ------------------------------------------------------
+
+# Load the package
+library(glmmTMB)
+
+# Full hurdle model on CV data
+m_cv_hurdle <- glmmTMB(
+  cv_hgt_pos ~ planting_intensity * anti_browsing_intensity +
+    time_snc_full_disturbance +
+    grndwrk_intensity +
+    year_f +
+    (1 | plot_id),
+  
+  ziformula = ~ planting_intensity * anti_browsing_intensity +
+    time_snc_full_disturbance +
+    grndwrk_intensity +
+    year_f +
+    (1 | plot_id),
+  
+  family = Gamma(link = "log"),
+  data = df_plot_clean
+)
+
+m_cv_zigamma_simple <- glmmTMB(
+  cv_hgt_pos ~ planting_intensity * anti_browsing_intensity +
+    time_snc_full_disturbance +
+    grndwrk_intensity +
+    year_f ,#+
+   # (1 | plot_id),
+  
+  ziformula = ~1,  # constant zero-inflation probability
+  
+  family = Gamma(link = "log"),
+  data = df_plot_clean
+)
+
+library(performance)
+
+r2(m_cv_zigamma_simple)
 
 ##### Summaries and Export -----------
 summary(fin.m.hgt)
@@ -2804,7 +2930,7 @@ p_cv <- ggplot(pred_cv_combined,
     "text",
     x = 4,
     y = Inf,  # small padding above plo
-    label = "0.938",       # your p-value here
+    label = "0.876",       # your p-value here
     #hjust = 1.1,               # center from right
     vjust = 1.5,               # slightly below top
     size = 3
@@ -2820,13 +2946,13 @@ preds_eff <- ggpredict(
 
 p_eff <- plot(preds_eff) +
   labs(y = "", x = "", title = "[c] Effective\nspecies [#]") +
-  scale_y_continuous(breaks = seq(0, 10, by = 2)) +
+  scale_y_continuous(breaks = seq(0, 15, by = 2)) +
   theme_classic(base_size = 9) +
   annotate(
     "text",
     x = 4,
     y = Inf,  # small padding above plo
-    label = "0.471",       # your p-value here
+    label = "0.489",       # your p-value here
     #hjust = 1.1,               # center from right
     vjust = 1.5,               # slightly below top
     size = 3
@@ -2850,7 +2976,7 @@ p_rich <- plot(preds_rich) +
     "text",
     x = 4,
     y = Inf,  # small padding above plo
-    label = "0.872",       # your p-value here
+    label = "0.927",       # your p-value here
     #hjust = 1.1,               # center from right
     vjust = 1.5,               # slightly below top
     size = 3
@@ -2884,6 +3010,7 @@ ggsave('outFigs/time_since.png',
 
 
 
+##### Export summary table all models 
 ###### Collect all values from models -----------------------------
 library(tibble)
 
