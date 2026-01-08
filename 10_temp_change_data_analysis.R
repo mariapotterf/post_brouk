@@ -3400,7 +3400,7 @@ both_levels_long_capped <- both_levels_long_capped %>%
 facet_ymins <- both_levels_long_capped %>%
   distinct(variable) %>%
   mutate(
-    ymin = c(-0.5, -10, -1.2, -1),  # your manual values here
+    ymin = c(-0.5, -20, -1.8, -0.9),  # your manual values here
     ymax = 0
   )
 
