@@ -3388,38 +3388,77 @@ both_levels_long_capped <- both_levels_long %>%
 library(gghalves)
 
 # All indicators:  Create half-violin plot ------------------------------------------------
-p_violin <- 
-  ggplot(both_levels_long_capped, 
-         aes(x = level,
-             y = value_capped,
-             fill = level)) +
+
+# Define which variables are discrete (integers)
+discrete_vars <- c("Species richness\n[#]", "Species diversity\n[Effective #]")
+
+# Create a flag in the dataframe - adjust violin plot for discrete vars
+both_levels_long_capped <- both_levels_long_capped %>%
+  mutate(is_discrete = variable %in% discrete_vars)
+
+# Get min y per facet (variable), to mask below 0
+facet_ymins <- both_levels_long_capped %>%
+  distinct(variable) %>%
+  mutate(
+    ymin = c(-0.5, -10, -1.2, -1),  # your manual values here
+    ymax = 0
+  )
+
+# Plot with two geom_half_violin calls (with filtering inside the geom)
+p_violin <- ggplot() +
+  # Continuous vars (default smoothing)
   gghalves::geom_half_violin(
+    data = both_levels_long_capped %>% filter(!is_discrete),
+    aes(x = level, y = value_capped, fill = level),
     side = "l",
-    color = NA, 
+    color = NA,
     trim = FALSE,
-    scale = 'width'
+    scale = "width"
   ) +
+  # Discrete vars (smoother KDE)
+  gghalves::geom_half_violin(
+    data = both_levels_long_capped %>% filter(is_discrete),
+    aes(x = level, y = value_capped, fill = level),
+    side = "l",
+    color = NA,
+    trim = FALSE,
+    scale = "width",
+    adjust = 2
+  ) +
+  # Shared boxplot layer
   geom_boxplot(
-    width = 0.1, 
-    outlier.shape = NA, 
+    data = both_levels_long_capped,
+    aes(x = level, y = value_capped),
+    width = 0.1,
+    outlier.shape = NA,
     color = "black"
   ) +
-  # Add red dots for the mean
+  # White rectangle to hide KDE below zero
+  geom_rect(
+    data = facet_ymins,
+    inherit.aes = FALSE,
+    aes(xmin = -Inf, xmax = Inf, ymin = ymin, ymax = ymax),
+    fill = "white",
+    color = NA
+  ) +
+  # Red mean dots
   stat_summary(
-    fun = mean, 
-    geom = "point", 
-    shape = 21, 
-    size = 2, 
-    fill = "red", 
+    data = both_levels_long_capped,
+    aes(x = level, y = value_capped),
+    fun = mean,
+    geom = "point",
+    shape = 21,
+    size = 2,
+    fill = "red",
     color = "black"
   ) +
   scale_fill_manual(
-    values = c("subplot" = "grey50", 
-               "plot" = "grey80")
+    values = c("subplot" = "grey50", "plot" = "grey80")
   ) +
   facet_wrap(~ variable, scales = "free_y", ncol = 4, nrow = 1) +
   theme_classic(base_size = 10) +
   labs(x = NULL, y = NULL, fill = "Level") +
+ 
   theme(
     legend.position = 'none',
     strip.text = element_text(size = 9, face = "plain"),
@@ -3427,8 +3466,34 @@ p_violin <-
     axis.text.y = element_text(size = 8)
   )
 
-# Print plot
+# Display the plot
 p_violin
+
+
+ggsave(
+  filename = "outFigs/p_violin.png",
+  plot = p_violin,
+  width = 7,       # Adjust width as needed
+  height = 2.5,      # Adjust height as needed
+  units = "in",
+  dpi = 300        # High resolution for publication
+)
+
+ggsave(
+  filename = "outFigs/p_violin.svg",
+  plot = p_violin,
+  width = 7,       # Adjust width as needed
+  height = 2.5,      # Adjust height as needed
+  units = "in",
+  dpi = 300        # High resolution for publication
+)
+
+
+
+
+
+
+
 
 
 summary_stats_violin <- both_levels_long_capped %>%
@@ -3446,14 +3511,10 @@ summary_stats_violin <- both_levels_long_capped %>%
 print(summary_stats_violin)
 
 
-ggsave(
-  filename = "outFigs/p_violin.png",
-  plot = p_violin,
-  width = 7,       # Adjust width as needed
-  height = 2.5,      # Adjust height as needed
-  units = "in",
-  dpi = 300        # High resolution for publication
-)
+
+
+
+
   
 
 
