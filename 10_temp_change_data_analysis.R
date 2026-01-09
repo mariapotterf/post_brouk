@@ -161,6 +161,40 @@ species_labels <- c(
 
 species_levels <- rev(names(species_labels))  # Custom order, matching color palette and labels
 
+### How many plots per single species and what is the species? ----------------------
+
+# Step 2: Summarize number of species per plot, only for n > 1 trees
+plots_with_species_counts <- df %>%
+  filter(n > 1) %>%
+  group_by(plot) %>%
+  summarise(
+    n_species = n_distinct(species),
+    .groups = "drop"
+  )
+
+# Step 3: Filter to plots with exactly 1 species
+single_species_plots <- plots_with_species_counts %>%
+  dplyr::filter(n_species == 1)
+
+# Step 4: Join back to original to get the species name
+species_per_single_species_plot <- df %>%
+  filter(n > 1) %>%
+  semi_join(single_species_plots, by = "plot") %>%
+  group_by(plot, species) %>%
+  summarise(n_trees = sum(n), .groups = "drop")  # just to show tree count if needed
+
+# Step 5 (optional): Count how many plots per species
+summary_species <- species_per_single_species_plot %>%
+  count(species, name = "single_plots") %>%
+  arrange(desc(single_plots)) %>% 
+  mutate(share = single_plots/333)
+
+# Print result
+print(summary_species)
+
+
+
+
 
 ### Stem density per species per top 10 species --------------------------------
 df_stem_dens_species <- df %>% 
