@@ -863,7 +863,46 @@ p_management_intensity_plot
        width = 5, height = 2.1, units = "in", dpi = 300)
 
 
-
+ # Step 1: Summarize counts per class
+ intensity_class_summary_counts <- mng_intensity_props %>%
+   group_by(activity, intensity_class) %>%
+   summarise(n_plots = sum(n), .groups = "drop")
+ 
+ # Step 2: Full class breakdown with % and formatted "n (%)"
+ intensity_class_summary_percent <- intensity_class_summary_counts %>%
+   group_by(activity) %>%
+   mutate(share = round(100 * n_plots / sum(n_plots), 1)) %>%
+   unite(col = "value", n_plots, share, sep = " (") %>%
+   mutate(value = paste0(value, "%)")) %>%
+   pivot_wider(names_from = intensity_class, values_from = value)
+ 
+ # Step 3: Add low/high total columns (counts + %)
+ low_high_summary <- intensity_class_summary_counts %>%
+   mutate(group = case_when(
+     intensity_class %in% c("0–19", "20–39") ~ "Low",
+     intensity_class %in% c("40–59", "60–79", "80–100") ~ "High"
+   )) %>%
+   group_by(activity, group) %>%
+   summarise(n_plots = sum(n_plots), .groups = "drop") %>%
+   group_by(activity) %>%
+   mutate(share = round(100 * n_plots / sum(n_plots), 1)) %>%
+   unite(col = "value", n_plots, share, sep = " (") %>%
+   mutate(value = paste0(value, "%)")) %>%
+   pivot_wider(names_from = group, values_from = value)
+ 
+ # Step 4: Combine and sort by High intensity count
+ intensity_class_summary_final <- intensity_class_summary_percent %>%
+   left_join(low_high_summary, by = "activity") %>%
+   mutate(
+     high_n = as.numeric(str_extract(High, "^[0-9]+"))  # extract count before "("
+   ) %>%
+   arrange(desc(high_n)) %>%
+   select(-high_n)  # optional: remove helper column
+ 
+ # View final table
+ intensity_class_summary_final 
+ 
+ 
 
 
 ### Graphics: disturbance chars, species composition and management
@@ -3585,101 +3624,18 @@ print(summary_stats_violin_with_change)
 
 
 
+# how many species per plot?
+
+# Replace df and column names if needed
+both_levels_long_capped %>%
+  filter(variable == "Species richness\n[#]", level == "plot") %>%
+  count(value_capped) %>%
+  mutate(share = round(100 * n / sum(n), 1)) %>%
+  arrange(value_capped)
+
 
 
   
 
-
-# make lollipop plot: two levels
-plot_level_means <- both_levels_re2 %>%
-  group_by( level) %>%
-  summarize(
-    shannon_sp = mean(shannon_sp, na.rm = TRUE),
-    effect_n_sp = mean(effective_numbers, na.rm = TRUE),
-    richness = mean(sp_richness, na.rm = TRUE), # assuming w = effective species number
-    dens_m2 = mean(dens_m2, na.rm = TRUE),
-    cv_hgt = mean(cv_hgt, na.rm = TRUE),
-    mean_hgt = mean(mean_hgt, na.rm = TRUE),
-    .groups = "drop"
-  )
-
-plot_level_long <- plot_level_means %>%
-  pivot_longer(cols = c(shannon_sp, 
-                        effect_n_sp,
-                        richness, 
-                        dens_m2, 
-                        cv_hgt, 
-                        mean_hgt),
-               names_to = "metric",
-               values_to = "value")
-
-
-
-# Convert subplot values to negative
-level_means_diverged <- plot_level_long %>%
-  mutate(value = ifelse(level == "subplot", -value, value),
-         level = fct_relevel(level, "subplot", "plot"))
-
-
-level_means_diverged <- level_means_diverged %>%
-  mutate(metric = fct_reorder(metric, abs(value), .desc = F))
-
-
-### Plot vs subplot: diverging lollipop  --------------------------------
-ggplot(level_means_diverged, aes(x = value, y = fct_rev(metric), fill = level,
-                                 color = level)) +
-  geom_segment(aes(x = 0, xend = value, y = metric, yend = metric),
-               linewidth = 0.8, 
-               color = "grey",
-               lty = 'dashed'
-               ) +
-  scale_y_discrete(labels = c(
-    "cv_hgt"      = "CV height [dim.]",
-    "dens_m2"     = "Stem density [m²]",
-    "effect_n_sp" = "Effective species [#]",
-    "mean_hgt"    = "Mean height [m]",
-    "richness"    = "Species richness [#]",
-    "shannon_sp"  = "Shannon diversity [dim.]"
-  )) +
-  geom_vline(xintercept = 0) +
-  geom_point(size = 4) +
-  scale_x_continuous(labels = abs) +  # show positive axis labels
-  labs(x = "Mean Value", y = "",
-       title = "") +
-  annotate("text", x = -2, y = 6.5, label = "Subplot", hjust = 0, size = 2.5, fontface = "bold") +
-  annotate("text", x =  3, y = 6.5, label = "Plot",     hjust = 1, size = 2.5, fontface = "bold") +
-  theme_classic2() +
-  theme(legend.position = "none")
-
-# Boxplot - all vars vs time since, disturb. length ----------------------------
-# how does the disturbnac elength affects structure and composition?
-# how does time since stand replacing disturbnace affects str & composition?
-both_levels_long %>% 
-  filter(level == 'plot') %>% 
-  ggplot(aes(x = factor(time_snc_full_disturbance), y = value)) +
-  geom_boxplot(outlier.shape = NA) +
-  geom_jitter(width = 0.2, alpha = 0.2, size = 0.3) +
-  facet_wrap(variable ~ . , scales = "free_y") +
-  ggtitle("Time since stand replacing disturb.")
-
-# time since disturbance start 
-both_levels_long %>% 
-  filter(level == 'plot') %>% 
-  ggplot(aes(x = factor(time_snc_part_disturbance), y = value)) +
-  geom_boxplot(outlier.shape = NA) +
-  geom_jitter(width = 0.2, alpha = 0.2, size = 0.3) +
-  facet_wrap(variable ~ . , scales = "free_y") +
-  ggtitle("Time since disturbnace start")
-
-
-
-
-# do time over axis, length as point size
-both_levels_long %>% 
-  filter(level == 'plot') %>% 
-  ggplot(aes(x = factor(time_snc_full_disturbance), 
-             y = factor(time_snc_part_disturbance),
-             size = disturbance_length)) +
- geom_point()
 
 
