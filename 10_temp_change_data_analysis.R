@@ -1061,7 +1061,19 @@ p_combined_disturb_fig <- ggarrange(
 p_combined_disturb_fig
 
 
+# 1. Summary: Disturbance Year
+summary_disturbance_year <- plot_context_chars %>%
+  count(disturbance_year, name = "n") %>%
+  mutate(
+    share = round(100 * n / sum(n), 1)
+  )
 
+# 2. Summary: Time Since Disturbance
+summary_time_since <- plot_context_chars %>%
+  count(time_since_disturbance, name = "n") %>%
+  mutate(
+    share = round(100 * n / sum(n), 1)
+  )
 
 # Generate new data -----------------------------------------------------------
 ### Early vs late ( plot, subplot) ---------------
