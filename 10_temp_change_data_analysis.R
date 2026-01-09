@@ -3404,6 +3404,47 @@ facet_ymins <- both_levels_long_capped %>%
     ymax = 0
   )
 
+# add formal stats
+library(dplyr)
+library(purrr)
+library(broom)
+
+# Wilcoxon test per variable
+wilcox_results <- both_levels_long_capped %>%
+  group_by(variable) %>%
+  summarise(
+    test = list(wilcox.test(value_capped ~ level, data = cur_data())),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    tidied = map(test, broom::tidy)
+  ) %>%
+  unnest(tidied) %>%
+  mutate(
+    p.value = round(p.value, 4),
+    p.adj = round(p.adjust(p.value, method = "BH"), 4),
+    p.display = ifelse(p.value < 0.001, "< 0.001", round(p.value, 3)),
+    signif = case_when(
+      p.adj < 0.001 ~ "***",
+      p.adj < 0.01 ~ "**",
+      p.adj < 0.05 ~ "*",
+      p.adj < 0.1 ~ ".",
+      TRUE ~ "ns"
+    )
+  ) %>%
+  select(variable, p.value, p.adj, p.display, signif)
+
+# Get label y-position for each facet (e.g. just above Q3 max)
+label_positions <- both_levels_long_capped %>%
+  group_by(variable) %>%
+  summarise(y = max(value_capped, na.rm = TRUE) * 1.20)
+
+# Join with test results
+wilcox_plot_labels <- wilcox_results %>%
+  left_join(label_positions, by = "variable")
+
+
+
 # Plot with two geom_half_violin calls (with filtering inside the geom)
 p_violin <- ggplot() +
   # Continuous vars (default smoothing)
@@ -3455,6 +3496,12 @@ p_violin <- ggplot() +
   scale_fill_manual(
     values = c("subplot" = "grey50", "plot" = "grey80")
   ) +
+  geom_text(
+    data = wilcox_plot_labels,
+    inherit.aes = FALSE,
+    aes(x = 1.5, y = y, label = p.display),  # x = 1.5 centers between subplot and plot
+    size = 3
+  )+
   facet_wrap(~ variable, scales = "free_y", ncol = 4, nrow = 1) +
   theme_classic(base_size = 10) +
   labs(x = NULL, y = NULL, fill = "Level") +
@@ -3491,11 +3538,7 @@ ggsave(
 
 
 
-
-
-
-
-
+# Step 1: Summarise values
 summary_stats_violin <- both_levels_long_capped %>%
   group_by(variable, level) %>%
   summarise(
@@ -3504,12 +3547,29 @@ summary_stats_violin <- both_levels_long_capped %>%
     median = median(value_capped, na.rm = TRUE),
     Q1 = quantile(value_capped, 0.25, na.rm = TRUE),
     Q3 = quantile(value_capped, 0.75, na.rm = TRUE),
-    IQR = IQR(value_capped, na.rm = TRUE)
+    IQR = IQR(value_capped, na.rm = TRUE),
+    .groups = "drop"
   ) %>%
   arrange(variable, level)
 
-print(summary_stats_violin)
+# Step 2: Calculate difference and percent increase (rounded)
+mean_diffs <- summary_stats_violin %>%
+  select(variable, level, mean) %>%
+  pivot_wider(names_from = level, values_from = mean) %>%
+  mutate(
+    mean_diff = round(plot - subplot, 2),
+    percent_increase = round(100 * (plot - subplot) / subplot, 2) # change in % from subplot to plot level
+  )
 
+# Step 3: Join back to summary
+summary_stats_violin_with_change <- summary_stats_violin %>%
+  left_join(
+    mean_diffs %>% select(variable, mean_diff, percent_increase),
+    by = "variable"
+  )
+
+# View final table
+print(summary_stats_violin_with_change)
 
 
 
