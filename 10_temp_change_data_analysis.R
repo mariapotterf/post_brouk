@@ -429,46 +429,6 @@ ggplot(richness_per_plot,
   geom_smooth()
 
 
-#### Get single tree species per subplot/plot ----------------------------------------
-
-# check 613_T2_AH_20250827 - seems to have very many trees!! ()
-
-# identify subplots where i have  single tree species but but several stems
-# what happend at the subplot/plot scale? are they heterogenous/homogenous from photos?
-# how many subplots have only 1 tree species?
-# Identify subplots with only one species present (with at least 1 individual)
-single_species_subplots <- dat_overlap %>%
-  filter(!is.na(n), n > 0) %>%
-  group_by(subplot, year) %>%
-  summarize(n_species = n_distinct(species), .groups = "drop") %>%
-  filter(n_species == 1)
-
-# View detailed records from those subplots
-single_species_sub_details <- dat_overlap %>%
-  filter(subplot %in% single_species_subplots$subplot,
-         !is.na(n), n > 0) %>%
-  select(plot, subplot, species, n) %>%
-  arrange(subplot)
-
-# Print or View
-#print(single_species_sub_details)
-length(unique(single_species_sub_details$subplot))  # 709!!
-
-
-#### single species per plot 
-single_species_plots <- dat_overlap %>%
-  filter(!is.na(n), n > 0) %>%
-  group_by(plot, year, planting_intensity) %>%
-  summarize(n_species = n_distinct(species), .groups = "drop") %>%
-  filter(n_species == 1)
-
-# get also here which species?? if tehre is only one species?
-
-
-# Print or View
-#print(single_species_plot_details)
-length(unique(single_species_plots$plot))  # 30
-hist(single_species_plots$planting_intensity)
 
 
 ### Total trees per year --------------------------------------------------------
