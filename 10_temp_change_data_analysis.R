@@ -3116,7 +3116,7 @@ p1 <- both_levels_re2 %>%
                      label.y = 1.05 * max(both_levels_re2$spruce_share*100, na.rm = TRUE)) +
   stat_summary(fun = mean, geom = "point", shape = 21, size = 2.5, fill = "red", color = "white")+
   theme_classic2() +
-  labs(x = "Planting Intensity", y = "Spruce share [%]") +
+  labs(x = "Planting Intensity\n", y = "Spruce share [%]") +
   theme(legend.position = "none")
 
 # Plot for anti_browsing_intensity
@@ -3133,7 +3133,7 @@ p2 <- both_levels_re2 %>%
   stat_summary(fun = mean, geom = "point", shape = 21, size = 2.5, fill = "red", color = "white") +
 
   theme_classic2() +
-  labs(x = "Browsing protection", y = "Spruce share [%]") +
+  labs(x = "Browsing protection\nintensity", y = "Spruce share [%]") +
   theme(legend.position = "none")
 
 # Combine with ggarrange
