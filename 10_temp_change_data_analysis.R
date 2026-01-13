@@ -1927,187 +1927,6 @@ both_levels_re2 %>%
 
 ### Models bulk & time since disturbvance --------------------------
 
-# add time since disturbance
-models_intensity_all <- both_levels_re2 %>%
-  #filter(level == "plot") %>%
-  {
-    list(
-      effective_numbers = gam(
-        effective_numbers ~ planting_intensity * anti_browsing_intensity + 
-          grndwrk_intensity +
-          #time_snc_full_disturbance +
-          # s(time_snc_full_disturbance, k = 7) +
-          s(plot_id, bs = "re")# + 
-          # level +
-        #  year_f
-        ,
-        data = both_levels_re2 %>% filter(level == "plot") , 
-        family = nb(link = "log"), method = "REML"
-      ),
-      
-      sp_richness = gam(
-        sp_richness ~ planting_intensity * anti_browsing_intensity + 
-          grndwrk_intensity +
-          #time_snc_full_disturbance +
-          # s(time_snc_full_disturbance, k = 7) +
-          s(plot_id, bs = "re") + 
-          level +
-          year_f,
-        data = both_levels_re2, family = nb(link = "log"), method = "REML"
-      ),
-      
-      mean_hgt = gam(
-        mean_hgt ~ planting_intensity * anti_browsing_intensity + 
-          grndwrk_intensity +
-          #time_snc_full_disturbance+
-          s(time_snc_full_disturbance, k = 7) +
-          s(plot_id, bs = "re") + 
-          #level +
-          year_f,
-        data = both_levels_re2 %>% filter(level == "plot") , family = tw(link = "log"), method = "REML"
-      ),
-      
-      cv_hgt = gam(
-        cv_hgt_pos ~ planting_intensity * anti_browsing_intensity + 
-          grndwrk_intensity +
-          #time_snc_full_disturbance +
-          s(time_snc_full_disturbance, k = 7) +
-          s(plot_id, bs = "re") + 
-          # level +
-          year_f,
-        data = subset(both_levels_re2, cv_hgt > 0), family = tw(link = "log"), 
-        method = "REML"
-      )
-    )
-  }
-
-
-
-
-summary(models_intensity_all$cv_hgt)
-
-
-models_intensity_all <- fin.models
-
-# Extract parametric terms
-model_intensity_all_df <- map_dfr(models_intensity_all, tidy, parametric = TRUE, .id = "response") %>%
-  filter(term != "(Intercept)") %>%
-  mutate(
-    lower = estimate - 1.96 * std.error,
-    upper = estimate + 1.96 * std.error,
-    
-    # Relabel terms nicely
-    term = dplyr::recode(term,
-                         "planting_intensity" = "Planting",
-                         "anti_browsing_intensity" = "Browsing\nprotection",
-                         "grndwrk_intensity" = "Soil\npreparation",
-                         "planting_intensity:anti_browsing_intensity" = "Planting×Browsing\nprotection",
-                        # "levelplot" = "Level: Plot",
-                         #"year_f2025" = "Year: 2025",
-                        "time_snc_full_disturbance" = "Time since disturbance",
-                         .default = term
-    ),
-    
-    # response = dplyr::recode(response,
-    #                          "effective_numbers" = "Species diversity\n[Effective #]",
-    #                          "sp_richness"       = "Species richness\n[#]",
-    #                          "mean_hgt"          = "Mean height\n[m]",
-    #                          "cv_hgt_present"    = "Presence Height\nvariability [CV, %]",
-    #                          "cv_hgt_pos "       = "Height variability\n[CV, %]",
-    #                          .default = response
-    # ),
-    
-    estimate_adj = ifelse(abs(estimate) < 0.01, sign(estimate + 1e-6) * 0.01, estimate),
-    lower_adj = ifelse(abs(estimate) < 0.01, 0, lower),
-    upper_adj = ifelse(abs(estimate) < 0.01, 0, upper)#,
-    
-    # response = factor(response, levels = c(
-    #   "Mean height\n[m]",
-    #   "Presence Height\nvariability [CV, %]",
-    #   "Height variability\n[CV, %]",
-    #   "Species diversity\n[Effective #]",
-    #   "Species richness\n[#]"
-    # )
-    #)
-  )
-
-# Convert to percentage change (on log-link scale)
-model_intensity_all_df_pct <- model_intensity_all_df %>%
-  mutate(
-    estimate_pct = (exp(estimate) - 1) * 100,
-    lower_pct = (exp(lower) - 1) * 100,
-    upper_pct = (exp(upper) - 1) * 100,
-    
-    # p_signif = case_when(
-    #   p.value <= 0.001 ~ "***",
-    #   p.value <= 0.01  ~ "**",
-    #   p.value <= 0.05  ~ "*",
-    #   TRUE             ~ "n.s."
-    # ),
-    # format p-values: max 3 decimals, always shown
-    p_label = paste0(
-      "",
-      formatC(p.value, format = "f", digits = 3)
-  ),
-  sig_col = ifelse(p.value < 0.05, "sig", "n.s.")
-  )
-
-# Filter to include only management terms (not year or level)
-management_terms <- c("Planting", 
-                      "Browsing\nprotection", 
-                      "Soil\npreparation", 
-                      "Planting×Browsing\nprotection"#,
-                      #"Time since disturbance"
-                      )
-
-model_intensity_all_df_pct_mng <- model_intensity_all_df_pct %>%
-  filter(term %in% management_terms)
-
-p_model_response <-ggplot(model_intensity_all_df_pct_mng, 
-       aes(x = term, y = estimate_pct, fill = term)) +
-  geom_hline(yintercept = 0, color = "gray40", linewidth = 0.5) +
-  geom_col(position = "dodge", width = 0.7) +
-  geom_errorbar(aes(ymin = lower_pct, ymax = upper_pct), 
-                width = 0.15, linewidth = 0.5) +
-  facet_wrap(~ response, ncol = 4) +
-  theme_classic(base_size = 9) +
-  scale_fill_brewer(palette = "Dark2") +
-  # NEW: Add stars above bars
-  geom_text(
-    aes(label = p_label, #p_signif, 
-        y = ifelse(estimate_pct >= 0, 
-                   upper_pct + 5, 
-                   lower_pct - 14),
-        #color = sig_col,
-        fontface = ifelse(p.value < 0.05, "bold", "plain")),
-    vjust = 0,
-    size = 2.5
-  ) +
- # scale_color_manual(values = c("sig" = "black", "n.s." = "grey60")) +
-  labs(
-    x = "Management Intensity",
-    y = "Effect on response [%]",
-    title = ""
-  ) +
-  theme(
-    legend.position = "none",
-    strip.text = element_text(size = 10),
-    axis.text.x = element_text(angle = 30, hjust = 1, face = 'italic'),
-    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.6),
-    panel.grid.major.y = element_line(color = "gray90", linewidth = 0.3)
-  )
-
-p_model_response
-
-ggsave('outFigs/p_model_response.png',
-       plot =  p_model_response, 
-       width = 7, height = 5)
-
-appraise(models_intensity_all[[4]])
-draw(models_intensity[[4]])
-plot.gam(models_intensity[[4]], page = 1)
-
-
 
 
 #### GAM management interaction + time since disturbance smooths --------------
@@ -2463,7 +2282,7 @@ gam_cv_hgt_bin_intensity_re_int1_plot_lin <- gam(
   method = "REML",
   family = binomial(link = "logit")
 )
-AIC(gam_cv_hgt_bin_intensity_re_int1_plot_lin, gam_cv_hgt_bin_intensity_re_int1_plot)
+AIC(gam_cv_hgt_bin_intensity_re_int1_plot_lin, gam_cv_hgt_bin_intensity_re_int1_sub, gam_cv_hgt_bin_intensity_re_int1_plot)
 gam_cv_hgt_bin_intensity_re_int1_sub <- gam(
   cv_hgt_present ~
     s(time_snc_full_disturbance, k = 7) +
@@ -2910,6 +2729,168 @@ appraise(fin.m.rich)
 
 
 
+fin.models <- list(
+  hgt   = fin.m.hgt,
+ # cvbin = fin.m.cv.bin,
+  cvpos = fin.m.cv.pos,
+  eff   = fin.m.eff,
+  rich  = fin.m.rich
+)
+
+
+##### Get bar plot -------------------------------------------------
+
+
+models_intensity_all <- fin.models
+
+# Extract parametric terms
+model_intensity_all_df <- map_dfr(models_intensity_all, tidy, parametric = TRUE, .id = "response") %>%
+  filter(term != "(Intercept)") %>%
+  mutate(
+    lower = estimate - 1.96 * std.error,
+    upper = estimate + 1.96 * std.error,
+    
+    # Relabel terms nicely
+    term = dplyr::recode(term,
+                         "planting_intensity" = "Planting",
+                         "anti_browsing_intensity" = "Browsing\nprotection",
+                         "grndwrk_intensity" = "Soil\npreparation",
+                         "planting_intensity:anti_browsing_intensity" = "Planting×Browsing\nprotection",
+                         # "levelplot" = "Level: Plot",
+                         #"year_f2025" = "Year: 2025",
+                         "time_snc_full_disturbance" = "Time since disturbance",
+                         .default = term
+    ),
+    
+    response = dplyr::recode(response,
+                             "eff" = "Species diversity\n[Effective #]",
+                             "rich" = "Species richness\n[#]",
+                             "hgt" = "Mean height\n[m]",
+                             "cvpos" = "Height variability\n[CV, %]",
+                             .default = response
+    ),
+    
+    estimate_adj = ifelse(abs(estimate) < 0.01, sign(estimate + 1e-6) * 0.01, estimate),
+    lower_adj = ifelse(abs(estimate) < 0.01, 0, lower),
+    upper_adj = ifelse(abs(estimate) < 0.01, 0, upper),
+    
+    response = factor(response, levels = c(
+      "Mean height\n[m]",
+     # "Presence Height\nvariability [CV, %]",
+      "Height variability\n[CV, %]",
+      "Species diversity\n[Effective #]",
+      "Species richness\n[#]"
+    )
+    )
+  )
+
+# Convert to percentage change (on log-link scale)
+model_intensity_all_df_pct <- model_intensity_all_df %>%
+  mutate(
+    estimate_pct = (exp(estimate) - 1) * 100,
+    lower_pct = (exp(lower) - 1) * 100,
+    upper_pct = (exp(upper) - 1) * 100,
+    
+    # p_signif = case_when(
+    #   p.value <= 0.001 ~ "***",
+    #   p.value <= 0.01  ~ "**",
+    #   p.value <= 0.05  ~ "*",
+    #   TRUE             ~ "n.s."
+    # ),
+    # format p-values: max 3 decimals, always shown
+    p_label = paste0(
+      "",
+      formatC(p.value, format = "f", digits = 3)
+    ),
+    sig_col = ifelse(p.value < 0.05, "sig", "n.s.")
+  )
+
+# Filter to include only management terms (not year or level)
+management_terms <- c("Planting", 
+                      "Browsing\nprotection", 
+                      "Soil\npreparation", 
+                      "Planting×Browsing\nprotection"#,
+                      #"Time since disturbance"
+)
+
+model_intensity_all_df_pct_mng <- model_intensity_all_df_pct %>%
+  filter(term %in% management_terms)
+
+names(model_intensity_all_df_pct_mng)
+
+# subset only important columns to get specific results
+model_intensity_all_df_pct_mng_clean <- model_intensity_all_df_pct_mng %>%
+  dplyr::select(
+    response,
+    term,
+    estimate_pct,
+    lower_pct,
+    upper_pct,
+    p_label,
+    sig_col
+  )
+View(model_intensity_all_df_pct_mng_clean)
+
+model_intensity_all_df_pct_mng_clean %>%
+  mutate(
+    ci_width = upper_pct - lower_pct,
+    ci_to_estimate_ratio = ci_width / abs(estimate_pct)
+  ) %>%
+  summarise(
+    mean_ratio = mean(ci_to_estimate_ratio),
+    median_ratio = median(ci_to_estimate_ratio)
+  )
+
+
+p_model_response <-ggplot(model_intensity_all_df_pct_mng, # model_intensity_all_df_pct_mng
+                          aes(x = term, y = estimate_pct, fill = term)) +
+  geom_hline(yintercept = 0, color = "gray40", linewidth = 0.5) +
+  geom_col(position = "dodge", width = 0.7) +
+  geom_errorbar(aes(ymin = lower_pct, ymax = upper_pct), 
+                width = 0.15, linewidth = 0.5) +
+  facet_wrap(~ response, ncol = 4) +
+  theme_classic(base_size = 9) +
+  scale_fill_brewer(palette = "Dark2") +
+  # NEW: Add stars above bars
+  geom_text(
+    aes(label = p_label, #p_signif, 
+        y = ifelse(estimate_pct >= 0, 
+                   upper_pct + 5, 
+                   lower_pct - 14),
+        #color = sig_col,
+        fontface = ifelse(p.value < 0.05, "bold", "plain")),
+    vjust = 0,
+    size = 2.5
+  ) +
+  # scale_color_manual(values = c("sig" = "black", "n.s." = "grey60")) +
+  labs(
+    x = "Management Intensity",
+    y = "Effect on response [%]",
+    title = ""
+  ) +
+  theme(
+    legend.position = "none",
+    strip.text = element_text(size = 10),
+    axis.text.x = element_text(angle = 30, hjust = 1, face = 'italic'),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.6),
+    panel.grid.major.y = element_line(color = "gray90", linewidth = 0.3)
+  )
+
+p_model_response
+
+ggsave('outFigs/p_model_response.png',
+       plot =  p_model_response, 
+       width = 7, height = 5)
+
+appraise(models_intensity_all[[4]])
+draw(models_intensity[[4]])
+plot.gam(models_intensity[[4]], page = 1)
+
+
+
+
+
+
 
 ### Make plots : 
 #### Time since disturbance  ----------------------------
@@ -3059,13 +3040,6 @@ ggsave('outFigs/time_since.png',
 ###### Collect all values from models -----------------------------
 library(tibble)
 
-fin.models <- list(
-  hgt   = fin.m.hgt,
-  cvbin = fin.m.cv.bin,
-  cvpos = fin.m.cv.pos,
-  eff   = fin.m.eff,
-  rich  = fin.m.rich
-)
 
 # Function to clean term names
 clean_term <- function(x) {
@@ -3170,17 +3144,12 @@ final_results <- left_join(metrics_df,
 # View
 View(final_results)
 
-# Optional: Clean column names for presentation
-pretty_names <- function(x) {
-  x %>%
-    str_replace_all("_", " ") %>%
-    str_to_title()
-}
-
-colnames(final_results) <- pretty_names(colnames(final_results))
 
 
-
+# Export to Word
+tab_df(final_results,
+       title = "Model Summary Table",
+       file = "outTable/models_summary_final_results.doc")
 
 
 
@@ -3378,7 +3347,7 @@ hist(both_levels_re2$area_m2, breaks = 50)
 
 
 
-# how did disturbnace lenght affected post-dsiturbance recovery? ---------------
+# Convert to long format: plot and subplot levels ---------------
 # List of response variables to pivot
 response_vars <- c("mean_hgt",
   #"dens_m2", 
@@ -3430,10 +3399,10 @@ both_levels_long_capped <- both_levels_long %>%
          )) 
 
 
-library(gghalves)
 
 # All indicators:  Create half-violin plot ------------------------------------------------
 
+library(gghalves)
 # Define which variables are discrete (integers)
 discrete_vars <- c("Species richness\n[#]", "Species diversity\n[Effective #]")
 
