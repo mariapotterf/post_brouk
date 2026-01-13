@@ -927,7 +927,7 @@ p_management_intensity_plot
    #             width = 0.02, height = 0.02) +
    labs(
      x = "Planting intensity",
-     y = "Anti-browsing intensity",
+     y = "Browsing protection intensity",
      fill = "Density",
      size = "Plots [#]"
      #title = "Co-occurrence density of planting and anti-browsing"
@@ -1751,71 +1751,8 @@ ggplot(spruce_summary, aes(x = planting_intensity, y = anti_browsing_intensity))
   )
 
 
-#### boxplot spruce shares across management intensities ----------
-# check spruce share with richness&spcies diversity
-# 1. Filter plot level and select variables
-plot_long_spruce <- both_levels_re2 %>%
-  filter(level == "plot") %>%
-  select(
-    spruce_share,
-    mean_hgt,
-    cv_hgt,
-    sp_richness,
-    effective_numbers,
-    planting_intensity,
-    anti_browsing_intensity
-  ) %>%
-  pivot_longer(
-    cols = c(mean_hgt, cv_hgt, sp_richness, 
-             effective_numbers,
-             planting_intensity,
-             anti_browsing_intensity
-             ),
-    names_to = "response",
-    values_to = "value"
-  ) %>%
-  mutate(
-    response = recode(response,
-                      mean_hgt = "Mean height [m]",
-                      cv_hgt = "Height CV",
-                      sp_richness = "Species richness",
-                      effective_numbers = "Effective diversity")
-  )
 
 
-
-# just a boxplot with wilcox text
-
-# Boxplot: Spruce share by planting (binary)
-p_box_planting <- both_levels_re2 %>%
-  filter(level == "plot") %>%
-  ggplot(aes(x = plant_f, y = spruce_share, fill = plant_f)) +
-  geom_boxplot(outlier.alpha = 0.2) +
-  geom_jitter(alpha = 0.35, size = 0.7, width = 0.3) +
-  stat_compare_means(method = "wilcox.test", label = "p.signif") +
-  labs(x = "Planting", y = "Spruce share\n[% of stems]", 
-       title = "Planting") +
-  theme_classic(base_size = 10) +
-  theme(legend.position = "none")
-
-# Boxplot: Spruce share by anti-browsing (binary)
-p_box_antibrowsing <- both_levels_re2 %>%
-  filter(level == "plot") %>%
-  ggplot(aes(x = anti_brow_f, y = spruce_share, fill = anti_brow_f)) +
-  geom_boxplot(outlier.alpha = 0.2) +
-  geom_jitter(alpha = 0.35, size = 0.7, width = 0.3) +
-  stat_compare_means(method = "wilcox.test", label = "p.signif") +
-  labs(x = "Anti-browsing", y = "Spruce share\n[% of stems]", 
-       title = "Anti-browsing") +
-  theme_classic(base_size = 10)+
-  theme(legend.position = "none")
-
-p_spruce_mng <- ggarrange(p_box_planting, p_box_antibrowsing, common.legend = F)
-ggsave("outFigs/p_spruce_mng.png", 
-       plot = p_spruce_mng, 
-       width = 7, 
-       height = 4, 
-       units = "in", dpi = 300)
 
 
 
@@ -1923,9 +1860,6 @@ both_levels_re2 %>%
   ggplot(aes(x = anti_brow_f,
              y = mean_hgt)) +
   geom_boxplot()
-
-
-### Models bulk & time since disturbvance --------------------------
 
 
 
@@ -2738,8 +2672,7 @@ fin.models <- list(
 )
 
 
-##### Get bar plot -------------------------------------------------
-
+##### Get bar plot of effect sizes -------------------------------------------------
 
 models_intensity_all <- fin.models
 
@@ -2893,7 +2826,7 @@ plot.gam(models_intensity[[4]], page = 1)
 
 
 ### Make plots : 
-#### Time since disturbance  ----------------------------
+##### Time since disturbance  ----------------------------
 #  Mean height
 preds_hgt <- ggpredict(
   fin.m.hgt,
@@ -3200,7 +3133,7 @@ p2 <- both_levels_re2 %>%
   stat_summary(fun = mean, geom = "point", shape = 21, size = 2.5, fill = "red", color = "white") +
 
   theme_classic2() +
-  labs(x = "Anti-browsing Intensity ", y = "Spruce share [%]") +
+  labs(x = "Browsing protection", y = "Spruce share [%]") +
   theme(legend.position = "none")
 
 # Combine with ggarrange
@@ -3216,14 +3149,6 @@ ggsave("outFigs/spruce_share_boxplots.png",
        plot = p_spruce_shares_boxplot, 
        width = 7, height = 3.2, units = "in", dpi = 300)
 
-
-both_levels_re2 %>% 
-  filter(level == 'plot') %>% 
-  ggplot(aes(x = planting_intensity,
-             y = spruce_share)) + 
-  geom_point() +
-  geom_smooth(method = 'lm')
-  
 
 
 
