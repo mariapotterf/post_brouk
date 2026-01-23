@@ -530,7 +530,7 @@ st_write(subplot_all, "outData/google_my_map/subplot_with_clusters_2025.kml", dr
 
 
 
-# Clean upda data for Michal: -------------------------------------------------------
+# Clean up data for Michal: -------------------------------------------------------
 # read all 2025 data, sf
 # clean up and recode
 # keep empty subplots & plots
@@ -645,14 +645,157 @@ dat25_subplot_recode <- dat25_subplot %>%
 
 length(unique(dat25_subplot_recode$subplot))
 
+
+# calculate cumulative damage - damage can occur on any level, now i want to know how often damage occured from oaall of records
+
+# Calculate share of dmg_bool == 1 by plot
+dmg_share_by_plot <- dat25_subplot_recode %>%
+  mutate(
+    dmg_bool = tidyr::replace_na(dmg_bool, 0L)  # convert NA → 0
+  ) %>%
+  group_by(plot) %>%
+  summarize(
+    total_obs = n(),                # total individuals in plot
+    dmg_true  = sum(dmg_bool == 1), # number of damaged individuals
+    dmg_share = dmg_true / total_obs,
+    .groups = "drop"
+  )
+
+# View the result
+print(dmg_share_by_plot)
+
+# get plot level point information 
+# Step 1: summarize average values at cluster level
+dat25_sf_plot <- dat25_sf_min %>%
+  as.data.frame() %>% 
+  rename(plot = cluster) %>% 
+  group_by(plot) %>%
+  summarize(
+    x = mean(sf::st_coordinates(geom)[, 1]),
+    y = mean(sf::st_coordinates(geom)[, 2]),
+    .groups = "drop"
+  ) %>%
+   sf::st_as_sf(coords = c("x", "y"), 
+                crs = sf::st_crs(dat25_sf_min))
+
+# Step 2: join with damage share data
+dat25_sf_plot_dmg <- dat25_sf_plot %>%
+  left_join(dmg_share_by_plot, by = "plot") %>% 
+  mutate(
+    size_custom = ifelse(dmg_share == 0, 0.2, dmg_share)  # exaggerate blue dots
+  )
+
+hist_dmg <- ggplot(dat25_sf_plot_dmg, aes(x = dmg_share, fill = ..x..)) +
+  geom_histogram(bins = 20, color = "black") +
+  scale_fill_gradientn(
+    name = "Podíl poškození",
+    colours = c("blue", "yellow", "red"),
+    values = scales::rescale(c(0, 0.01, 1)),
+    limits = c(0, 1),
+    na.value = "grey90"
+  )+
+  labs(
+    title = "",
+    x = "Podíl poškození",
+    y = "Počet ploch"
+  ) +
+  theme_classic2()
+
+
+hist_dmg
+
+dmg_share_summary <- dat25_sf_plot_dmg %>%
+  as.data.frame() %>% 
+  mutate(
+    dmg_group = case_when(
+      dmg_share == 0         ~ "0%",
+      dmg_share < 0.25       ~ "<25%",
+      dmg_share < 0.50       ~ "<50%",
+      dmg_share < 0.75       ~ "<75%",
+      dmg_share <= 1         ~ "<=100%",
+      TRUE                   ~ "Unknown"
+    )
+  ) %>%
+  count(dmg_group) %>%
+  mutate(
+    share = round(100 * n / sum(n), 1)
+  )
+
+dmg_share_summary
+
+### Make a map: read C4 zone --------------------------------------------
+# Define the path
+gpkg_path <- "raw/core_4/core_4.gpkg"
+
+# Read the geopackage
+core4_sf <- sf::st_read(gpkg_path)
+# Reproject core4_sf to match the CRS of dat25_sf_plot_dmg
+core4_proj <- st_transform(core4_sf, crs = st_crs(dat25_sf_plot_dmg))
+
+# Check to confirm matching CRS
+print(st_crs(core4_proj) == st_crs(dat25_sf_plot_dmg))  # Should return TRUE
+
+
+
+# Plot damage share map with background layer
+# clip data first
+# First, clip points to polygon
+dat25_sf_plot_dmg_clipped <- sf::st_intersection(dat25_sf_plot_dmg, core4_proj)
+
+map_dmg <- ggplot() +
+  # Add core4_proj base layer (light grey fill, black outline)
+  geom_sf(data = core4_proj, fill = "lightgrey", color = "black", size = 0.5) +
+  geom_sf(
+    data = dat25_sf_plot_dmg_clipped,
+    aes(size = size_custom, fill = dmg_share),
+    shape = 21,
+    color =  "black",
+    stroke = 0.2,
+    alpha = 0.7
+  ) +
+  scale_fill_gradientn(
+    name = "Podíl poškození",
+    colours = c("blue", "yellow", "red"),
+    values = scales::rescale(c(0, 0.01, 1)),
+    limits = c(0, 1),
+    na.value = "grey90"
+  ) +
+    scale_size_continuous(range = c(1, 7), name = "Podíl poškození") +
+  labs(
+    #title = "Distribuce poškození na zájmovém území",
+    #subtitle = "Velikost bodu ukazuje podíl poškození na ploche",
+    caption = "", # "Data source: dat25_sf_plot_dmg"
+  ) +
+  theme_void()
+
+map_dmg
+
+# --- Combine plots ---
+p_dmg_map <- ggarrange(
+  map_dmg, hist_dmg, 
+  ncol = 2,  # side-by-side
+  labels = c("(a)", "(b)"),  # optional
+  common.legend = TRUE,
+  legend = "bottom",
+  widths = c(2.1, 1) 
+)
+windows(7,3.5)
+p_dmg_map
+
+# Save as PNG
+ggsave("outDataShare/combined_damage_map.png", plot = p_dmg_map, width = 7, height = 3.5, dpi = 300, bg = 'white' )
+
+# Save as SVG (requires svglite package)
+ggsave("outDataShare/combined_damage_map.svg", plot = p_dmg_map, width = 7, height = 3.5, device = "svg",bg = 'white')
+
 # 
 
-fwrite(dat25_subplot_recode, "outDataShare/dat25_subplot_recode.csv")
-sf::st_write(dat25_sf_min, "outDataShare/dat25_sf_min.gpkg", delete_dsn = TRUE)
+# fwrite(dat25_subplot_recode, "outDataShare/dat25_subplot_recode.csv")
+# sf::st_write(dat25_sf_min, "outDataShare/dat25_sf_min.gpkg", delete_dsn = TRUE)
 
 
 
-# Summarize infor for overall presentation ------------------------------------
+# Summarize infor for overall presentation Kontrolni den ------------------------------------
 # Make sure the data is a data.table (should already be based on your structure)
 dat <- dat25_subplot_recode
 
