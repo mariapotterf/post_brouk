@@ -963,104 +963,6 @@ p_management_intensity_plot
  
 
 
-### Graphics: disturbance chars, species composition and management
- 
- 
- #  Count combinations
- combo_counts <- both_levels_re2 %>%
-   filter(level == "plot") %>%
-   count(planting_intensity, anti_browsing_intensity)  # gives n per combo
- 
- # density 2D plot - number of plots
- p_density_mng <- both_levels_re2 %>%
-   filter(level == "plot") %>%
-   ggplot(aes(x = planting_intensity,
-              y = anti_browsing_intensity)) +
-   geom_density_2d_filled(contour_var = "ndensity")+
-   #facet_wrap(~year) +
-   #scale_fill_viridis_d(option = "inferno") +
-   #scale_fill_gradient(low = "grey90", high = "black")+
-   scale_fill_viridis_d(option = "magma", 
-                        begin = 0.2,
-                        direction = -1) +
-   geom_point(data = combo_counts, 
-              aes(x = planting_intensity, y = anti_browsing_intensity, 
-                  size = n), alpha = 0.9) +
-   scale_size_continuous(range = c(1, 8)) +
-   # geom_jitter(alpha = 0.5,
-   #             width = 0.02, height = 0.02) +
-   labs(
-     x = "Planting intensity",
-     y = "Browsing protection intensity",
-     fill = "Density",
-     size = "Plots [#]"
-     #title = "Co-occurrence density of planting and anti-browsing"
-   ) +
-   theme_classic(base_size = 10) +
-   guides(
-     fill = guide_legend(ncol = 1),
-     size = guide_legend(ncol = 1)
-   ) +
-   theme(
-     legend.position = "right",
-     legend.box = "horizontal"
-   )
- windows(width = 6,4)
- p_density_mng
- ggsave("outFigs/density_plot.png", 
-        plot = p_density_mng, 
-        width = 6, 
-        height = 4, 
-        units = "in", dpi = 300)
- 
- dev.off() 
-
-
-# Combine
-p_combined_management_bin <- ggarrange(
-  #p_hist_dist_year, p_hist_time_since_dist,
-  p_combined_disturb_fig,
-  p_management_bin_plot,
-  labels = c(" ", "[c]"),
-  font.label = list(size = 10, face = 'plain'),
-  ncol = 1, nrow = 2,
-  # align = 'hv',
-  widths = c(1,1.5),  
-  heights = c(1.2,1)  
-)
-
-p_combined_management_fig
-# Save as PNG
-ggsave("outFigs/combined_management_bin.png", plot = combined_management_bin,
-       width = 4, height = 4, units = "in", dpi = 300)
-
-# # Save as SVG
-# ggsave("outFigs/combined_management_fig.svg", plot = p_combined_management_fig,
-#        width = 7, height = 3.5, units = "in", dpi = 300)
-
-
-
-# Combine
-p_combined_management_intens <- ggarrange(
-  #p_hist_dist_year, p_hist_time_since_dist,
-  p_combined_disturb_fig,
-  p_management_intensity_plot,#p_density_mng,
-  labels = c(" ", "[c]"),
-  font.label = list(size = 10, face = 'plain'),
-  ncol = 1, nrow = 2,
-  # align = 'hv',
-  widths = c(1,1.6),  
-  heights = c(1.2,1.2)  
-)
-
-p_combined_management_intens
-
-windows(6,5)
-p_combined_management_intens
-# Save as PNG
-ggsave("outFigs/p_combined_management_intens.png", plot = p_combined_management_intens,
-       width = 6, height = 5, units = "in", dpi = 300)
-
 
 ## Get context and disturbance characteristics (plot) --------------
 plot_context_chars <- dat_overlap_mng_upd2%>% 
@@ -1766,6 +1668,11 @@ both_levels_re2 <- both_levels_re2 %>%
   mutate(cv_hgt_present = as.integer(cv_hgt > 0))
 
 table(both_levels_re2$cv_hgt_present)
+
+
+
+
+
 
 
 
@@ -3587,7 +3494,107 @@ both_levels_long_capped %>%
 
 
 
-  
+### Graphics: disturbance chars, species composition and management
+
+
+#  Count combinations
+combo_counts <- both_levels_re2 %>%
+  filter(level == "plot") %>%
+  count(planting_intensity, anti_browsing_intensity)  # gives n per combo
+
+# density 2D plot - number of plots
+p_density_mng <- both_levels_re2 %>%
+  filter(level == "plot") %>%
+  ggplot(aes(x = planting_intensity,
+             y = anti_browsing_intensity)) +
+  geom_density_2d_filled(contour_var = "ndensity")+
+  #facet_wrap(~year) +
+  #scale_fill_viridis_d(option = "inferno") +
+  #scale_fill_gradient(low = "grey90", high = "black")+
+  scale_fill_viridis_d(option = "magma", 
+                       begin = 0.2,
+                       direction = -1) +
+  geom_point(data = combo_counts, 
+             aes(x = planting_intensity, y = anti_browsing_intensity, 
+                 size = n), alpha = 0.9) +
+  scale_size_continuous(range = c(1, 8)) +
+  # geom_jitter(alpha = 0.5,
+  #             width = 0.02, height = 0.02) +
+  labs(
+    x = "Planting intensity",
+    y = "Browsing protection intensity",
+    fill = "Density",
+    size = "Plots [#]"
+    #title = "Co-occurrence density of planting and anti-browsing"
+  ) +
+  theme_classic(base_size = 10) +
+  guides(
+    fill = guide_legend(ncol = 1),
+    size = guide_legend(ncol = 1)
+  ) +
+  theme(
+    legend.position = "right",
+    legend.box = "horizontal"
+  )
+windows(width = 6,4)
+p_density_mng
+ggsave("outFigs/density_plot.png", 
+       plot = p_density_mng, 
+       width = 6, 
+       height = 4, 
+       units = "in", dpi = 300)
+
+dev.off() 
+
+
+# Combine
+p_combined_management_bin <- ggarrange(
+  #p_hist_dist_year, p_hist_time_since_dist,
+  p_combined_disturb_fig,
+  p_management_bin_plot,
+  labels = c(" ", "[c]"),
+  font.label = list(size = 10, face = 'plain'),
+  ncol = 1, nrow = 2,
+  # align = 'hv',
+  widths = c(1,1.5),  
+  heights = c(1.2,1)  
+)
+
+p_combined_management_fig
+# Save as PNG
+ggsave("outFigs/combined_management_bin.png", plot = combined_management_bin,
+       width = 4, height = 4, units = "in", dpi = 300)
+
+# # Save as SVG
+# ggsave("outFigs/combined_management_fig.svg", plot = p_combined_management_fig,
+#        width = 7, height = 3.5, units = "in", dpi = 300)
+
+
+
+# Combine
+p_combined_management_intens <- ggarrange(
+  #p_hist_dist_year, p_hist_time_since_dist,
+  p_combined_disturb_fig,
+  p_management_intensity_plot,#p_density_mng,
+  labels = c(" ", "[c]"),
+  font.label = list(size = 10, face = 'plain'),
+  ncol = 1, nrow = 2,
+  # align = 'hv',
+  widths = c(1,1.6),  
+  heights = c(1.2,1.2)  
+)
+
+p_combined_management_intens
+
+windows(6,5)
+p_combined_management_intens
+# Save as PNG
+ggsave("outFigs/p_combined_management_intens.png", plot = p_combined_management_intens,
+       width = 6, height = 5, units = "in", dpi = 300)
+
+
+
+
 
 
 
