@@ -611,8 +611,6 @@ mng_both25_upd <- bind_rows(mng_both23, mng_both25) %>%
   select(-row_id) %>% 
   mutate(year = 2025)
 
-nrow(mng_combined)
-head(mng_combined)
 
 # remove rows from 2025 from overall table, update management ---
 dat_overlap_mng_25 <-
@@ -627,12 +625,12 @@ dat_overlap_mng_25 <-
 dat_overlap_mng_rest <- dat_overlap_mng %>%
   dplyr::filter(!(status == "both" & year == 2025))
 
-# 3. Bind updated 2025 rows back to the full dataset
+# Bind updated 2025 rows back to the full dataset
 dat_overlap_mng_upd <- bind_rows(dat_overlap_mng_rest, 
                                  dat_overlap_mng_25)
 
 
-### Calculate intensity per plot & year --------------------
+# Calculate intensity per plot & year 
 # Collapse to one row per subplot (presence-based)
 mng_subplot <- dat_overlap_mng_upd %>%
   dplyr::select(plot, subplot, year, n_subplots, all_of(management_vars)) %>%
@@ -923,12 +921,12 @@ p_management_intensity_plot
        width = 5, height = 2.1, units = "in", dpi = 300)
 
 
- # Step 1: Summarize counts per class
+# Summarize counts per class
  intensity_class_summary_counts <- mng_intensity_props %>%
    group_by(activity, intensity_class) %>%
    summarise(n_plots = sum(n), .groups = "drop")
  
- # Step 2: Full class breakdown with % and formatted "n (%)"
+ #Full class breakdown with % and formatted "n (%)"
  intensity_class_summary_percent <- intensity_class_summary_counts %>%
    group_by(activity) %>%
    mutate(share = round(100 * n_plots / sum(n_plots), 1)) %>%
@@ -936,7 +934,7 @@ p_management_intensity_plot
    mutate(value = paste0(value, "%)")) %>%
    pivot_wider(names_from = intensity_class, values_from = value)
  
- # Step 3: Add low/high total columns (counts + %)
+ # Add low/high total columns (counts + %)
  low_high_summary <- intensity_class_summary_counts %>%
    mutate(group = case_when(
      intensity_class %in% c("0–19", "20–39") ~ "Low",
@@ -950,7 +948,7 @@ p_management_intensity_plot
    mutate(value = paste0(value, "%)")) %>%
    pivot_wider(names_from = group, values_from = value)
  
- # Step 4: Combine and sort by High intensity count
+ # Combine and sort by High intensity count
  intensity_class_summary_final <- intensity_class_summary_percent %>%
    left_join(low_high_summary, by = "activity") %>%
    mutate(
@@ -968,7 +966,7 @@ p_management_intensity_plot
 ### Graphics: disturbance chars, species composition and management
  
  
- # 1️⃣ Count combinations
+ #  Count combinations
  combo_counts <- both_levels_re2 %>%
    filter(level == "plot") %>%
    count(planting_intensity, anti_browsing_intensity)  # gives n per combo
