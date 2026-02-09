@@ -3385,6 +3385,105 @@ both_levels_long_capped %>%
 
 
 ### Graphics: disturbance chars, species composition and management
+
+## Get context and disturbance characteristics (plot) --------------
+plot_context_chars <- dat_overlap_mng_upd2%>% 
+  dplyr::select(plot, year,
+                status,
+                disturbance_year, 
+                forest_year, 
+                disturbance_length, 
+                time_snc_full_disturbance, 
+                time_snc_part_disturbance,
+                planting_intensity,
+                clear_intensity,          
+                grndwrk_intensity,         
+                logging_trail_intensity,
+                planting_intensity,
+                anti_browsing_intensity
+                #clear, grndwrk, logging_trail, planting, anti_browsing
+  )  %>%  
+  distinct()
+
+
+plot_context_chars <- plot_context_chars %>%
+  mutate(disturbance_year = case_when(
+    disturbance_year < 2018 ~ 2018,
+    disturbance_year > 2022 ~ 2022,
+    TRUE ~ disturbance_year
+  )) %>% 
+  mutate(time_since_disturbance = year - disturbance_year)
+
+
+
+
+
+p_hist_dist_year <- plot_context_chars %>%
+  group_by(disturbance_year) %>% 
+  summarise(n = n()) %>% 
+  ggplot(aes(x = disturbance_year, y = n)) +
+  geom_col(fill = 'grey80', color = 'black',  width = 0.8) +
+  #geom_histogram(binwidth = 0.8, ) +
+  scale_x_continuous(breaks = seq(2018, 2022, 2)) +
+  labs(x = "Disturbance Year\n", y = "Number of Plots [#]") +
+  theme_classic2() +
+  theme(
+    axis.text = element_text(size = 8),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.title = element_text(size = 8)
+  )
+
+# Histogram: Time Since Disturbance
+p_hist_time_since_dist <- plot_context_chars %>%
+  group_by(time_since_disturbance) %>% 
+  summarise(n = n()) %>% 
+  
+  ggplot(aes(x = time_since_disturbance, y = n)) +
+  geom_col(fill = 'grey80', color = 'black', width = 0.8) +
+  labs(x = "Time since disturbance\n[years]", 
+       y = "Number of Plots [#]") +
+  theme_classic2() +
+  theme(
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text = element_text(size = 8),
+    axis.title = element_text(size = 8)
+  )
+
+# Combine
+p_combined_disturb_fig <- ggarrange(
+  p_hist_dist_year, p_hist_time_since_dist,
+  # p_management_bin_plot,
+  labels = c("[a]", "[b]"),
+  font.label = list(size = 10, face = 'plain'),
+  widths = c(0.9,1.1),
+  ncol = 2, nrow = 1
+)
+p_combined_disturb_fig
+
+
+# 1. Summary: Disturbance Year
+summary_disturbance_year <- plot_context_chars %>%
+  count(disturbance_year, name = "n") %>%
+  mutate(
+    share = round(100 * n / sum(n), 1)
+  )
+
+# 2. Summary: Time Since Disturbance
+summary_time_since <- plot_context_chars %>%
+  count(time_since_disturbance, name = "n") %>%
+  mutate(
+    share = round(100 * n / sum(n), 1)
+  )
+
+
+
+
+
+
+
+
 ### Get context, disturbnace characteristics --------------------------------------
 
 #  Count combinations
