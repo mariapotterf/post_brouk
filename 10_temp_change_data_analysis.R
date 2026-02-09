@@ -377,37 +377,6 @@ ggsave("outFigs/p_species_composition.png",
 
 
 
-### Richnesss: Plot - per planting intensity ---------------------------------------
-
-#### Calculate species richness per subplot -----------------------
-richness_per_plot <- dat_overlap_n0 %>%
-  group_by(plot, year, planting_intensity) %>% #
-  summarize(
-    species_richness = n_distinct(species[n > 0 & !is.na(n)])#,
-   # planting = first(planting)   # first(planting) assuming consistent per subplot/year
-  ) %>%
-  ungroup()
-
-
-# Quick plot
-ggplot(richness_per_plot, 
-       aes(x = planting_intensity, 
-           y = species_richness,
-           group = planting_intensity)) +
-  geom_boxplot() +
-  labs(title = "Plot: Species Richness by Planting",
-       x = "Planting",
-       y = "Species Richness") +
-  theme_classic2()
-
-
-ggplot(richness_per_plot, 
-       aes(x = planting_intensity, 
-           y = species_richness)) +
-  geom_jitter(size = 0.5) +
-  geom_smooth()
-
-
 
 
 ### Total trees per year --------------------------------------------------------
