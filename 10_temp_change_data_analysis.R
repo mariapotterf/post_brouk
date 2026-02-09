@@ -374,28 +374,7 @@ ggsave("outFigs/p_species_composition.png",
        plot = p_species_composition,
        width = 7, height = 3, units = "in", dpi = 300)
 
-### Richness: Subplot: Species richness per planting -----------------------
-richness_per_subplot <- dat_overlap_n0 %>%
-  group_by(plot, subplot, year, planting) %>% #
-  summarize(
-    species_richness = n_distinct(species[n > 0 & !is.na(n)])#,
-    #planting = first(planting)   # first(planting) assuming consistent per subplot/year
-  ) %>%
-  ungroup()
 
-# Convert planting to factor for clarity
-richness_per_subplot <- richness_per_subplot %>%
-  mutate(planting = factor(planting, levels = c(0,1), 
-                           labels = c("no planting", "planted")))
-
-# Quick plot
-ggplot(richness_per_subplot, 
-       aes(x = planting, y = species_richness)) +
-  geom_boxplot() +
-  labs(title = "Species Richness by Planting",
-       x = "Planting",
-       y = "Species Richness") +
-  theme_classic2()
 
 
 ### Richnesss: Plot - per planting intensity ---------------------------------------
