@@ -45,6 +45,51 @@ theme_set(theme_classic2(base_size = 10) +
                   axis.text  = element_text(size = 10)))
 
 
+
+# divid species on coniferous vs deciduousl
+
+species_class <- tibble::tribble(
+  ~species, ~leaf_type,
+  "absp", "coniferous",
+  "piab", "coniferous",
+  "pisy", "coniferous",
+  "psme", "coniferous",
+  "lade", "coniferous",
+  "juni", "coniferous",
+  "taba", "coniferous",
+  
+  "acpl", "deciduous",
+  "acps", "deciduous",
+  "algl", "deciduous",
+  "alin", "deciduous",
+  "besp", "deciduous",
+  "cabe", "deciduous",
+  "fasy", "deciduous",
+  "potr", "deciduous",
+  "prav", "deciduous",
+  "qusp", "deciduous",
+  "saca", "deciduous",
+  "sasp", "deciduous",
+  "soar", "deciduous",
+  "soau", "deciduous",
+  "tisp", "deciduous",
+  "acca", "deciduous",
+  "aehi", "deciduous",
+  "aial", "deciduous",
+  "alvi", "deciduous",
+  "casa", "deciduous",
+  "frex", "deciduous",
+  "fror", "deciduous",
+  "jure", "deciduous",
+  "osca", "deciduous",
+  "posp", "deciduous",
+  "rops", "deciduous",
+  "soto", "deciduous",
+  "ulsp", "deciduous"
+)
+
+
+
 # Read data -----------------------------
 #dat_overlap_mng_upd2 <- fread('outData/full_table_overlap_23_25.csv')
 
@@ -396,7 +441,80 @@ tree_summary <- dat_overlap %>%
   left_join(total_trees_per_year) %>% 
   mutate(share = n_trees_recovery /total_trees * 100)
 
+## Get species importance values (IV) - per species --------------------------------
+# based on relative counts and relative basal areas/height
+# # Species Importance Value (IV):
+# IV = mean(relative abundance, relative size: can be hieght- for regeneration or BA - for mature)
+# Relative abundance = species stem count / total stem count (per plot or subplot)
+# Relative size = (n × max height per species) / sum(n × max height) within unit
+# IV ranges from 0–1 and is calculated separately at subplot and plot level
 
+# double check how species dominance changes if using guestimated DBH for regeneration of height values:
+# spearman correlation of 0.99, i can do either, or: teh most correct is using height fr or small regenerating trees 
+dat_iv <- dat_overlap %>%
+  mutate(
+    size_height   = hgt_est * n#,
+   # size_ba_guess = basal_area_cm2 * n
+  )
+
+calc_iv_core <- function(data, size_var, ...) {
+  data %>%
+    group_by(..., species) %>%
+    summarise(
+      n_sp    = sum(n, na.rm = TRUE),
+      size_sp = sum({{ size_var }}, na.rm = TRUE),
+      .groups = "drop_last"
+    ) %>%
+    mutate(
+      RA = n_sp / sum(n_sp, na.rm = TRUE),
+      size_tot = sum(size_sp, na.rm = TRUE),
+      RS = dplyr::if_else(size_tot > 0, size_sp / size_tot, NA_real_),
+      IV = (RA + RS) / 2
+    ) %>%
+    select(-size_tot) %>%
+    ungroup()
+}
+
+calc_iv_subplot <- function(data, size_var) {
+  calc_iv_core(data, {{ size_var }}, plot, year, subplot)
+}
+calc_iv_plot <- function(data, size_var) {
+  calc_iv_core(data, {{ size_var }}, plot, year)
+}
+
+iv_sub  <- calc_iv_subplot(dat_iv, size_height)
+iv_plot <- calc_iv_plot(dat_iv, size_height)
+
+
+# coniferous vs deciduous (subplot)
+iv_leaf_sub <- iv_sub %>%
+  left_join(species_class, by = "species") %>%
+  filter(!is.na(leaf_type)) %>%
+  group_by(plot, year, subplot, leaf_type) %>%
+  summarise(
+    IV = sum(IV, na.rm = TRUE),
+    RA = sum(RA, na.rm = TRUE),
+    RS = sum(RS, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# coniferous vs deciduous (plot)  <-- fixed join order
+iv_leaf_plot <- iv_plot %>%
+  left_join(species_class, by = "species") %>%
+  filter(!is.na(leaf_type)) %>%
+  group_by(plot, year, leaf_type) %>%
+  summarise(
+    IV = sum(IV, na.rm = TRUE),
+    RA = sum(RA, na.rm = TRUE),
+    RS = sum(RS, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+iv_leaf_plot
+
+iv_leaf_plot %>% 
+  ggplot(aes(x = leaf_type, y = IV)) + 
+  geom_boxplot()
 
 ### Tree heights by species -------------------------------------------------------
 # get heights by species
