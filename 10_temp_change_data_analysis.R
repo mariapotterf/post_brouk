@@ -443,8 +443,8 @@ tree_summary <- dat_overlap %>%
 
 ## Get species importance values (IV) - per species --------------------------------
 # based on relative counts and relative basal areas/height
-# # Species Importance Value (IV):
-# IV = mean(relative abundance, relative size: can be hieght- for regeneration or BA - for mature)
+# 
+# IV = mean(relative abundance, relative size: can be height- for regeneration or BA - for mature)
 # Relative abundance = species stem count / total stem count (per plot or subplot)
 # Relative size = (n × max height per species) / sum(n × max height) within unit
 # IV ranges from 0–1 and is calculated separately at subplot and plot level
@@ -482,11 +482,33 @@ calc_iv_plot <- function(data, size_var) {
   calc_iv_core(data, {{ size_var }}, plot, year)
 }
 
+# calculate rIV per subplot, plot
 iv_sub  <- calc_iv_subplot(dat_iv, size_height)
 iv_plot <- calc_iv_plot(dat_iv, size_height)
 
 
-# coniferous vs deciduous (subplot)
+# identify top species (max rIVI) per plot, subplot - if it is equal, choose a random one
+iv_max_sub <- iv_sub %>%
+  group_by(plot, year, subplot) %>%
+  slice_max(order_by = IV, n = 1, with_ties = FALSE) %>%
+  ungroup() %>% 
+  rename(IVmax_species = species) %>% 
+  select(plot,   year, subplot, IV,   IVmax_species)
+
+
+iv_max_plot <- iv_plot %>%
+  group_by(plot, year) %>%
+  slice_max(order_by = IV, n = 1, with_ties = FALSE) %>%
+  ungroup() %>% 
+  rename(IVmax_species = species) %>% 
+  select(plot,   year, IV, IVmax_species)
+
+iv_max_sub
+iv_max_plot
+
+
+
+#### rIVI: coniferous vs deciduous (subplot)
 iv_leaf_sub <- iv_sub %>%
   left_join(species_class, by = "species") %>%
   filter(!is.na(leaf_type)) %>%
@@ -515,6 +537,31 @@ iv_leaf_plot
 iv_leaf_plot %>% 
   ggplot(aes(x = leaf_type, y = IV)) + 
   geom_boxplot()
+
+# convert to wide format
+iv_leaf_plot_wide <- iv_leaf_plot %>%
+  dplyr::select(plot, year, leaf_type, IV) %>%
+  tidyr::pivot_wider(
+    names_from  = leaf_type,
+    values_from = IV,
+    names_prefix = "IV_"
+  )
+
+iv_leaf_plot_wide
+
+iv_leaf_plot_wide %>%
+  ggplot(aes(x = IV_coniferous,
+             y = IV_deciduous)) +
+  geom_point(alpha = 0.6) +
+  geom_abline(intercept = 1, slope = -1, linetype = "dashed") +
+  coord_equal() +
+  labs(
+    x = "Importance value (Coniferous)",
+    y = "Importance value (Deciduous)",
+    title = "Leaf-type dominance at plot level"
+  ) +
+  theme_minimal()
+
 
 ### Tree heights by species -------------------------------------------------------
 # get heights by species
@@ -1369,8 +1416,9 @@ plot_metrics_mean <- field_sub_summ_cleaned%>%
     .groups = "drop"
   ) %>% 
   left_join(cwm_plot, by = join_by(plot, year)) %>% 
-  left_join(df_mng_sub,by = join_by(plot, year)) %>% 
-  left_join(spruce_share_plot, by = join_by(plot, year)) #%>% 
+  left_join(df_mng_plot,by = join_by(plot, year)) %>% 
+  left_join(spruce_share_plot, by = join_by(plot, year)) %>%
+  left_join(iv_max_plot, by = join_by(plot, year)) #%>% 
 
 
 # --- pooled CV directly from dat23_subplot_recode ---
@@ -1403,8 +1451,9 @@ plot_metrics_pooled  <- dat_overlap_mng_upd2 %>%
     .groups = "drop" 
   ) %>% 
   left_join(cwm_plot, by = join_by(plot, year)) %>% 
-  left_join(df_mng_sub,by = join_by(plot, year)) %>% 
-  left_join(spruce_share_plot, by = join_by(plot, year)) #%>% 
+  left_join(df_mng_plot,by = join_by(plot, year)) %>% 
+  left_join(spruce_share_plot, by = join_by(plot, year)) %>%
+  left_join(iv_max_plot, by = join_by(plot, year)) #%>%  
 
 #mutate(cv_hgt = ifelse(is.na(cv_hgt), 0L, cv_hgt)) # replace NA by 0 if stems are missing
 
@@ -1453,10 +1502,12 @@ sub_df <- field_sub_summ_cleaned %>%
   left_join(spruce_share_sub, by = c("plot_id" = "plot",
                                      "year" = "year",
                                      "ID" = 'subplot')) %>%
+  left_join(iv_max_sub, by = c("plot_id" = "plot",
+                                     "year" = "year",
+                                     "ID" = 'subplot')) %>%  
   distinct()
 
 nrow(sub_df)
-hist(sub_df$cv_hgt, breaks = 80)
 
 names(sub_df)
 # 2) Plot table (pooled metrics already computed)
@@ -1487,11 +1538,31 @@ plot_df <- plot_metrics_pooled %>%
                                        "year" = "year")) %>% 
   left_join(spruce_share_plot, by = c("plot_id" = "plot",
                                        "year" = "year")) %>% 
+  left_join(iv_max_plot, by = c("plot_id" = "plot",
+                               "year" = "year")) %>%  
   distinct() # keep only unique rows
 
 
 names(plot_df)
 nrow(plot_df)
+
+# 20260211 link data with plot coordinates and export for Karim -------------------------
+#get spatial data: calculate average coordinates
+dat23_sf         <- sf::st_read("outData/sf_context_2023.gpkg")          # subplot spatial data
+
+# Select and rename
+dat23_sf_min <- dat23_sf %>%
+  dplyr::select(subplot = ID, plot = cluster)
+
+dat25_sf         <- sf::st_read("outData/subplot_with_clusters_2025.gpkg")          # subplot spatial data
+# Select and rename
+dat25_sf_min <- dat25_sf %>%
+  dplyr::select(plot_key, cluster,plot_id)
+
+
+
+
+
 
 #### Bind & clean final table with both levels ----------
 both_levels_re2 <- bind_rows(sub_df, plot_df) %>%
