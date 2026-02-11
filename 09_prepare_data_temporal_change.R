@@ -54,7 +54,7 @@ traits_full<- traits_full %>%
   seral_stage = if_else(Shade_tolerance < 2.5, "early", "late") # low value are less totalera = sun loving, high values are 
 )
 
-## --- Field data: 2023 
+## --- Field data: 2023 , EPSG:25832 - ETRS89 / UTM zone 32N
 dat23_subplot    <- data.table::fread("outData/subplot_full_2023.csv")   # subplot-level table
 dat23_sf         <- sf::st_read("outData/sf_context_2023.gpkg")          # subplot spatial data
 
@@ -62,7 +62,7 @@ dat23_sf         <- sf::st_read("outData/sf_context_2023.gpkg")          # subpl
 dat23_sf_min <- dat23_sf %>%
   dplyr::select(subplot = ID, plot = cluster)
 
-## read data from 2025 ----------------
+## read data from 2025 ---------------- EPSG: EPSG:4326 - WGS 84
 dat25_subplot    <- data.table::fread("outData/subplot_full_2025.csv")   # subplot-level table
 dat25_sf         <- sf::st_read("outData/subplot_with_clusters_2025.gpkg")          # subplot spatial data
 
