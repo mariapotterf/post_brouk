@@ -62,6 +62,9 @@ dat23_sf         <- sf::st_read("outData/sf_context_2023.gpkg")          # subpl
 dat23_sf_min <- dat23_sf %>%
   dplyr::select(subplot = ID, plot = cluster)
 
+crs(dat23_sf_min)
+
+
 ## read data from 2025 ---------------- EPSG: EPSG:4326 - WGS 84
 dat25_subplot    <- data.table::fread("outData/subplot_full_2025.csv")   # subplot-level table
 dat25_sf         <- sf::st_read("outData/subplot_with_clusters_2025.gpkg")          # subplot spatial data
@@ -70,7 +73,47 @@ dat25_sf         <- sf::st_read("outData/subplot_with_clusters_2025.gpkg")      
 dat25_sf_min <- dat25_sf %>%
   dplyr::select(plot_key, cluster,plot_id)
 
+crs(dat25_sf_min)
+
 length(unique(dat25_subplot$plot_key))  # 1009
+
+### unify reference system: to 3035 ----------------------------------------------
+# sanity: see EPSG codes (NA means it’s not explicitly tagged with an EPSG)
+st_crs(dat23_sf_min)
+st_crs(dat25_sf_min)
+
+# 1) Transform 2023 UTM32N -> 3035
+dat23_sf_3035 <- st_transform(dat23_sf_min, 3035)
+
+# 2) Make sure 2025 is also explicitly 3035 (transform is safe even if already 3035)
+dat25_sf_3035 <- st_transform(dat25_sf_min, 3035)
+
+# quick check
+st_crs(dat23_3035)$epsg
+st_crs(dat25_3035)$epsg
+
+
+# get geometry as df objects
+dat23_xy <- dat23_sf_3035 %>%
+  mutate(
+    x = sf::st_coordinates(.)[, 1],
+    y = sf::st_coordinates(.)[, 2]
+  ) %>%
+  sf::st_drop_geometry()
+
+dat23_xy
+
+dat25_xy <- dat25_sf_3035 %>%
+  mutate(
+    x = sf::st_coordinates(.)[, 1],
+    y = sf::st_coordinates(.)[, 2]
+  ) %>%
+  sf::st_drop_geometry()
+
+dat25_xy
+
+
+
 
 # needed columns to merge field data from 2023&2025:
 management_types_v <- c("clear", "grndwrk", "logging_trail", "planting", "anti_browsing")
@@ -103,7 +146,9 @@ target_cols <- c("plot",
 
 # filter only relevant columns: 
 dat25_subplot_sub <- dat25_subplot %>% 
+  dplyr::select(-x, -y) %>%    # remove old coordinates, they are in WGS 84, use 3035 ones
   filter(!is.na(cluster)) %>% # filter empty clusters - happend in 3 subplots that they do not exist in points
+  left_join(dat25_xy, by = join_by(plot_key, cluster)) %>% # add new 3035 coordinates
   dplyr::filter(naruseni == TRUE & nzchar(trimws(photo_e))) %>% # filter out the errorroneous records
   dplyr::select(acc, VegType, height, count, dbh, plot_key, cluster, 
                 clearing, site_prep, logging_trail, windthrow, 
@@ -179,14 +224,6 @@ length(unique(dat25_expanded$subplot))
 
 
 ## Field data 2023: subplot level --------------------------------------
-dat23_xy <- dat23_sf_min %>%
-  mutate(
-    x = sf::st_coordinates(.)[, 1],
-    y = sf::st_coordinates(.)[, 2]
-  ) %>%
-  sf::st_drop_geometry()
-
-dat23_xy
 
 dat23_subplot_sub <- 
   dat23_subplot %>% 
