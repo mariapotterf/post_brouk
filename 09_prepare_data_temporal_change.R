@@ -83,7 +83,9 @@ target_cols <- c("plot",
                  "n",
                  "dbh",
                  "year",
-                 management_types_v)
+                 management_types_v,
+                 "x",
+                 "y")
 
 
 # I have few other species - keep simply as 'other' to not misrepresent their occerence elsewhere
@@ -104,7 +106,9 @@ dat25_subplot_sub <- dat25_subplot %>%
   filter(!is.na(cluster)) %>% # filter empty clusters - happend in 3 subplots that they do not exist in points
   dplyr::filter(naruseni == TRUE & nzchar(trimws(photo_e))) %>% # filter out the errorroneous records
   dplyr::select(acc, VegType, height, count, dbh, plot_key, cluster, 
-                clearing, site_prep, logging_trail, windthrow, standing_deadwood, planting, anti_browsing) %>% 
+                clearing, site_prep, logging_trail, windthrow, 
+                standing_deadwood, planting, anti_browsing,
+                x, y  ) %>% 
   rename(
     subplot = plot_key,
     plot = cluster,
@@ -116,7 +120,7 @@ dat25_subplot_sub <- dat25_subplot %>%
     grndwrk = site_prep
          ) %>% 
   mutate(year = "2025") %>% 
-  # target column order for the bind
+   # target column order for the bind
   dplyr::select(all_of(target_cols))
 
 nrow(dat25_subplot_sub)
@@ -175,10 +179,21 @@ length(unique(dat25_expanded$subplot))
 
 
 ## Field data 2023: subplot level --------------------------------------
+dat23_xy <- dat23_sf_min %>%
+  mutate(
+    x = sf::st_coordinates(.)[, 1],
+    y = sf::st_coordinates(.)[, 2]
+  ) %>%
+  sf::st_drop_geometry()
+
+dat23_xy
+
 dat23_subplot_sub <- 
   dat23_subplot %>% 
+  left_join(dat23_xy, by =  c("ID" = "subplot")) %>%  
   dplyr::select(vegtype, species, ID, cluster,n, hgt, dbh,
-                clear, grndwrk, logging_trail, planting, anti_browsing) %>% 
+                clear, grndwrk, logging_trail, planting, anti_browsing,
+                x, y) %>% 
   rename(subplot = ID,
          plot = cluster) %>% 
   mutate(year = "2023") %>% 
@@ -192,7 +207,7 @@ dat23_subplot_sub <-
     plot    = as.character(plot),
     year    = as.factor(year)
   ) %>%
-  # assure teh same order
+   # assure teh same order
   dplyr::select(all_of(target_cols))
 
 dat25_subplot_sub <- dat25_expanded %>%
@@ -378,7 +393,8 @@ dat_subplots25 <-
   dplyr::select(plot, subplot, species,  vegtype,    hgt,     n,   
          dbh,   year, 
          clear,     grndwrk,  logging_trail,  planting,
-         anti_browsing,  
+         anti_browsing, 
+         x,y,
          n_subplots,status, disturbance_year, 
          forest_year, disturbance_length,
          pre_dist_trees_n,  
