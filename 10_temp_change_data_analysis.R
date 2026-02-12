@@ -91,7 +91,7 @@ species_class <- tibble::tribble(
 
 
 # Read data -----------------------------
-#dat_overlap_mng_upd2 <- fread('outData/full_table_overlap_23_25.csv')
+# dat_overlap_mng_upd2 <- fread('outData/full_table_overlap_23_25.csv')
 
 # test 2025/11/03 -> then needs to rename the layer to 'dat'!
 dat_overlap  <- fread('outData/full_table_23_25.csv')  # accound for all data points, not just the ovelapping ones
@@ -1467,7 +1467,12 @@ df_plot_context <- dat_overlap_mng_upd2%>%
                # time_snc_part_disturbance,
                 disturbance_year, 
                 forest_year, 
-                disturbance_length) %>% 
+                disturbance_length,
+               x, y) %>% 
+  group_by(plot, year) %>% 
+  mutate(x = mean(x, na.rm =T),
+            y = mean(y, na.rm =T)) %>% 
+  ungroup(.) %>% 
   distinct() 
 
 
