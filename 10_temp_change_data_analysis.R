@@ -91,7 +91,7 @@ species_class <- tibble::tribble(
 
 
 # Read data -----------------------------
-#dat_overlap_mng_upd2 <- fread('outData/full_table_overlap_23_25.csv')
+# dat_overlap_mng_upd2 <- fread('outData/full_table_overlap_23_25.csv')
 
 # test 2025/11/03 -> then needs to rename the layer to 'dat'!
 dat_overlap  <- fread('outData/full_table_23_25.csv')  # accound for all data points, not just the ovelapping ones
@@ -1011,7 +1011,7 @@ p_management_intensity_plot
 
 
 
-# Generate new data -----------------------------------------------------------
+# Generate new variables -----------------------------------------------------------
 ### Early vs late ( plot, subplot) ---------------
 # 
 # # Calculate stem counts by recovery type at the plot level
@@ -1467,7 +1467,12 @@ df_plot_context <- dat_overlap_mng_upd2%>%
                # time_snc_part_disturbance,
                 disturbance_year, 
                 forest_year, 
-                disturbance_length) %>% 
+                disturbance_length,
+               x, y) %>% 
+  group_by(plot, year) %>% 
+  mutate(x = mean(x, na.rm =T),
+            y = mean(y, na.rm =T)) %>% 
+  ungroup(.) %>% 
   distinct() 
 
 
@@ -1546,21 +1551,28 @@ plot_df <- plot_metrics_pooled %>%
 names(plot_df)
 nrow(plot_df)
 
-# 20260211 link data with plot coordinates and export for Karim -------------------------
-#get spatial data: calculate average coordinates
-dat23_sf         <- sf::st_read("outData/sf_context_2023.gpkg")          # subplot spatial data
+# export data for Karim for AEF testing, 20260212 -------------------------
 
-# Select and rename
-dat23_sf_min <- dat23_sf %>%
-  dplyr::select(subplot = ID, plot = cluster)
-
-dat25_sf         <- sf::st_read("outData/subplot_with_clusters_2025.gpkg")          # subplot spatial data
-# Select and rename
-dat25_sf_min <- dat25_sf %>%
-  dplyr::select(plot_key, cluster,plot_id)
-
+# add IV coniferous vs deciduous
+plot_df_AEF <- plot_df %>% 
+  dplyr::select(-level, -ID, -w) %>% 
+  mutate(
+    year = as.integer(year),           # from dbl -> int
+    plot_id = as.character(plot_id)    # keep key as character
+  ) %>%
+  rename(plot = plot_id) %>% 
+  left_join(iv_leaf_plot_wide, by = join_by(plot, year))
 
 
+plot_sf_AEF <- plot_df_AEF %>%
+  sf::st_as_sf(coords = c("x", "y"), crs = 3035, remove = FALSE)
+
+sf::st_write(
+  plot_sf_AEF,
+  dsn = 'outDataShare/Karim_AEF/regeneration_chars_3035.gpkg',
+  layer = "plot",
+  delete_layer = TRUE  # overwrite layer if it already exists
+)
 
 
 
