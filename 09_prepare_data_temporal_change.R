@@ -89,11 +89,11 @@ dat23_sf_3035 <- st_transform(dat23_sf_min, 3035)
 dat25_sf_3035 <- st_transform(dat25_sf_min, 3035)
 
 # quick check
-st_crs(dat23_3035)$epsg
-st_crs(dat25_3035)$epsg
+st_crs(dat23_sf_3035)$epsg
+st_crs(dat25_sf_3035)$epsg
 
 
-# get geometry as df objects
+#### get geometry as df objects ---------------------------------------------------
 dat23_xy <- dat23_sf_3035 %>%
   mutate(
     x = sf::st_coordinates(.)[, 1],
@@ -144,11 +144,13 @@ target_cols <- c("plot",
 
 
 
-# filter only relevant columns: 
-dat25_subplot_sub <- dat25_subplot %>% 
+# filter only relevant columns (as I have also bunch of damage variables)
+dat25_subplot_sub <-
+  dat25_subplot %>% 
   dplyr::select(-x, -y) %>%    # remove old coordinates, they are in WGS 84, use 3035 ones
   filter(!is.na(cluster)) %>% # filter empty clusters - happend in 3 subplots that they do not exist in points
-  left_join(dat25_xy, by = join_by(plot_key, cluster)) %>% # add new 3035 coordinates
+  left_join(dat25_xy, 
+            by = join_by(plot_key, cluster)) %>% # add new 3035 coordinates
   dplyr::filter(naruseni == TRUE & nzchar(trimws(photo_e))) %>% # filter out the errorroneous records
   dplyr::select(acc, VegType, height, count, dbh, plot_key, cluster, 
                 clearing, site_prep, logging_trail, windthrow, 
@@ -181,47 +183,57 @@ species_vec25 <- unique(dat25_subplot_sub$species)
 
 # remove otsp and empty species - now emply subplots will be still recorded
 species_vec25 <- species_vec25[species_vec25 != ""]
-species_vec25 <- species_vec25[species_vec25 != "otsp1"]
+species_vec25 <- species_vec25[species_vec25 != "ots1"]
 
-
-dat25_expanded <-
-  dat25_subplot_sub %>%
+# expand the list to have each species per each subplot (different database as from 2023)
+dat25_expanded <- dat25_subplot_sub %>%
   as_tibble() %>%
-    dplyr::select(-plot) %>% 
+  dplyr::select(-plot) %>% 
   tidyr::complete(
-    subplot,
+    # keep subplot-specific metadata in the key, so it is copied to new rows
+    tidyr::nesting(
+      subplot, year, clear, grndwrk, logging_trail, planting, anti_browsing, x, y
+    ),
     vegtype = c("small", "advanced", "mature"),
     species = species_vec25,
     fill = list(
-      n = NA_integer_,
+      n   = NA_integer_,
       dbh = NA_character_,
       hgt = NA_character_
     )
-  ) %>%
-  # Reattach plot info
+  ) %>% 
   left_join(subplot_to_plot25, by = "subplot") %>%
   mutate(year = "2025") %>%
   # Reorder columns if needed
-  dplyr::select(all_of(target_cols)) %>% 
-  dplyr::filter(!species %in% c("ots1", "")) 
+  dplyr::select(all_of(target_cols)) 
 
-# How many plots/subplots do not have any stems present? 
-dat25_expanded %>%
-  group_by(plot) %>%
-  summarise(all_stems_missing = all(is.na(n) | n == 0)) %>%
-  filter(all_stems_missing) #%>%  # just 1???
-  #nrow()
 
-dat25_expanded %>%
-  group_by(subplot) %>%
-  summarise(all_stems_missing = all(is.na(n) | n == 0)) %>%
-  filter(all_stems_missing) #%>%
-# 196 ~ 20%
+# check one subplot
+# dat25_expanded %>%
+#   dplyr::filter(subplot == "101_T1_JC_20250717")
 
-length(unique(dat25_expanded$species))
-length(unique(dat25_expanded$subplot))
-# 375_T2_AH_20250827
 
+
+#dat25_expanded <-
+  # dat25_subplot_sub %>%
+  # as_tibble() %>%
+  #   dplyr::select(-plot) %>% 
+  # tidyr::complete(
+  #   subplot,
+  #   vegtype = c("small", "advanced", "mature"),
+  #   species = species_vec25,
+  #   fill = list(
+  #     n = NA_integer_,
+  #     dbh = NA_character_,
+  #     hgt = NA_character_
+  #   )
+  # ) %>%
+  #  # dplyr::filter(subplot == '101_T1_JC_20250717')
+  # # Reattach plot info
+  # left_join(subplot_to_plot25, by = "subplot") %>%
+  # mutate(year = "2025") %>%
+  # # Reorder columns if needed
+  # dplyr::select(all_of(target_cols)) 
 
 ## Field data 2023: subplot level --------------------------------------
 
@@ -597,7 +609,7 @@ mng_plot_intensity <- mng_subplot_scores %>%
   ) %>% 
   select(-n_subplots)
 
-
+#### !!!! need to contiinue to check the coordinates systems between 23&25 data!!!
 dat_subplot_mng2 <- dat_subplot_mng %>% 
   left_join(mng_plot_intensity, by = c('plot', 'year'))
 
@@ -606,9 +618,6 @@ dat_overlap <- dat_subplot_mng2 %>%
   filter(status == 'both')
 # filter(status == "both") %>% # keep only overlapping sites
 length(unique(dat_overlap$plot))
-
-hist(traits_full$Shade_tolerance)
-
 
 ### export important tables ---------------
 
