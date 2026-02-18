@@ -1551,7 +1551,7 @@ plot_df <- plot_metrics_pooled %>%
 names(plot_df)
 nrow(plot_df)
 
-# export data for Karim for AEF testing, 20260212 -------------------------
+##  Export data for Karim for AEF testing, 20260212 -------------------------
 
 # add IV coniferous vs deciduous
 plot_df_AEF <- plot_df %>% 
@@ -1561,7 +1561,17 @@ plot_df_AEF <- plot_df %>%
     plot_id = as.character(plot_id)    # keep key as character
   ) %>%
   rename(plot = plot_id) %>% 
-  left_join(iv_leaf_plot_wide, by = join_by(plot, year))
+  left_join(iv_leaf_plot_wide, by = join_by(plot, year)) %>% 
+  mutate(
+    # cap time since disturbance
+    time_snc_full_disturbance = pmin(time_snc_full_disturbance, 8),
+    plot_id = factor(plot),
+ #   w       = pmin(pmax(w, 1), 50),   # cap weights so a few dense plots don't dominate
+    year_f = factor(year)
+  ) %>% 
+  mutate(
+    across(all_of(c("cv_hgt", "mean_hgt", "sp_richness", "effective_numbers")), ~ replace_na(.x, 0))
+  ) #%>%
 
 
 plot_sf_AEF <- plot_df_AEF %>%
@@ -1576,6 +1586,10 @@ sf::st_write(
 
 
 
+
+
+
+
 #### Bind & clean final table with both levels ----------
 both_levels_re2 <- bind_rows(sub_df, plot_df) %>%
     mutate(
@@ -1583,66 +1597,30 @@ both_levels_re2 <- bind_rows(sub_df, plot_df) %>%
       time_snc_full_disturbance = pmin(time_snc_full_disturbance, 8),
       level   = factor(level, levels = c("subplot","plot")),
       plot_id = factor(plot_id),
-      w       = pmin(pmax(w, 1), 50)   # cap weights so a few dense plots don't dominate
+      w       = pmin(pmax(w, 1), 50),   # cap weights so a few dense plots don't dominate
+      year_f = factor(year)
   ) %>% 
-  mutate(#time_since_f = ifelse(time_snc_full_disturbance <= 2, "early", "later") %>% 
-        #   factor(levels = c("early", "later")),
-         #dist_length_f = ifelse(disturbance_length <= 2, "abrupt", "continuous") %>% 
-          # factor(levels = c( "abrupt", "continuous")),
-         #plant_f = ifelse(planting_intensity < 0.2, "no", "yes") %>% 
-          # factor(levels = c("no", "yes")), 
-         #anti_brow_f = ifelse(anti_browsing_intensity < 0.2, "no", "yes") %>% 
-        #   factor(levels = c("no", "yes")),
-         #grndwrk_f = ifelse(grndwrk_intensity < 0.2, "no", "yes") %>% 
-        #   factor(levels = c("no", "yes")),
-         year_f = factor(year)
-           ) %>% 
   mutate(
     across(all_of(c("cv_hgt", "mean_hgt", "sp_richness", "effective_numbers")), ~ replace_na(.x, 0))
-  ) #%>%
-
-# 1998
-
-
-# add small value to CV = 0
-both_levels_re2 <- both_levels_re2 %>%
+  ) %>%
+ # add small value to CV = 0
   mutate(
     cv_hgt_pos = ifelse(cv_hgt <= 0, 1e-4, cv_hgt),
     effective_numbers = ifelse(effective_numbers == 0, 1e-4, effective_numbers)#is.na(cv_hgt) | 
-  ) #%>% 
+  ) %>%
+  mutate(cv_hgt_present = as.integer(cv_hgt > 0))
   #filter(!is.na(mean_hgt), !is.na(w), !is.na(cv_hgt)) #, !is.na(dens_m2)
 
-
-# both_levels_re2 <- both_levels_re2 %>%
-#   mutate(plant_browse_f = interaction(plant_f, anti_brow_f, sep = "_")) %>% 
-#   mutate(treatment_grp = case_when(
-#     plant_f == "yes" & anti_brow_f == "yes" ~ "yes",
-#     TRUE ~ "no"
-#   ) %>% factor(levels = c("yes", "no")))
-
-
-# both_levels_re2$mng_f <- dplyr::case_when(
-#   both_levels_re2$plant_browse_f == "no_no"   ~ "none",
-#   both_levels_re2$plant_browse_f == "yes_yes" ~ "both",
-#   TRUE                                        ~ "some"
-# )
-
-
-# both_levels_re2$mng_f <- factor(
-#   both_levels_re2$mng_f,
-#   levels = c("none", "some", "both")
-# )
-
-#table(both_levels_re2$mng_f)
-
-# as binary/continuous part
-
-both_levels_re2 <- both_levels_re2 %>%
-  mutate(cv_hgt_present = as.integer(cv_hgt > 0))
 
 table(both_levels_re2$cv_hgt_present)
 
 
+# get data for plot and subplot 
+df_plot_clean <- both_levels_re2 %>% 
+  filter( level == 'plot')
+
+df_sub_clean <- both_levels_re2 %>% 
+  filter( level == 'subplot')
 
 
 
@@ -1662,7 +1640,7 @@ both_levels_re2 %>%
   geom_smooth(method = "lm", se = TRUE) 
 
 
-# how does spruce share behaves?
+##### how does spruce share behaves? ------------------------------------------------
 
 # 1. Summarise spruce cover by intensity grid
 spruce_summary <- both_levels_re2 %>%
@@ -1732,9 +1710,6 @@ both_levels_re2 %>%
 
 
 
-
-
-
 ##### Boxplot: which management is most important?  --------------------
 # Create long table for plotting across factors
 both_levels_long <- both_levels_re2 %>%
@@ -1744,10 +1719,7 @@ both_levels_long <- both_levels_re2 %>%
          planting_intensity,
          clear_intensity,
          anti_browsing_intensity,
-         grndwrk_intensity 
-         #time_since_f, dist_length_f, plant_f, 
-         #anti_brow_f,
-         #grndwrk_f
+         grndwrk_intensity
          ) %>%
   pivot_longer(
     cols = c( mean_hgt, cv_hgt, effective_numbers, sp_richness),
@@ -1808,6 +1780,9 @@ both_levels_re2 %>%
 
 
 #### GAM management interaction + time since disturbance smooths --------------
+
+
+
 ##### Mean height -----------------------------------------------------
 gam_mean_hgt_intensity_base <- gam(
   mean_hgt ~ 
@@ -2261,12 +2236,6 @@ gam_cv_hgt_pos_re <- gam(
 )
 AIC(gam_cv_hgt_pos_base, gam_cv_hgt_pos_re)
 
-# get data for plot and subplot 
-df_plot_clean <- both_levels_re2 %>% 
-  filter( level == 'plot')
-
-df_sub_clean <- both_levels_re2 %>% 
-  filter( level == 'subplot')
 
 gam_cv_hgt_pos_re_plot <- gam(
   cv_hgt_pos ~
@@ -3269,7 +3238,7 @@ both_levels_long_capped <- both_levels_long %>%
 
 
 
-# All indicators:  Create half-violin plot ------------------------------------------------
+## All indicators:  Create half-violin plot ------------------------------------------------
 
 library(gghalves)
 # Define which variables are discrete (integers)
