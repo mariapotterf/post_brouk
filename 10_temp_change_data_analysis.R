@@ -3724,6 +3724,73 @@ height_species_mng <- dat_clean %>%
     .groups = "drop"
   )
 
+
+# get average per year
+height_species_mng_yr <- dat_clean %>%
+  dplyr::group_by(
+    year,
+    species,
+    planting_intensity,
+    anti_browsing_intensity
+  ) %>%
+  dplyr::summarise(
+    total_stems = sum(n, na.rm = TRUE),
+    mean_height_weighted = weighted.mean(hgt_est, w = n, na.rm = TRUE),
+    mean_height_unweighted = mean(hgt_est, na.rm = TRUE),
+    .groups = "drop"
+  ) %>% 
+  dplyr::mutate(
+    seral_group = dplyr::if_else(species %in% earlyspecs_laura, "early", "late")
+  )
+
+# 2) aggregate to: year × seral × planting × browsing
+height_seral_mng_year <- height_species_mng_yr %>%
+  dplyr::group_by(year, seral_group, planting_intensity, anti_browsing_intensity) %>%
+  dplyr::summarise(
+    mean_h = weighted.mean(mean_height_weighted, w = total_stems, na.rm = TRUE),
+    stems  = sum(total_stems, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# limit cells with low stem density
+min_stems = 3
+height_seral_mng_year_f <- height_seral_mng_year %>%
+  dplyr::filter(stems >= min_stems)
+
+
+ggplot(height_seral_mng_year_f,
+       aes(x = planting_intensity,
+           y = anti_browsing_intensity,
+           fill = mean_h)) +
+  geom_tile(color = "grey80") +
+  
+  facet_grid(seral_group ~ year) +
+  
+  scale_fill_viridis_c(limits = c(0, 2.5),
+    option = "E",
+    direction = -1,
+    end = 0.95,
+    name = "Mean height (m)"
+  ) +
+  
+  geom_text(aes(label = round(mean_h, 2)),
+            color = "white",
+            size = 2.5,
+            fontface = "bold") +
+  
+  coord_equal() +
+  theme_classic() +
+  labs(x = "Planting intensity",
+       y = "Anti-browsing intensity") +
+  theme(
+    legend.position = "bottom",
+    strip.background = element_blank(),
+    strip.text = element_text(face = "bold")
+  )
+
+
+
+
 # View result
 height_species_mng
 
@@ -3757,15 +3824,6 @@ height_seral_mng <- height_species_mng2 %>%
     .groups = "drop"
   )
 
-height_seral_mng %>% 
-  ggplot(aes(x = planting_intensity,
-             y = anti_browsing_intensity,
-             color = seral_group,
-             size = mean_height_weighted)) +
-  geom_jitter(alpha = 0.7) +
-  scale_color_manual(values = c("early" = "orange",
-                                "late" = "darkgreen")) +
-  theme_classic()
 
 
 height_seral_mng %>%
@@ -3792,6 +3850,10 @@ height_seral_mng %>%
   labs(x = "Planting intensity",
        y = "Anti-browsing intensity") + 
   theme(legend.position = "bottom")
+
+
+
+
 
 
 
