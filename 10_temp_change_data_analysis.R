@@ -1685,6 +1685,11 @@ cor.test(plot_df_AEF2$time_snc_full_disturbance,
          plot_df_AEF2$beta_jaccard_mean,
          method = "spearman")
 
+cor.test(plot_df_AEF2$planting_intensity,
+         plot_df_AEF2$spruce_share,
+         method = "spearman")
+
+
 
 m_beta_full <- mgcv::gam(
   beta_jaccard_mean ~ 
@@ -1708,6 +1713,19 @@ m_beta_add <- mgcv::gam(
   method = "REML"
 )
 
+m_beta_add2 <- mgcv::gam(
+  beta_jaccard_mean ~ 
+    s(time_snc_full_disturbance, k = 5) +
+    #clear_intensity+
+    s(planting_intensity, k = 5) + anti_browsing_intensity +
+    s(spruce_share) +
+    s(plot_id, bs = "re"),
+  data = plot_df_AEF2,
+  method = "REML"
+)
+
+AIC(m_beta_add2, m_beta_add) # model is slightly better if used only as a linear term
+fin.m.jaccard <- m_beta_add
 
 # Population-level prediction (exclude random effect)
 pred_spruce <- ggpredict(
@@ -1753,8 +1771,8 @@ p_plant_beta <- ggplot(pred_plant, aes(x = x, y = predicted)) +
 
 
 
-ggarrange(p_plant_beta, p_spruce_beta, # p_time_beta,
-          ncol =2)
+ggarrange(p_plant_beta, p_spruce_beta,  p_time_beta,
+          ncol =3)
 summary(m_beta_full)
 summary(m_beta_add)
 AIC(m_beta_full, m_beta_add)
@@ -3671,6 +3689,163 @@ both_levels_long_capped %>%
 
 
 ### Graphics: disturbance chars, species composition and management
+
+# what is the heigh distribution per species and per management level?
+
+# Convert to tibble (safer than data.table auto behavior)
+dat <- dat_overlap_mng_upd2 %>%
+  as_tibble()
+
+# 1️⃣ Clean data ----------------------------------------------------------
+dat_clean <- dat %>%
+  dplyr::filter(
+    !is.na(hgt_est),
+    !is.na(n),
+    n > 0
+  )
+
+# Optional sanity check
+summary(dat_clean$hgt_est)
+summary(dat_clean$n)
+
+
+# 2️⃣ Calculate weighted mean height per species × management ------------
+
+height_species_mng <- dat_clean %>%
+  dplyr::group_by(
+    species,
+    planting_intensity,
+    anti_browsing_intensity
+  ) %>%
+  dplyr::summarise(
+    total_stems = sum(n, na.rm = TRUE),
+    mean_height_weighted = weighted.mean(hgt_est, w = n, na.rm = TRUE),
+    mean_height_unweighted = mean(hgt_est, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# View result
+height_species_mng
+
+earlyspecs_laura <- c("lade","acps","frex","cabe","bepe","alin",
+                "algl","acca","acpl","soau","soar",
+                "coav","alvi","potr","poni","ulgl",
+                "saca","rops")
+
+height_species_mng2 <- height_species_mng %>%
+  dplyr::mutate(
+    seral_group = dplyr::if_else(
+      species %in% earlyspecs_laura,
+      "early",
+      "late"
+    )
+  )
+
+# calculate height averageges based on seral groups
+height_seral_mng <- height_species_mng2 %>%
+  dplyr::group_by(
+    seral_group,
+    planting_intensity,
+    anti_browsing_intensity
+  ) %>%
+  dplyr::summarise(
+    mean_height_weighted =
+      weighted.mean(mean_height_weighted,
+                    w = total_stems,
+                    na.rm = TRUE),
+    total_stems = sum(total_stems),
+    .groups = "drop"
+  )
+
+height_seral_mng %>% 
+  ggplot(aes(x = planting_intensity,
+             y = anti_browsing_intensity,
+             color = seral_group,
+             size = mean_height_weighted)) +
+  geom_jitter(alpha = 0.7) +
+  scale_color_manual(values = c("early" = "orange",
+                                "late" = "darkgreen")) +
+  theme_classic()
+
+
+height_seral_mng %>%
+ # dplyr::filter(total_stems >= 10) %>%
+  ggplot(aes(x = planting_intensity,
+             y = anti_browsing_intensity,
+             fill = mean_height_weighted#,
+             #alpha = total_stems
+             )) +
+  geom_tile(color = "grey80") +
+  facet_wrap(~ seral_group) +
+  scale_fill_viridis_c(limits = c(0, 2.5), 
+                       oob = scales::squish, 
+                       option = "E",
+                       direction = -1,   # 🔹 reverse scale
+                       end = 0.95,
+                       name = "Mean height (m)") +
+   geom_text(aes(label = round(mean_height_weighted, 1)),
+            color = "white", size = 2.2, fontface = "bold") +
+  
+ # scale_alpha(range = c(0.4, 1), guide = "none") +
+  coord_equal() +
+  theme_classic() +
+  labs(x = "Planting intensity",
+       y = "Anti-browsing intensity") + 
+  theme(legend.position = "bottom")
+
+
+
+
+height_species_mng %>%
+  dplyr::filter(species != "") %>%   # keep only well-supported cells
+  ggplot(aes(x = planting_intensity,
+             y = anti_browsing_intensity,
+             fill = mean_height_weighted,
+             alpha = total_stems)) +
+  geom_tile(color = "grey80") +
+  facet_wrap(~ species) +
+  scale_fill_gradientn(
+    colours = c("#e5f5e0",  # very light green
+                "#74c476",  # medium green
+                "#00441b"), # dark forest green
+    #limits = c(0, max(height_species_mng$mean_height_weighted, na.rm = TRUE)),
+    limits = c(0, 2),
+    oob = scales::squish,   # values >5 will be clipped to dark green
+    name = "Mean height (m)"
+  ) +
+  scale_alpha(range = c(0.4, 1), guide = "none") +
+  #scale_fill_viridis_c(name = "Mean height (m)") +
+  coord_equal() +
+  theme_classic() +
+  labs(x = "Planting intensity",
+       y = "Anti-browsing intensity")
+
+height_species_mng %>%
+  dplyr::filter(!is.na(species), species != "") %>%
+  ggplot(aes(
+    x = factor(planting_intensity),
+    y = factor(anti_browsing_intensity),
+    fill = mean_height_weighted
+  )) +
+  geom_tile(color = "grey80") +
+  facet_wrap(~ species) +
+  scale_fill_viridis_c(
+    limits = c(0, 2.5),
+    oob = scales::squish,
+    option = "E",
+    direction = -1,
+    end = 0.95,
+    name = "Mean height (m)"
+  ) +
+  # halo label (underlay)
+  geom_text(aes(label = round(mean_height_weighted, 1)),
+            color = "white", size = 2.2, fontface = "bold") +
+  coord_equal() +
+  theme_classic() +
+  labs(x = "Planting intensity",
+       y = "Anti-browsing intensity")
+
+
 
 ## Get context and disturbance characteristics (plot) --------------
 plot_context_chars <- dat_overlap_mng_upd2%>% 
