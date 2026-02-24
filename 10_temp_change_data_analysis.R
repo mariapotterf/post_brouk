@@ -1584,9 +1584,189 @@ sf::st_write(
   delete_layer = TRUE  # overwrite layer if it already exists
 )
 
+#### Get alpha, gamma and beta (species turnover) diversity ------------------------------------------------------------
+
+# long -> wide community matrix at subplot level
+comm_sub <- dat_overlap_mng_upd2 %>%
+  mutate(n = coalesce(n, 0L)) %>%
+  filter(!is.na(species), species != "") %>%
+  group_by(plot, year, subplot, species) %>%
+  summarise(n = sum(n), .groups = "drop") %>%
+  tidyr::pivot_wider(
+    names_from = species,
+    values_from = n,
+    values_fill = 0
+  )
+
+beta_within_plotyear <- function(df_plotyear) {
+  meta <- df_plotyear %>% dplyr::select(plot, year, subplot)
+  mat  <- df_plotyear %>% dplyr::select(-plot, -year, -subplot) %>% as.data.frame()
+  
+  # drop empty subplots (all zeros)
+  keep <- rowSums(mat) > 0
+  mat  <- mat[keep, , drop = FALSE]
+  meta <- meta[keep, , drop = FALSE]
+  
+  n_sub <- nrow(mat)
+  
+  # if <2 subplots with any stems, turnover is undefined
+  if (n_sub < 2) {
+    return(tibble::tibble(
+      plot = unique(meta$plot),
+      year = unique(meta$year),
+      n_subplots_nonempty = n_sub,
+      beta_jaccard_mean = NA_real_,
+      beta_bray_mean = NA_real_,
+      alpha_rich_mean = if (n_sub == 1) sum(mat[1, ] > 0) else NA_real_,
+      gamma_rich = if (n_sub == 1) sum(colSums(mat) > 0) else NA_real_,
+      beta_whittaker = NA_real_
+    ))
+  }
+  
+  # Presence/absence for Jaccard
+  mat_pa <- (mat > 0) * 1
+  
+  # Pairwise dissimilarities
+  d_jac  <- vegan::vegdist(mat_pa, method = "jaccard", binary = TRUE)
+  d_bray <- vegan::vegdist(mat,    method = "bray")
+  
+  # Richness alpha/gamma and Whittaker beta
+  alpha <- rowSums(mat_pa)
+  gamma <- sum(colSums(mat_pa) > 0)
+  betaW <- gamma / mean(alpha)
+  
+  tibble::tibble(
+    plot = unique(meta$plot),
+    year = unique(meta$year),
+    n_subplots_nonempty = n_sub,
+    beta_jaccard_mean = mean(as.numeric(d_jac),  na.rm = TRUE),   # 0..1 (higher = more turnover)
+    beta_bray_mean    = mean(as.numeric(d_bray), na.rm = TRUE),   # 0..1 (higher = more turnover)
+    alpha_rich_mean   = mean(alpha),
+    gamma_rich        = gamma,
+    beta_whittaker    = betaW                                     # >=1 (higher = more turnover)
+  )
+}
+
+
+beta_plotyear <- comm_sub %>%
+  group_by(plot, year) %>%
+  group_split() %>%
+  purrr::map_dfr(beta_within_plotyear)
+
+beta_plotyear
+
+
+#beta_jaccard_mean (0–1):
+# ~0 = subplots share the same species (homogenized)
+# ~1 = subplots share few/no species (high turnover)
+# 
+# beta_bray_mean (0–1):
+#   like above, but accounts for abundance (stem counts)
+
+# beta_whittaker (≥1):
+#   1 = plot richness equals mean subplot richness (no turnover)
+# 2.4 (like you estimated) = plot has ~2.4× the richness of an average subplot
+
+plot_df_AEF2 <- plot_df_AEF %>% 
+  left_join(beta_plotyear)
+
+
+# quick check over time
+ggplot(plot_df_AEF2, 
+       aes(x = time_snc_full_disturbance, 
+           y = beta_jaccard_mean)) +
+  geom_point(alpha = 0.4) +
+  geom_smooth(method = "gam", 
+              formula = y ~ s(x, k = 7)) +
+  theme_classic()
+
+
+cor.test(plot_df_AEF2$time_snc_full_disturbance,
+         plot_df_AEF2$beta_jaccard_mean,
+         method = "spearman")
+
+
+m_beta_full <- mgcv::gam(
+  beta_jaccard_mean ~ 
+    s(time_snc_full_disturbance, k = 5) +
+    #clear_intensity+
+    planting_intensity*anti_browsing_intensity +
+    spruce_share +
+    s(plot_id, bs = "re"),
+  data = plot_df_AEF2,
+  method = "REML"
+)
+
+m_beta_add <- mgcv::gam(
+  beta_jaccard_mean ~ 
+    s(time_snc_full_disturbance, k = 5) +
+    #clear_intensity+
+    planting_intensity + anti_browsing_intensity +
+    s(spruce_share) +
+    s(plot_id, bs = "re"),
+  data = plot_df_AEF2,
+  method = "REML"
+)
+
+
+# Population-level prediction (exclude random effect)
+pred_spruce <- ggpredict(
+  m_beta_add,
+  terms = "spruce_share [0:1 by=0.02]",
+  exclude = "s(plot_id)"
+)
+pred_plant <- ggpredict(
+  m_beta_add,
+  terms = "planting_intensity [0:1 by=0.05]",
+  exclude = "s(plot_id)"
+)
+
+pred_time <- ggpredict(
+  m_beta_add,
+  terms = "time_snc_full_disturbance [all]",
+  exclude = "s(plot_id)"
+)
+
+p_time_beta <- ggplot(pred_time, aes(x = x, y = predicted)) +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2) +
+  geom_line(linewidth = 1) +
+  labs(x = "Time since full disturbance (years)",
+       y = "Predicted Jaccard beta") +
+  theme_classic() 
+
+
+p_spruce_beta <- ggplot(pred_spruce, aes(x = x, y = predicted)) +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2) +
+  geom_line(linewidth = 1) +
+  labs(x = "Spruce share",
+       y = "Predicted Jaccard beta") +
+  theme_classic()  
 
 
 
+p_plant_beta <- ggplot(pred_plant, aes(x = x, y = predicted)) +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2) +
+  geom_line(linewidth = 1) +
+  labs(x = "Planting intensity",
+       y = "Predicted Jaccard beta") +
+  theme_classic() 
+
+
+
+ggarrange(p_plant_beta, p_spruce_beta, # p_time_beta,
+          ncol =2)
+summary(m_beta_full)
+summary(m_beta_add)
+AIC(m_beta_full, m_beta_add)
+appraise(m_beta_full)
+plot(m_beta_add, page = 1)
+
+concurvity(m_beta_add, full = TRUE)
+
+vis.gam(m_beta_add, view = "spruce_share")
+vis.gam(m_beta_add, view = "planting_intensity")
+
+sum(is.na(plot_df_AEF2$beta_jaccard_mean))
 
 
 
@@ -1778,7 +1958,6 @@ both_levels_re2 %>%
   geom_boxplot()
 
 
-
 #### GAM management interaction + time since disturbance smooths --------------
 
 
@@ -1875,6 +2054,61 @@ gam_mean_hgt_intensity02_int1_plot_lin <- gam(
   family = tw(link = "log"),
   method = "REML"
 )
+
+
+
+# test linear model
+gam_mean_hgt_base <- gam(
+  mean_hgt ~ 
+    planting_intensity*anti_browsing_intensity +
+    #ti(planting_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
+    #ti(grndwrk_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
+    
+    s(time_snc_full_disturbance, by = year_f, k = 4) +
+    grndwrk_intensity+
+    year_f +
+    # level +
+    s(plot_id, bs = "re"),
+  data = plot_df_AEF,
+  family = tw(link = "log"),
+  method = "REML"
+)
+
+# chcek for spatial autocorrelation 
+
+# Extract residuals
+df_sp <- plot_df_AEF %>%
+  #dplyr::filter(level == "plot") %>%
+  dplyr::mutate(resid = residuals(gam_mean_hgt_base))
+
+# Create spatial object
+coords <- as.matrix(df_sp[, c("x", "y")])
+
+# k-nearest neighbours (choose k ~ 4–6 typically)
+nb <- spdep::knn2nb(spdep::knearneigh(coords, k = 5))
+lw <- spdep::nb2listw(nb, style = "W")
+
+# Moran's I
+spdep::moran.test(df_sp$resid, lw)
+
+
+gam_mean_hgt_spatial <- gam(
+  mean_hgt ~ 
+    planting_intensity * anti_browsing_intensity +
+    s(time_snc_full_disturbance, by = year_f, k = 4) +
+    grndwrk_intensity +
+    year_f +
+    s(x, y, k = 20) +
+    s(plot_id, bs = "re"),
+  data = plot_df_AEF,
+  family = tw(link = "log"),
+  method = "REML"
+)
+
+AIC(gam_mean_hgt_base, gam_mean_hgt_spatial)
+summary(gam_mean_hgt_spatial)$dev.expl
+
+
 AIC(gam_mean_hgt_intensity02_int1_plot_lin, gam_mean_hgt_intensity02_int1_plot)
 
 gam_mean_hgt_intensity02_int1_plot2 <- gam(
