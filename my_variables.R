@@ -26,7 +26,20 @@ species_labels <- c(
 # piab      besp      pisy      qusp      fasy      lade      saca      soau      acps      potr      absp      sasp 
 #"#006837" "#17934D" "#58B65F" "#94D168" "#C6E77F" "#EDF7A7" "#FEF0A7" "#FDCD7B" "#FA9C58" "#EE613D" "#D22B26" "#A50026" 
 
-
+species_colors <- c(
+  piab = "#006837",
+  besp = "#17934D",
+  pisy = "#58B65F",
+  qusp = "#94D168",
+  fasy = "#C6E77F",
+  lade = "#EDF7A7",
+  saca = "#FEF0A7",
+  soau = "#FDCD7B",
+  acps = "#FA9C58",
+  potr = "#EE613D",
+  absp = "#D22B26",
+  sasp = "#A50026"
+)
 
 
 
