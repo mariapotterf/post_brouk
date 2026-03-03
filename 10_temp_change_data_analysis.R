@@ -33,61 +33,15 @@ library(RColorBrewer)
 
 library(ggridges)
 library(scales)
-
 library(forcats) # order factors
 
 
-
+source('my_variables.R')
 
 
 theme_set(theme_classic2(base_size = 10) +
             theme(axis.title = element_text(size = 10),
                   axis.text  = element_text(size = 10)))
-
-
-
-# divid species on coniferous vs deciduousl
-
-species_class <- tibble::tribble(
-  ~species, ~leaf_type,
-  "absp", "coniferous",
-  "piab", "coniferous",
-  "pisy", "coniferous",
-  "psme", "coniferous",
-  "lade", "coniferous",
-  "juni", "coniferous",
-  "taba", "coniferous",
-  
-  "acpl", "deciduous",
-  "acps", "deciduous",
-  "algl", "deciduous",
-  "alin", "deciduous",
-  "besp", "deciduous",
-  "cabe", "deciduous",
-  "fasy", "deciduous",
-  "potr", "deciduous",
-  "prav", "deciduous",
-  "qusp", "deciduous",
-  "saca", "deciduous",
-  "sasp", "deciduous",
-  "soar", "deciduous",
-  "soau", "deciduous",
-  "tisp", "deciduous",
-  "acca", "deciduous",
-  "aehi", "deciduous",
-  "aial", "deciduous",
-  "alvi", "deciduous",
-  "casa", "deciduous",
-  "frex", "deciduous",
-  "fror", "deciduous",
-  "jure", "deciduous",
-  "osca", "deciduous",
-  "posp", "deciduous",
-  "rops", "deciduous",
-  "soto", "deciduous",
-  "ulsp", "deciduous"
-)
-
 
 
 # Read data -----------------------------
@@ -145,17 +99,17 @@ n_trees_total <- overall_totals %>%
   pull(total_trees)
 
 # Species counts and presence - now without year! all pooled as composition have not changed much
-species_stem_share <- 
+#species_stem_share <- 
   df %>%
-  group_by(species) %>%
+  group_by(species, year) %>%
   summarise(
     stems = sum(n),                                   # number of trees
-    #plots_present = n_distinct(plot[n > 0]),          # plots where species occurs
+    plots_present = n_distinct(plot[n > 0]),          # plots where species occurs
     .groups = "drop"
-  ) %>%
+  ) #%>%
   dplyr::arrange(species) %>% 
-  mutate(#n_trees = n_trees,
-        # trees25 = n_trees25,
+  mutate(n_trees = n_trees,
+         trees25 = n_trees25,
          share = round(stems/n_trees_total*100,2)) 
 
 # merge counst across 2 years:     
@@ -179,32 +133,12 @@ species_colors <- setNames(pal, v_top_species_overall)
 species_colors
 #
 
-# species_colors
-# piab      besp      pisy      qusp      fasy      lade      saca      soau      acps      potr      absp      sasp 
-#"#006837" "#17934D" "#58B65F" "#94D168" "#C6E77F" "#EDF7A7" "#FEF0A7" "#FDCD7B" "#FA9C58" "#EE613D" "#D22B26" "#A50026" 
 
 
 # Print the color assignments for confirmation
 print(species_colors)
 
 
-# update species labels
-species_labels <- c(
-  piab = "Picea abies",
-  besp = "Betula sp.",
-  pisy = "Pinus sylvestris",
-  qusp = "Quercus sp.",
-  fasy = "Fagus sylvatica",
-  lade = "Larix decidua",
-  saca = "Salix caprea",
-  soau = "Sorbus aucuparia",
-  acps = "Acer pseudoplatanus",
-  potr = "Populus tremula" #,
-  #absp = "Abies sp.",
-  #sasp = "Salix sp."
-)
-
-species_levels <- rev(names(species_labels))  # Custom order, matching color palette and labels
 
 ### How many plots per single species and what is the species? ----------------------
 
