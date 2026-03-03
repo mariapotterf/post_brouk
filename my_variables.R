@@ -15,12 +15,12 @@ species_labels <- c(
   saca = "Salix caprea",
   soau = "Sorbus aucuparia",
   acps = "Acer pseudoplatanus",
-  potr = "Populus tremula" #,
-  #absp = "Abies sp.",
+  potr = "Populus tremula",
+  absp = "Abies sp."#,
   #sasp = "Salix sp."
 )
 
-species_levels <- rev(names(species_labels))  # Custom order, matching color palette and labels
+#species_levels <- rev(names(species_labels))  # Custom order, matching color palette and labels
 
 # species_colors
 # piab      besp      pisy      qusp      fasy      lade      saca      soau      acps      potr      absp      sasp 
