@@ -1855,343 +1855,6 @@ plot_df_AEF2 <- plot_df_AEF2 %>%
 
 # get residuals: separate browsing from planting
 
-#### Residualize browsing??? --------------------------------
-
-m_browse_resid <- lm(
-  anti_browsing_intensity ~ planting_intensity,
-  data = plot_df_AEF2
-)
-
-plot_df_AEF2$browse_resid <- resid(m_browse_resid)
-hist(plot_df_AEF2$browse_resid )
-
-cor(plot_df_AEF2$planting_intensity,
-    plot_df_AEF2$browse_resid)
-
-
-
-
-# i have high correlation between planting and browsing: should i treat them as a combined factor, or as combined intensity?
-m_height_sep <- gam(
-  mean_hgt ~
-    planting_intensity+browse_resid +
-    s(time_snc_full_disturbance, by = year_f, k = 4) +
-    grndwrk_intensity +
-    year_f +
-    s(plot_id, bs = "re"),
-  data = plot_df_AEF2,
-  family = tw(link = "log"),
-  method = "REML"
-)
-
-
-
-
-m_height_int <- gam(
-  mean_hgt ~
-    planting_intensity * anti_browsing_intensity +
-    s(time_snc_full_disturbance, by = year_f, k = 4) +
-    grndwrk_intensity +
-    year_f +
-    s(plot_id, bs = "re"),
-  data = plot_df_AEF2,
-  family = tw(link = "log"),
-  method = "REML"
-)
-
-
-m_height_gradient <- gam(
-  mean_hgt ~
-    active_regeneration +
-    s(time_snc_full_disturbance, by = year_f, k = 4) +
-    grndwrk_intensity +
-    year_f +
-    s(plot_id, bs = "re"),
-  data = plot_df_AEF2,
-  family = tw(link = "log"),
-  method = "REML"
-)
-
-m_height_gradient_ti <- gam(
-  mean_hgt ~
-    active_regeneration +
-    s(time_snc_full_disturbance, by = year_f, k = 4) +
-    # time × management interaction, allowed to differ by year
-    ti(time_snc_full_disturbance, active_regeneration, by = year_f,
-       k = c(4, 3)) +
-    grndwrk_intensity +
-    year_f +
-    s(plot_id, bs = "re"),
-  data = plot_df_AEF2,
-  family = tw(link = "log"),
-  method = "REML"
-)
-
-# Compare to your current gradient model
-AIC(m_height_gradient, m_height_gradient_ti, m_height_sep)
-summary(m_height_gradient_ti)
-mgcv::concurvity(m_height_gradient_ti, full = TRUE)
-
-
-m_height_gradient_ti_shared <- gam(
-  mean_hgt ~
-    active_regeneration +
-    s(time_snc_full_disturbance, by = year_f, k = 4) +
-    ti(time_snc_full_disturbance, active_regeneration, k = c(4, 3)) +
-    grndwrk_intensity +
-    year_f +
-    s(plot_id, bs = "re"),
-  data = plot_df_AEF2,
-  family = tw(link = "log"),
-  method = "REML"
-)
-
-AIC(m_height_gradient, m_height_gradient_ti_shared)
-summary(m_height_gradient_ti_shared)
-
-
-m_height_gradient <- gam(
-  mean_hgt ~
-    active_regeneration +
-    s(time_snc_full_disturbance, by = year_f, k = 4) +
-    grndwrk_intensity +
-    year_f +
-    s(plot_id, bs = "re"),
-  data = plot_df_AEF2,
-  family = tw(link = "log"),
-  method = "REML"
-)
-
-
-
-# make management intervention as factors
-m_height_strategy <- gam(
-  mean_hgt ~
-    management_strategy +
-    s(time_snc_full_disturbance, by = year_f, k = 4) +
-    grndwrk_intensity +
-    year_f +
-    s(plot_id, bs = "re"),
-  data = plot_df_AEF2,
-  family = tw(link = "log"),
-  method = "REML"
-)
-
-AIC(m_height_int,
-    m_height_gradient,
-    m_height_strategy)
-
-summary(m_height_int)$dev.expl
-summary(m_height_gradient)$dev.expl
-summary(m_height_strategy)$dev.expl
-
-pred_time_mng <- ggpredict(
-  m_height_gradient,
-  terms = c("time_snc_full_disturbance [all]",
-            "active_regeneration [0,0.5,1]")
-)
-
-plot(pred_time_mng)
-
-
-pred_time_strat <- ggpredict(
-  m_height_strategy,
-  terms = c("time_snc_full_disturbance [all]",
-            "management_strategy")
-)
-
-plot(pred_time_strat)
-
-fin.m.hgt <- m_height_gradient
-
-# CV presence :
-m_cv_bin_grad <- gam(
-  cv_hgt_present ~
-    active_regeneration +
-    s(time_snc_full_disturbance, k = 7) +
-    grndwrk_intensity +
-    year_f +
-    s(plot_id, bs = "re"),
-  data = plot_df_AEF2,
-  family = binomial(link = "logit"),
-  method = "REML"
-)
-
-m_cv_bin_grad_s <- gam(
-  cv_hgt_present ~
-    s(active_regeneration, k = 4) +
-    s(time_snc_full_disturbance, k = 7) +
-    grndwrk_intensity +
-    year_f +
-    s(plot_id, bs = "re"),
-  data = plot_df_AEF2,
-  family = binomial(link = "logit"),
-  method = "REML"
-)
-m_cv_bin_int <- gam(
-  cv_hgt_present ~
-    planting_intensity * anti_browsing_intensity +
-    s(time_snc_full_disturbance, k = 7) +
-    grndwrk_intensity +
-    year_f +
-    s(plot_id, bs = "re"),
-  data = plot_df_AEF2,
-  family = binomial(link = "logit"),
-  method = "REML"
-)
-
-AIC(m_cv_bin_grad, m_cv_bin_int, m_cv_bin_grad_s)
-
-plot.gam(m_cv_bin_grad, page = 1)
-
-
-p1 <- ggpredict(
-  m_cv_bin_grad,
-  terms = c("time_snc_full_disturbance [all]",
-            "active_regeneration")
-)
-
-plot(p1)
-fin.m.cv.bin <- m_cv_bin_grad
-
-### CV positive
-m_cv_pos_grad <- gam(
-  cv_hgt ~
-    active_regeneration +
-    s(time_snc_full_disturbance, k = 7) +
-    grndwrk_intensity +
-    year_f +
-    s(plot_id, bs = "re"),
-  data = subset(plot_df_AEF2, cv_hgt > 0),
-  family = tw(link = "log"),
-  method = "REML"
-)
-
-m_cv_pos_int <- gam(
-  cv_hgt ~
-    planting_intensity * anti_browsing_intensity +
-    s(time_snc_full_disturbance, k = 7) +
-    grndwrk_intensity +
-    year_f +
-    s(plot_id, bs = "re"),
-  data = subset(plot_df_AEF2, cv_hgt > 0),
-  family = tw(link = "log"),
-  method = "REML"
-)
-
-AIC(m_cv_pos_grad, m_cv_pos_int)
-summary(m_cv_pos_grad)
-summary(m_cv_pos_int)
-
-fin.m.cv.pos <- m_cv_pos_grad
-
-
-# Eeffective species 
-
-m_eff_grad <- gam(
-  effective_numbers ~
-    active_regeneration +
-    s(time_snc_full_disturbance, k = 7) +
-    grndwrk_intensity +
-    year_f +
-    s(plot_id, bs = "re"),
-  data = plot_df_AEF2,
-  family = tw(link = "log"),
-  method = "REML"
-)
-
-
-m_eff_grad_s <- gam(
-  effective_numbers ~
-    s(active_regeneration, k = 4) +
-    s(time_snc_full_disturbance, k = 7) +
-    grndwrk_intensity +
-    year_f +
-    s(plot_id, bs = "re"),
-  data = plot_df_AEF2,
-  family = tw(link = "log"),
-  method = "REML"
-)
-
-m_eff_int <- gam(
-  effective_numbers ~
-    planting_intensity * anti_browsing_intensity +
-    s(time_snc_full_disturbance, k = 7) +
-    grndwrk_intensity +
-    year_f +
-    s(plot_id, bs = "re"),
-  data = plot_df_AEF2,
-  family = tw(link = "log"),
-  method = "REML"
-)
-
-AIC(m_eff_grad, m_eff_int)
-
-p1 <- ggpredict(
-  m_eff_grad,
-  terms = c("time_snc_full_disturbance [all]",
-            "active_regeneration")
-)
-
-plot(p1)
-
-vis.gam(
-  m_eff_grad,
-  view = c("time_snc_full_disturbance", "active_regeneration"),
-  plot.type = "contour",
-  color = "terrain",
-  too.far = 0.1
-)
-
-pred_mng <- ggpredict(
-  m_eff_grad,
-  terms = "active_regeneration [all]"
-)
-
-plot(pred_mng) +
-  labs(x = "Active regeneration",
-       y = "Predicted effective species numbers")
-
-
-fin.m.eff <- m_eff_grad
-
-# richness 
-m_rich_grad <- gam(
-  sp_richness ~
-    active_regeneration +
-    s(time_snc_full_disturbance, k = 7) +
-    grndwrk_intensity +
-    level +
-    year_f +
-    s(plot_id, bs = "re"),
-  data = both_levels_re2,
-  family = nb(link = "log"),
-  method = "REML"
-)
-
-m_rich_int <- gam(
-  sp_richness ~
-    planting_intensity * anti_browsing_intensity +
-    s(time_snc_full_disturbance, k = 7) +
-    level +
-    grndwrk_intensity +
-    year_f +
-    s(plot_id, bs = "re"),
-  data = both_levels_re2,
-  family = nb(link = "log"),
-  method = "REML"
-)
-
-AIC(m_rich_grad, m_rich_int)
-
-summary(m_rich_grad)
-summary(m_rich_int)
-
-
-# !!!!
-
-
-
 
 #### Bind & clean final table with both levels ----------
 both_levels_re2 <- bind_rows(sub_df, plot_df) %>%
@@ -2377,12 +2040,6 @@ p3<-ggplot(both_levels_long %>% filter(level == "plot"),
 
 ggarrange(p1,p2,p3, ncol = 1, nrow = 3)
 
-both_levels_re2 %>% 
-  filter(level == "plot") %>% 
-  ggplot(aes(x = anti_brow_f,
-             y = mean_hgt)) +
-  geom_boxplot()
-
 
 #### GAM management interaction + time since disturbance smooths --------------
 
@@ -2390,26 +2047,6 @@ both_levels_re2 %>%
 
 ##### Mean height -----------------------------------------------------
 
-
-
-gam_mean_hgt_intensity_base <- gam(
-  mean_hgt ~ 
-    s(planting_intensity, k = 3) +
-    s(anti_browsing_intensity, k = 3) +
-    #ti(planting_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
-    s(time_snc_full_disturbance, k = 7) +
-    s(grndwrk_intensity, k = 3) +
-    year_f +
-    level ,#+
-  #  s(plot_id, bs = "re")
-  ,
-  data = both_levels_re2,
-  family = tw(link = "log"),
-  method = "REML"
-)
-
-
-AIC(gam_mean_hgt_intensity0, gam_mean_hgt_intensity_base)
 
 # test also only for plot vs subplot!
 gam_mean_hgt_intensity02_int1_plot <- gam(
@@ -2584,68 +2221,6 @@ plot(plt)
 
 
 ##### CV hgt bin  ----
-gam_cv_hgt_bin_intensity_base <- gam(
-  cv_hgt_present ~
-    s(time_snc_full_disturbance, k = 7) +
-    s(planting_intensity, k = 3) +
-    s(anti_browsing_intensity, k = 3) +
-    #ti(planting_intensity, anti_browsing_intensity) +
-    s(grndwrk_intensity, k = 3) +
-    level +
-    year_f,# +
-   # s(plot_id, bs = "re"),
-  data = both_levels_re2,
-  method = "REML",
-  family = binomial(link = "logit")
-)
-
-gam_cv_hgt_bin_intensity_re <- gam(
-  cv_hgt_present ~
-    s(time_snc_full_disturbance, k = 7) +
-    s(planting_intensity, k = 3) +
-    s(anti_browsing_intensity, k = 3) +
-    #ti(planting_intensity, anti_browsing_intensity) +
-    s(grndwrk_intensity, k = 3) +
-    level +
-    year_f +
-    s(plot_id, bs = "re"),
-  data = both_levels_re2,
-  method = "REML",
-  family = binomial(link = "logit")
-)
-# 
-k.check(gam_cv_hgt_bin_intensity_re)
-
-gam_cv_hgt_bin_intensity_re_int1 <- gam(
-  cv_hgt_present ~
-    s(time_snc_full_disturbance, k = 7) +
-    s(planting_intensity, k = 3) +
-    s(anti_browsing_intensity, k = 3) +
-    ti(planting_intensity, anti_browsing_intensity) +
-    s(grndwrk_intensity, k = 3) +
-    level +
-    year_f +
-    s(plot_id, bs = "re"),
-  data = both_levels_re2,
-  method = "REML",
-  family = binomial(link = "logit")
-)
-
-gam_cv_hgt_bin_intensity_re_int1_plot <- gam(
-  cv_hgt_present ~
-    s(time_snc_full_disturbance, k = 7) +
-    s(planting_intensity, k = 3) +
-    s(anti_browsing_intensity, k = 3) +
-    ti(planting_intensity, anti_browsing_intensity) +
-    s(grndwrk_intensity, k = 3) +
-    #level +
-    year_f +
-    s(plot_id, bs = "re"),
-  data = filter(both_levels_re2, level == 'plot'),
-  method = "REML",
-  family = binomial(link = "logit")
-)
-
 
 gam_cv_hgt_bin_intensity_re_int1_plot_lin <- gam(
   cv_hgt_present ~
@@ -2656,25 +2231,37 @@ gam_cv_hgt_bin_intensity_re_int1_plot_lin <- gam(
     #level +
     year_f +
     s(plot_id, bs = "re"),
-  data = filter(both_levels_re2, level == 'plot'),
+  data = df_plot_clean,
   method = "REML",
   family = binomial(link = "logit")
 )
-AIC(gam_cv_hgt_bin_intensity_re_int1_plot_lin, gam_cv_hgt_bin_intensity_re_int1_sub, gam_cv_hgt_bin_intensity_re_int1_plot)
+
 gam_cv_hgt_bin_intensity_re_int1_sub <- gam(
   cv_hgt_present ~
     s(time_snc_full_disturbance, k = 7) +
-    s(planting_intensity, k = 3) +
-    s(anti_browsing_intensity, k = 3) +
-    ti(planting_intensity, anti_browsing_intensity) +
-    s(grndwrk_intensity, k = 3) +
+    planting_intensity*anti_browsing_intensity +
+    grndwrk_intensity +
     #level +
     year_f +
     s(plot_id, bs = "re"),
-  data = filter(both_levels_re2, level == 'subplot'),
+  data = df_sub_clean,
   method = "REML",
   family = binomial(link = "logit")
 )
+
+gam_cv_hgt_bin_level <- gam(
+  cv_hgt_present ~
+    s(time_snc_full_disturbance, k = 7) +
+    planting_intensity*anti_browsing_intensity +
+    grndwrk_intensity +
+    level +
+    year_f +
+    s(plot_id, bs = "re"),
+  data = both_levels_re2,
+  method = "REML",
+  family = binomial(link = "logit")
+)
+
 
 
 fin.m.cv.bin <- gam_cv_hgt_bin_intensity_re_int1_plot_lin #gam_cv_hgt_bin_intensity_re_int1_plot#gam_cv_hgt_bin_intensity_re_int1
