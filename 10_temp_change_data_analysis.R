@@ -2048,25 +2048,6 @@ ggarrange(p1,p2,p3, ncol = 1, nrow = 3)
 ##### Mean height -----------------------------------------------------
 
 
-# test also only for plot vs subplot!
-gam_mean_hgt_intensity02_int1_plot <- gam(
-  mean_hgt ~ 
-    s(planting_intensity, k = 3) +
-    s(anti_browsing_intensity, k = 3) +
-    ti(planting_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
-    #ti(grndwrk_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
-    
-    s(time_snc_full_disturbance, by = year_f, k = 4) +
-    s(grndwrk_intensity, k = 3) +
-    year_f +
-   # level +
-    s(plot_id, bs = "re"),
-  data = filter(both_levels_re2, level == 'plot'),
-  family = tw(link = "log"),
-  method = "REML"
-)
-
-
 # test linear model
 gam_mean_hgt_plot <- gam(
   mean_hgt ~ 
@@ -2090,10 +2071,7 @@ gam_mean_hgt_plot <- gam(
 gam_mean_hgt_both <- gam(
   mean_hgt ~ 
     planting_intensity*anti_browsing_intensity +
-    #ti(planting_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
-    #ti(grndwrk_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
-    
-    s(time_snc_full_disturbance, by = year_f, k = 4) +
+      s(time_snc_full_disturbance, by = year_f, k = 4) +
     grndwrk_intensity+
     year_f +
      level +
@@ -2107,10 +2085,7 @@ gam_mean_hgt_both <- gam(
 gam_mean_hgt_sub <- gam(
   mean_hgt ~ 
     planting_intensity*anti_browsing_intensity +
-    #ti(planting_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
-    #ti(grndwrk_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
-    
-    s(time_snc_full_disturbance, by = year_f, k = 4) +
+     s(time_snc_full_disturbance, by = year_f, k = 4) +
     grndwrk_intensity+
     year_f +
     #level +
@@ -2163,57 +2138,9 @@ AIC(gam_mean_hgt_base, gam_mean_hgt_spatial)
 summary(gam_mean_hgt_spatial)$dev.expl
 
 
-AIC(gam_mean_hgt_intensity02_int1_plot_lin, gam_mean_hgt_intensity02_int1_plot)
-
-fin.m.hgt <- gam_mean_hgt_plot #gam_mean_hgt_intensity02_int1_plot#gam_mean_hgt_intensity02_int1
-
-vis.gam(
-  fin.m.hgt,
-  view = c("planting_intensity", "anti_browsing_intensity"), 
-  plot.type = "contour",
-  theta = 30, phi = 30, # viewing angle
-  color = "terrain",
-  main = "Interaction: Planting x Anti-browsing",
-  xlab = "Planting intensity",
-  ylab = "Anti-browsing intensity",
-  zlab = "Partial effect"
-)
-out_pred <- ggpredict(fin.m.hgt ,
-          terms = 'planting_intensity',
-          condition = list(level = "plot")) 
-
-plot(out_pred)
-
-# height 
-
-plt <- ggpredict(
-  fin.m.hgt,
-  terms = c("time_snc_full_disturbance [all]"),
-  condition = list(level = "plot")
-) #%>%
-plot(plt)
-plt <- ggpredict(
-  fin.m.hgt,
-  terms = c("planting_intensity [all]"),
-  condition = list(level = "plot")
-) #%>%
-plot(plt)
-
-plt <- ggpredict(
-  fin.m.hgt,
-  terms = c("anti_browsing_intensity [all]"),
-  condition = list(level = "plot")
-) #%>%
-plot(plt)
-
-plt <- ggpredict(
-  fin.m.hgt,
-  terms = c("grndwrk_intensity [all]"),
-  condition = list(level = "plot")
-) #%>%
-plot(plt)
-
-
+fin.m.hgt.plot    <- gam_mean_hgt_plot #gam_mean_hgt_intensity02_int1_plot#gam_mean_hgt_intensity02_int1
+fin.m.hgt.subplot <- gam_mean_hgt_sub #gam_mean_hgt_intensity02_int1_plot#gam_mean_hgt_intensity02_int1
+fin.m.hgt.both    <- gam_mean_hgt_both #gam_mean_hgt_intensity02_int1_plot#gam_mean_hgt_intensity02_int1
 
 
 
@@ -2222,7 +2149,7 @@ plot(plt)
 
 ##### CV hgt bin  ----
 
-gam_cv_hgt_bin_intensity_re_int1_plot_lin <- gam(
+gam_cv_hgt_bin_plot <- gam(
   cv_hgt_present ~
     s(time_snc_full_disturbance, k = 7) +
     planting_intensity*anti_browsing_intensity +
@@ -2236,7 +2163,7 @@ gam_cv_hgt_bin_intensity_re_int1_plot_lin <- gam(
   family = binomial(link = "logit")
 )
 
-gam_cv_hgt_bin_intensity_re_int1_sub <- gam(
+gam_cv_hgt_bin_sub <- gam(
   cv_hgt_present ~
     s(time_snc_full_disturbance, k = 7) +
     planting_intensity*anti_browsing_intensity +
@@ -2263,100 +2190,24 @@ gam_cv_hgt_bin_level <- gam(
 )
 
 
-
-fin.m.cv.bin <- gam_cv_hgt_bin_intensity_re_int1_plot_lin #gam_cv_hgt_bin_intensity_re_int1_plot#gam_cv_hgt_bin_intensity_re_int1
-
-AIC(gam_cv_hgt_bin_intensity_re, gam_cv_hgt_bin_intensity_base, gam_cv_hgt_bin_intensity_re_int1)
-draw(gam_cv_hgt_bin_intensity_re_int1)
-
-
 ##### CV Height (Positive Part) -----------
-
-
-gam_cv_hgt_pos_base <- gam(
-  cv_hgt_pos ~
-    s(planting_intensity, k = 3) +
-    s(anti_browsing_intensity, k = 3) +
+gam_cv_hgt_pos_sub <- gam(
+  cv_hgt_pos ~ planting_intensity*anti_browsing_intensity +
     s(time_snc_full_disturbance, k = 7) +
-   # ti(planting_intensity, anti_browsing_intensity) +
-    s(grndwrk_intensity, k = 3) +
-    level +
-    year_f , #+
-   # s(plot_id, bs = "re"),
-  data = subset(both_levels_re2, cv_hgt > 0),
-  method = "REML",
-  family = tw(link = "log")
-)
-
-gam_cv_hgt_pos_base_plot <- gam(
-  cv_hgt_pos ~
-    s(planting_intensity, k = 3) +
-    s(anti_browsing_intensity, k = 3) +
-    s(time_snc_full_disturbance, k = 7) +
-    # ti(planting_intensity, anti_browsing_intensity) +
-    s(grndwrk_intensity, k = 3) +
-    #level +
-    year_f , #+
-  # s(plot_id, bs = "re"),
-  data = df_plot_clean,
-  method = "REML",
-  family = tw(link = "log")
-)
-
-gam_cv_hgt_pos_base_plot_lin <- gam(
-  cv_hgt_pos ~
-    planting_intensity*anti_browsing_intensity +
-    time_snc_full_disturbance +
-    # ti(planting_intensity, anti_browsing_intensity) +
     grndwrk_intensity +
     #level +
-    year_f ,# +
-   #s(plot_id, bs = "re"),
-  data = df_plot_clean,
-  method = "REML",
-  family = tw(link = "log")
-)
-AIC(gam_cv_hgt_pos_base_plot_lin, gam_cv_hgt_pos_base_plot)
-gam_cv_hgt_pos_base_sub <- gam(
-  cv_hgt_pos ~
-    s(planting_intensity, k = 3) +
-    s(anti_browsing_intensity, k = 3) +
-    s(time_snc_full_disturbance, k = 7) +
-    # ti(planting_intensity, anti_browsing_intensity) +
-    s(grndwrk_intensity, k = 3) +
-    #level +
-    year_f , #+
-  # s(plot_id, bs = "re"),
-  data = df_sub_clean,
-  method = "REML",
-  family = tw(link = "log")
-)
-
-gam_cv_hgt_pos_re <- gam(
-  cv_hgt_pos ~
-    s(planting_intensity, k = 3) +
-    s(anti_browsing_intensity, k = 3) +
-    s(time_snc_full_disturbance, k = 7) +
-    # ti(planting_intensity, anti_browsing_intensity) +
-    s(grndwrk_intensity, k = 3) +
-    level +
     year_f +
    s(plot_id, bs = "re"),
-  data = subset(both_levels_re2, cv_hgt > 0, sp_richness > 1),
+  data = df_sub_clean,
   method = "REML",
   family = tw(link = "log")
 )
-AIC(gam_cv_hgt_pos_base, gam_cv_hgt_pos_re)
 
-
-gam_cv_hgt_pos_re_plot <- gam(
-  cv_hgt_pos ~
-    s(planting_intensity, k = 3) +
-    s(anti_browsing_intensity, k = 3) +
+gam_cv_hgt_pos_plot <- gam(
+  cv_hgt_pos ~ planting_intensity*anti_browsing_intensity +
     s(time_snc_full_disturbance, k = 7) +
-    # ti(planting_intensity, anti_browsing_intensity) +
-    s(grndwrk_intensity, k = 3) +
-   # level +
+    grndwrk_intensity +
+    #level +
     year_f +
     s(plot_id, bs = "re"),
   data = df_plot_clean,
@@ -2364,138 +2215,31 @@ gam_cv_hgt_pos_re_plot <- gam(
   family = tw(link = "log")
 )
 
-
-gam_cv_hgt_pos_re_sub <- gam(
-  cv_hgt_pos ~
-    s(planting_intensity, k = 3) +
-    s(anti_browsing_intensity, k = 3) +
+gam_cv_hgt_pos_both <- gam(
+  cv_hgt_pos ~ planting_intensity*anti_browsing_intensity +
     s(time_snc_full_disturbance, k = 7) +
-    # ti(planting_intensity, anti_browsing_intensity) +
-    s(grndwrk_intensity, k = 3) +
-    # level +
+    grndwrk_intensity +
+    level +
     year_f +
     s(plot_id, bs = "re"),
-  data = df_sub_clean,
+  data = both_levels_re2,
   method = "REML",
   family = tw(link = "log")
 )
 
-AIC(gam_cv_hgt_pos_re, gam_cv_hgt_pos_re_lev)
-
-gam_cv_hgt_pos_re_lev <- gam(
-  cv_hgt_pos ~ 
-    s(time_snc_full_disturbance, by = level, k = 7) +
-    s(planting_intensity,  k = 3) +  
-    s(anti_browsing_intensity, k = 3) +  
-    s(grndwrk_intensity, k = 3) + 
-    level +  # include the parametric effect
-    year_f +
-    s(plot_id, bs = "re"),
-  data = subset(both_levels_re2, cv_hgt > 0, sp_richness > 1),
-  family = tw(link = "log"),
-  method = "REML"
+pred_cv_time <- ggpredict(
+  gam_cv_hgt_pos_both,
+  terms = c("time_snc_full_disturbance", "level")
 )
+plot(pred_cv_time)
 
 
-gam_cv_hgt_pos_re_lev_int1 <- gam(
-  cv_hgt_pos ~ 
-    s(time_snc_full_disturbance, by = level, k = 7) +
-    s(planting_intensity,  k = 3) +  
-    s(anti_browsing_intensity, k = 3) +  
-    s(grndwrk_intensity, k = 3) + 
-    ti(planting_intensity,anti_browsing_intensity) + 
-    level +  # include the parametric effect
-    year_f +
-    s(plot_id, bs = "re"),
-  data = subset(both_levels_re2, cv_hgt > 0, sp_richness > 1),
-  family = tw(link = "log"),
-  method = "REML"
-)
-AIC(gam_cv_hgt_pos_re_lev, gam_cv_hgt_pos_re, gam_cv_hgt_pos_re_lev_int1)
-draw(gam_cv_hgt_pos_re)
-
-fin.m.cv.pos <- gam_cv_hgt_pos_base_plot_lin #gam_cv_hgt_pos_base_plot #gam_cv_hgt_pos_re
+#fin.m.cv.pos <- gam_cv_hgt_pos_base_plot_lin #gam_cv_hgt_pos_base_plot #gam_cv_hgt_pos_re
 
 ##### Species Diversity (Effective Number) -----------
 
-gam_effective_intensity_base <- gam(
-  effective_numbers ~
-    s(planting_intensity, k = 3) +
-    s(anti_browsing_intensity, k = 3) +
-    s(time_snc_full_disturbance, k = 7) +
-    #ti(planting_intensity, anti_browsing_intensity) +
-    s(grndwrk_intensity, k = 3) +
-    level +
-    year_f ,#+
-    #s(plot_id, bs = "re"),
-  data = both_levels_re2,
-  method = "REML",
-  family = tw() #Gamma(link = "log")
-)
 
-
-gam_effective_intensity_re <- gam(
-  effective_numbers ~
-    s(planting_intensity, k = 3) +
-    s(anti_browsing_intensity, k = 3) +
-    s(time_snc_full_disturbance, k = 7) +
-    #ti(planting_intensity, anti_browsing_intensity) +
-    s(grndwrk_intensity, k = 3) +
-    level +
-    year_f +
-  s(plot_id, bs = "re"),
-  data = both_levels_re2,
-  method = "REML",
-  family = tw(link = "log")
-)
-
-gam_effective_intensity_re_lev <- gam(
-  effective_numbers ~
-    s(planting_intensity, k = 3) +
-    s(anti_browsing_intensity, k = 3) +
-    s(time_snc_full_disturbance, by = level, k = 7) +
-    #ti(planting_intensity, anti_browsing_intensity) +
-    s(grndwrk_intensity, k = 3) +
-    level +
-    year_f +
-    s(plot_id, bs = "re"),
-  data = both_levels_re2,
-  method = "REML",
-  family = tw(link = "log")
-)
-
-
-gam_effective_intensity_re_int1 <- gam(
-  effective_numbers ~
-    s(planting_intensity, k = 3) +
-    s(anti_browsing_intensity, k = 3) +
-    s(time_snc_full_disturbance, k = 7) +
-    ti(planting_intensity, anti_browsing_intensity) +
-    s(grndwrk_intensity, k = 3) +
-    level +
-    year_f +
-    s(plot_id, bs = "re"),
-  data = both_levels_re2,
-  method = "REML",
-  family = tw(link = "log")
-)
-
-gam_effective_intensity_re_int1_plot <- gam(
-  effective_numbers ~
-    s(planting_intensity, k = 3) +
-    s(anti_browsing_intensity, k = 3) +
-    s(time_snc_full_disturbance, k = 7) +
-    ti(planting_intensity, anti_browsing_intensity) +
-    s(grndwrk_intensity, k = 3) +
-    #level +
-    year_f +
-    s(plot_id, bs = "re"),
-  data = df_plot_clean, #both_levels_re2,
-  method = "REML",
-  family = tw(link = "log")
-)
-
-gam_effective_intensity_re_int1_plot_lin <- gam(
+gam_eff_plot <- gam(
   effective_numbers ~
     planting_intensity*anti_browsing_intensity +
     s(time_snc_full_disturbance, k = 7) +
@@ -2508,15 +2252,12 @@ gam_effective_intensity_re_int1_plot_lin <- gam(
   method = "REML",
   family = tw(link = "log")
 )
-AIC(gam_effective_intensity_re_int1_plot_lin, gam_effective_intensity_re_int1_plot
-    )
-gam_effective_intensity_re_int1_sub <- gam(
+
+gam_eff_sub <- gam(
   effective_numbers ~
-    s(planting_intensity, k = 3) +
-    s(anti_browsing_intensity, k = 3) +
+    planting_intensity*anti_browsing_intensity +
     s(time_snc_full_disturbance, k = 7) +
-    ti(planting_intensity, anti_browsing_intensity) +
-    s(grndwrk_intensity, k = 3) +
+    grndwrk_intensity +
     #level +
     year_f +
     s(plot_id, bs = "re"),
@@ -2525,13 +2266,11 @@ gam_effective_intensity_re_int1_sub <- gam(
   family = tw(link = "log")
 )
 
-gam_effective_intensity_re_int2 <- gam(
+gam_eff_both <- gam(
   effective_numbers ~
-    s(planting_intensity, k = 3) +
-    s(anti_browsing_intensity, k = 3) +
+    planting_intensity*anti_browsing_intensity +
     s(time_snc_full_disturbance, k = 7) +
-    ti(planting_intensity, grndwrk_intensity) +
-    s(grndwrk_intensity, k = 3) +
+    grndwrk_intensity +
     level +
     year_f +
     s(plot_id, bs = "re"),
@@ -2539,52 +2278,23 @@ gam_effective_intensity_re_int2 <- gam(
   method = "REML",
   family = tw(link = "log")
 )
-AIC(gam_effective_intensity_re, gam_effective_intensity_base, 
-    gam_effective_intensity_re_lev_int1,
-    gam_effective_intensity_re_lev_int2)
 
-summary(gam_effective_intensity_re)
+pred_eff_time <- ggpredict(
+  gam_eff_both,
+  terms = c("time_snc_full_disturbance", "level")
+)
+plot(pred_eff_time)
 
-fin.m.eff <- gam_effective_intensity_re_int1_plot_lin #gam_effective_intensity_re_int1_plot #gam_effective_intensity_re_lev_int1
+summary(gam_eff_both)
+
+#fin.m.eff <- gam_effective_intensity_re_int1_plot_lin #gam_effective_intensity_re_int1_plot #gam_effective_intensity_re_lev_int1
 
 
 ##### Species Richness -----------
-gam_richness_intensity <- gam(
-  sp_richness ~
-    s(planting_intensity, k = 3) +
-    s(anti_browsing_intensity, k = 3) +
-    s(time_snc_full_disturbance, k = 7) +
-    ti(planting_intensity, anti_browsing_intensity) +
-    s(grndwrk_intensity, k = 3) +
-    level +
-    year_f +
-    s(plot_id, bs = "re"),
-  data = both_levels_re2,
-  method = "REML",
-  family = tw(link = "log")
-)
-
-
-gam_richness_intensity_nb <- gam(
-  sp_richness ~
-    s(planting_intensity, k = 3) +
-    s(anti_browsing_intensity, k = 3) +
-    #s(time_snc_full_disturbance, k = 7) +
-    ti(planting_intensity, anti_browsing_intensity) +
-    s(grndwrk_intensity, k = 4) +
-    level +
-    year_f +
-    s(plot_id, bs = "re"),
-  data = both_levels_re2,
-  method = "REML",
-  family = nb(link = "log")
-)
-
-gam_richness_intensity_nb_lin <- gam(
+gam_rich_both <- gam(
   sp_richness ~
     planting_intensity*anti_browsing_intensity +
     s(time_snc_full_disturbance, k = 7) +
-    #ti(planting_intensity, anti_browsing_intensity) +
     grndwrk_intensity +
     level +
     year_f +
@@ -2594,15 +2304,11 @@ gam_richness_intensity_nb_lin <- gam(
   family = nb(link = "log")
 )
 
-AIC(gam_richness_intensity_nb_lin, gam_richness_intensity_nb)
-vis.gam(gam_richness_intensity_nb)
-gam_richness_intensity_nb_plot <- gam(
+gam_rich_plot <- gam(
   sp_richness ~
-    s(planting_intensity, k = 3) +
-    s(anti_browsing_intensity, k = 3) +
+    planting_intensity*anti_browsing_intensity +
     s(time_snc_full_disturbance, k = 7) +
-    ti(planting_intensity, anti_browsing_intensity) +
-    s(grndwrk_intensity, k = 4) +
+    grndwrk_intensity +
    # level +
     year_f +
     s(plot_id, bs = "re"),
@@ -2611,13 +2317,11 @@ gam_richness_intensity_nb_plot <- gam(
   family = nb(link = "log")
 )
 
-gam_richness_intensity_nb_sub <- gam(
+gam_rich_sub <- gam(
   sp_richness ~
-    s(planting_intensity, k = 3) +
-    s(anti_browsing_intensity, k = 3) +
+    planting_intensity*anti_browsing_intensity +
     s(time_snc_full_disturbance, k = 7) +
-    ti(planting_intensity, anti_browsing_intensity) +
-    s(grndwrk_intensity, k = 4) +
+    grndwrk_intensity +
     # level +
     year_f +
     s(plot_id, bs = "re"),
@@ -2627,48 +2331,16 @@ gam_richness_intensity_nb_sub <- gam(
 )
 
 
-fin.m.rich <- gam_richness_intensity_nb_lin #gam_richness_intensity_nb
-
-
-##### CV hurdle ------------------------------------------------------
-
-# Load the package
-library(glmmTMB)
-
-# Full hurdle model on CV data
-m_cv_hurdle <- glmmTMB(
-  cv_hgt_pos ~ planting_intensity * anti_browsing_intensity +
-    time_snc_full_disturbance +
-    grndwrk_intensity +
-    year_f +
-    (1 | plot_id),
-  
-  ziformula = ~ planting_intensity * anti_browsing_intensity +
-    time_snc_full_disturbance +
-    grndwrk_intensity +
-    year_f +
-    (1 | plot_id),
-  
-  family = Gamma(link = "log"),
-  data = df_plot_clean
+pred_rich_time <- ggpredict(
+  gam_rich_both,
+  terms = c("time_snc_full_disturbance", "level")
 )
+plot(pred_rich_time)
 
-m_cv_zigamma_simple <- glmmTMB(
-  cv_hgt_pos ~ planting_intensity * anti_browsing_intensity +
-    time_snc_full_disturbance +
-    grndwrk_intensity +
-    year_f ,#+
-   # (1 | plot_id),
-  
-  ziformula = ~1,  # constant zero-inflation probability
-  
-  family = Gamma(link = "log"),
-  data = df_plot_clean
-)
 
-library(performance)
+fin.m.rich <- gam_rich_both #gam_richness_intensity_nb
 
-r2(m_cv_zigamma_simple)
+
 
 ##### Summaries and Export -----------
 summary(fin.m.hgt)
