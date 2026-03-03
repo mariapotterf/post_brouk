@@ -83,86 +83,85 @@ dat_overlap_n0 <- dat_overlap %>%
 
 
 ### Get summary across all trees and study sites --------------------------
-# find species with the highest share of stems overall
 # 0) Safe counts (treat NA counts as 0)
 df <- dat_overlap %>%
   mutate(n = coalesce(n, 0L)) %>%
   filter(!is.na(species) & species != "")
 
-# 1) Totals
-overall_totals <- df %>%
-  summarise(total_trees = sum(n),
-            n_plots = n_distinct(plot),
-            n_subplots = n_distinct(subplot))
 
-n_trees_total <- overall_totals %>% 
-  pull(total_trees)
-
-# Species counts and presence - now without year! all pooled as composition have not changed much
-#species_stem_share <- 
-  df %>%
-  group_by(species, year) %>%
-  summarise(
-    stems = sum(n),                                   # number of trees
-    plots_present = n_distinct(plot[n > 0]),          # plots where species occurs
+# find species with the highest share of stems per year
+# Year-specific totals (denominator per year)
+year_totals <- df %>%
+  dplyr::group_by(year) %>%
+  dplyr::summarise(
+    total_trees = sum(n, na.rm = TRUE),
+    n_plots = dplyr::n_distinct(plot),
+    n_subplots = dplyr::n_distinct(subplot),
     .groups = "drop"
-  ) #%>%
-  dplyr::arrange(species) %>% 
-  mutate(n_trees = n_trees,
-         trees25 = n_trees25,
-         share = round(stems/n_trees_total*100,2)) 
+  )
 
-# merge counst across 2 years:     
-top_overall_stem_share <- 
-  species_stem_share %>%
-  #dplyr::select(species, total_stems, total_share) %>%
+# 2) Species x year summary + year-specific share
+species_stem_share_year <- df %>%
+  dplyr::group_by(year, species) %>%
+  dplyr::summarise(
+    stems = sum(n, na.rm = TRUE),
+    plots_present = dplyr::n_distinct(plot[n > 0]),
+    .groups = "drop"
+  ) %>%
+  dplyr::left_join(year_totals %>% dplyr::select(year, total_trees), by = "year") %>%
+  dplyr::mutate(
+    share = round(100 * stems / total_trees, 2)
+  ) %>%
+  dplyr::arrange(dplyr::desc(share), species)
+
+species_stem_share_year
+
+# 3) Top species: option 1 = top 10 PER YEAR
+top10_by_year <- species_stem_share_year %>%
+  dplyr::group_by(year) %>%
   dplyr::slice_max(order_by = share, n = 10, with_ties = FALSE) %>%
-  dplyr::ungroup() 
+  dplyr::ungroup()
 
-v_top_species_overall <- top_overall_stem_share %>% pull(species)
+# if i have two years, thise leads to 11 species: "absp" "acps" "besp" "fasy" "lade" "piab" "pisy" "potr" "qusp" "saca" "soau"
+# 'absp' has the lowest share: 1.95%, only on 10 plots - can i remove it?
 
-# Reverse the color palette and map to the species in the desired order
-n_colors  <- length(v_top_species_overall)  # Number of species
-my_colors <- colorRampPalette(brewer.pal(11, "RdYlGn"))(n_colors)  # Generate colors
-# make / use a palette of exactly the needed length
-pal <- colorRampPalette(brewer.pal(11, "RdYlGn"))(length(v_top_species_overall))
-pal <- rev(pal)  # start with dark green
+# 4) Palette for plotting (consistent colors across ALL top species across years)
+v_top_species <- top10_by_year %>%
+  dplyr::distinct(species) %>%
+  dplyr::pull(species) %>%
+  sort()
 
-# map colors to species automatically
-species_colors <- setNames(pal, v_top_species_overall)
+pal <- rev(colorRampPalette(brewer.pal(11, "RdYlGn"))(length(v_top_species)))
+species_colors <- setNames(pal, v_top_species)
+
 species_colors
-#
 
-
-
-# Print the color assignments for confirmation
-print(species_colors)
-
+#"#006837" "#1A9850" "#66BD63" "#A6D96A" "#D9EF8B" "#FFFFBF" "#FEE08B" "#FDAE61" "#F46D43" "#D73027" "#A50026" 
 
 
 ### How many plots per single species and what is the species? ----------------------
 
-# Step 2: Summarize number of species per plot, only for n > 1 trees
+# Summarize number of species per plot, only for n > 1 trees - why is that??
 plots_with_species_counts <- df %>%
-  filter(n > 1) %>%
+  filter(n >= 1) %>% 
   group_by(plot) %>%
   summarise(
     n_species = n_distinct(species),
     .groups = "drop"
   )
 
-# Step 3: Filter to plots with exactly 1 species
+# Filter to plots with exactly 1 species
 single_species_plots <- plots_with_species_counts %>%
   dplyr::filter(n_species == 1)
 
 # Step 4: Join back to original to get the species name
 species_per_single_species_plot <- df %>%
-  filter(n > 1) %>%
+  filter(n >= 1) %>%
   semi_join(single_species_plots, by = "plot") %>%
   group_by(plot, species) %>%
   summarise(n_trees = sum(n), .groups = "drop")  # just to show tree count if needed
 
-# Step 5 (optional): Count how many plots per species
+# Count how many plots per species
 summary_species <- species_per_single_species_plot %>%
   count(species, name = "single_plots") %>%
   arrange(desc(single_plots)) %>% 
@@ -172,10 +171,7 @@ summary_species <- species_per_single_species_plot %>%
 print(summary_species)
 
 
-
-
-
-### Stem density per species per top 10 species --------------------------------
+### Stem density per species per top X species --------------------------------
 df_stem_dens_species <- df %>% 
   group_by(plot, year, species, n_subplots ) %>%
   summarize(sum_n = sum(n, na.rm =T)) %>% 
@@ -194,14 +190,15 @@ df_stem_dens_species_sum <-
          log_sum_stem_density_avg = log_sum_stem_density/n_plots_total)
 
 
-df_stem_dens_species <- df_stem_dens_species %>% 
+#df_stem_dens_species <- 
+  df_stem_dens_species %>% 
   ungroup(.) %>% 
   filter(sum_n >0) %>% 
   filter(species %in% v_top_species_overall) %>% 
   dplyr::group_by(species, year) %>%
   dplyr::mutate(median_stem_density = median(stem_dens, na.rm = TRUE)) %>% 
-  dplyr::ungroup(.) %>%
-  mutate(species = factor(species, levels = rev(v_top_species_overall))) # Set custom order
+  dplyr::ungroup(.)# %>%
+  mutate(species = factor(species, levels = rev(v_top_species))) # Set custom order
 
 
 # df_stem_dens_species2 <- df_stem_dens_species_year %>%
