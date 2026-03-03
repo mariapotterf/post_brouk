@@ -1688,7 +1688,7 @@ plot_df_AEF2 <- plot_df_AEF %>%
 ggplot(plot_df_AEF2, 
        aes(x = time_snc_full_disturbance, 
            y = beta_jaccard_mean)) +
-  geom_point(alpha = 0.4) +
+  geom_jitter(alpha = 0.4) +
   geom_smooth(method = "gam", 
               formula = y ~ s(x, k = 7)) +
   theme_classic()
@@ -1726,6 +1726,17 @@ m_beta_add <- mgcv::gam(
   method = "REML"
 )
 
+m_beta_add_smpl <- mgcv::gam(
+  beta_jaccard_mean ~ 
+    s(time_snc_full_disturbance, k = 5) +
+    #clear_intensity+
+    planting_intensity + anti_browsing_intensity +
+   # s(spruce_share) +
+    s(plot_id, bs = "re"),
+  data = plot_df_AEF2,
+  method = "REML"
+)
+
 m_beta_add2 <- mgcv::gam(
   beta_jaccard_mean ~ 
     s(time_snc_full_disturbance, k = 5) +
@@ -1737,7 +1748,7 @@ m_beta_add2 <- mgcv::gam(
   method = "REML"
 )
 
-AIC(m_beta_add2, m_beta_add) # model is slightly better if used only as a linear term
+AIC(m_beta_add_smpl, m_beta_add) # model is slightly better if used only as a linear term
 fin.m.jaccard <- m_beta_add
 
 # Population-level prediction (exclude random effect)
@@ -1805,6 +1816,11 @@ cor(plot_df_AEF2$planting_intensity,
     plot_df_AEF2$anti_browsing_intensity,
     use = "complete.obs")
 #[1] 0.6491358
+
+cor.test(plot_df_AEF2$planting_intensity,
+    plot_df_AEF2$anti_browsing_intensity,
+    use = "complete.obs")
+
 
 plot_df_AEF2 %>%
   dplyr::count(
@@ -2373,22 +2389,6 @@ both_levels_re2 %>%
 
 
 ##### Mean height -----------------------------------------------------
-gam_mean_hgt_intensity_base <- gam(
-  mean_hgt ~ 
-    #s(planting_intensity, k = 3) +
-    #s(anti_browsing_intensity, k = 3) +
-    #ti(planting_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
-    s(time_snc_full_disturbance, k = 5) +
-   # s(grndwrk_intensity, k = 3) +
-    year_f +
-    level +
-    s(plot_id, bs = "re")
-  ,
-  data = both_levels_re2,
-  family = tw(link = "log"),
-  method = "REML"
-)
-
 
 
 
@@ -2408,24 +2408,6 @@ gam_mean_hgt_intensity_base <- gam(
   method = "REML"
 )
 
-
-
-
-# chewck the effect of k
-gam_mean_hgt_intensity0 <- gam(
-  mean_hgt ~ 
-    s(planting_intensity, k = 3) +
-    s(anti_browsing_intensity, k = 3) +
-    #ti(planting_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
-    s(time_snc_full_disturbance, k = 7) +
-    s(grndwrk_intensity, k = 3) +
-    year_f +
-    level +
-    s(plot_id, bs = "re"),
-  data = both_levels_re2,
-  family = tw(link = "log"),
-  method = "REML"
-)
 
 AIC(gam_mean_hgt_intensity0, gam_mean_hgt_intensity_base)
 
@@ -2449,7 +2431,7 @@ gam_mean_hgt_intensity02_int1_plot <- gam(
 
 
 # test linear model
-gam_mean_hgt_intensity02_int1_plot_lin <- gam(
+gam_mean_hgt_plot <- gam(
   mean_hgt ~ 
     planting_intensity*anti_browsing_intensity +
     #ti(planting_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
@@ -2466,9 +2448,9 @@ gam_mean_hgt_intensity02_int1_plot_lin <- gam(
 )
 
 
-
+# run on botj plot and sublot level
 # test linear model
-gam_mean_hgt_base <- gam(
+gam_mean_hgt_both <- gam(
   mean_hgt ~ 
     planting_intensity*anti_browsing_intensity +
     #ti(planting_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
@@ -2477,12 +2459,37 @@ gam_mean_hgt_base <- gam(
     s(time_snc_full_disturbance, by = year_f, k = 4) +
     grndwrk_intensity+
     year_f +
-    # level +
+     level +
     s(plot_id, bs = "re"),
-  data = plot_df_AEF,
+  data = both_levels_re2,
   family = tw(link = "log"),
   method = "REML"
 )
+
+
+gam_mean_hgt_sub <- gam(
+  mean_hgt ~ 
+    planting_intensity*anti_browsing_intensity +
+    #ti(planting_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
+    #ti(grndwrk_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
+    
+    s(time_snc_full_disturbance, by = year_f, k = 4) +
+    grndwrk_intensity+
+    year_f +
+    #level +
+    s(plot_id, bs = "re"),
+  data = df_sub_clean,
+  family = tw(link = "log"),
+  method = "REML"
+)
+
+pred_hgt_level <- ggpredict(
+  gam_mean_hgt_both,
+  terms = c("time_snc_full_disturbance", "level")   # both levels
+)
+
+plot(pred_hgt_level) + theme_classic()
+
 
 # chcek for spatial autocorrelation 
 
@@ -2521,87 +2528,7 @@ summary(gam_mean_hgt_spatial)$dev.expl
 
 AIC(gam_mean_hgt_intensity02_int1_plot_lin, gam_mean_hgt_intensity02_int1_plot)
 
-gam_mean_hgt_intensity02_int1_plot2 <- gam(
-  mean_hgt ~ 
-    s(planting_intensity, k = 3) +
-    s(anti_browsing_intensity, k = 3) +
-    ti(planting_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
-    #ti(grndwrk_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
-    
-    s(time_snc_full_disturbance, by = year_f, k = 4) +
-    s(grndwrk_intensity, k = 3) +
-    year_f +
-    # level +
-    s(plot_id, bs = "re"),
-  data = filter(both_levels_re2, level == 'plot'),
-  family = tw(link = "log"),
-  method = "REML"
-)
-
-pp <- ggpredict(gam_mean_hgt_intensity02_int1_plot, 
-          'time_snc_full_disturbance')
-
-plot(pp)
-
-gam_mean_hgt_intensity02_int1_sub <- gam(
-  mean_hgt ~ 
-    s(planting_intensity, k = 3) +
-    s(anti_browsing_intensity, k = 3) +
-    ti(planting_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
-    #ti(grndwrk_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
-    
-    s(time_snc_full_disturbance, k = 7) +
-    s(grndwrk_intensity, k = 3) +
-    year_f +
-    # level +
-    s(plot_id, bs = "re"),
-  data = filter(both_levels_re2, level == 'subplot'),
-  family = tw(link = "log"),
-  method = "REML"
-)
-
-
-gam_mean_hgt_intensity03_int2 <- gam(
-  mean_hgt ~ 
-    s(planting_intensity, k = 6) +
-    s(anti_browsing_intensity, k = 3) +
-    #ti(planting_intensity, anti_browsing_intensity) +      # nonlinear interaction
-    ti(planting_intensity, grndwrk_intensity) +      # nonlinear interaction
-    s(time_snc_full_disturbance, k = 7) +
-    s(grndwrk_intensity, k = 3) +
-    year_f +
-    #level +
-    s(plot_id, bs = "re"),
-  data = both_levels_re2,
-  family = tw(link = "log"),
-  method = "REML"
-)
-
-gam_mean_hgt_intensity03_int3 <- gam(
-  mean_hgt ~ 
-    s(planting_intensity, k = 6) +
-    s(anti_browsing_intensity, k = 3) +
-    #ti(planting_intensity, anti_browsing_intensity) +      # nonlinear interaction
-   # ti(planting_intensity, grndwrk_intensity) +      # nonlinear interaction
-    ti(anti_browsing_intensity, grndwrk_intensity) +      # nonlinear interaction
-    
-     s(time_snc_full_disturbance, k = 7) +
-    s(grndwrk_intensity, k = 3) +
-    year_f +
-    #level +
-    s(plot_id, bs = "re"),
-  data = both_levels_re2,
-  family = tw(link = "log"),
-  method = "REML"
-)
-
-AIC(gam_mean_hgt_intensity02_int1,
-  gam_mean_hgt_intensity03_int2,
-    gam_mean_hgt_intensity03_int3,
-  gam_mean_hgt_intensity0,
-  gam_mean_hgt_intensity_base)
-
-fin.m.hgt <- gam_mean_hgt_intensity02_int1_plot_lin #gam_mean_hgt_intensity02_int1_plot#gam_mean_hgt_intensity02_int1
+fin.m.hgt <- gam_mean_hgt_plot #gam_mean_hgt_intensity02_int1_plot#gam_mean_hgt_intensity02_int1
 
 vis.gam(
   fin.m.hgt,
@@ -2653,52 +2580,6 @@ plot(plt)
 
 
 
-
-
-
-plt <- ggpredict(
-  fin.m.rich,
-  terms = c("planting_intensity [all]"),
-  condition = list(level = "plot")
-) #%>%
-plot(plt)
-
-plt <- ggpredict(
-  fin.m.rich,
-  terms = c("anti_browsing_intensity [all]"),
-  condition = list(level = "plot")
-) #%>%
-plot(plt)
-
-plt <- ggpredict(
-  fin.m.rich,
-  terms = c("grndwrk_intensity [all]"),
-  condition = list(level = "plot")
-) #%>%
-plot(plt)
-
-# effiecinet 
-
-plt <- ggpredict(
-  fin.m.eff,
-  terms = c("planting_intensity [all]"),
-  condition = list(level = "plot")
-) #%>%
-plot(plt)
-
-plt <- ggpredict(
-  fin.m.eff,
-  terms = c("anti_browsing_intensity [all]"),
-  condition = list(level = "plot")
-) #%>%
-plot(plt)
-
-plt <- ggpredict(
-  fin.m.eff,
-  terms = c("grndwrk_intensity [all]"),
-  condition = list(level = "plot")
-) #%>%
-plot(plt)
 
 
 
