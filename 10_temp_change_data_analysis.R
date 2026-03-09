@@ -1805,10 +1805,6 @@ plot(m_beta_add, page = 1)
 
 concurvity(m_beta_add, full = TRUE)
 
-vis.gam(m_beta_add, view = "spruce_share")
-vis.gam(m_beta_add, view = "planting_intensity")
-
-sum(is.na(plot_df_AEF2$beta_jaccard_mean))
 
 
 # check correlation between planting and anti-browsing
@@ -2052,15 +2048,12 @@ ggarrange(p1,p2,p3, ncol = 1, nrow = 3)
 gam_mean_hgt_plot <- gam(
   mean_hgt ~ 
     planting_intensity*anti_browsing_intensity +
-    #ti(planting_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
-    #ti(grndwrk_intensity, anti_browsing_intensity, k = 3) +      # nonlinear interaction
-    
-    s(time_snc_full_disturbance, by = year_f, k = 4) +
+     s(time_snc_full_disturbance, by = year_f, k = 4) +
     grndwrk_intensity+
     year_f +
     # level +
     s(plot_id, bs = "re"),
-  data = filter(both_levels_re2, level == 'plot'),
+  data = df_plot_clean,
   family = tw(link = "log"),
   method = "REML"
 )
@@ -2080,6 +2073,100 @@ gam_mean_hgt_both <- gam(
   family = tw(link = "log"),
   method = "REML"
 )
+
+#### !!!!!
+gam_mean_hgt_both_level_test <- gam(
+  mean_hgt ~ 
+    planting_intensity*anti_browsing_intensity +
+    s(time_snc_full_disturbance, k = 5, bs = 'tp') +
+   # s(time_snc_full_disturbance, by = level, k = 6) +
+    grndwrk_intensity+
+    year_f +
+    level +
+    s(plot_id, bs = "re"),
+  data =  both_levels_re2 %>%
+    dplyr::filter(mean_hgt < 6),
+  family = tw(link = "log"),
+  method = "REML"
+)
+pred_hgt_level <- ggpredict(
+  gam_mean_hgt_both_level_test,
+  terms = c("time_snc_full_disturbance[0:7]", "level"),   # both levels
+  #terms = c("time_snc_full_disturbance")   # both levels
+  type = 'fixed'
+)
+
+plot(pred_hgt_level) + theme_classic()
+
+both_levels_re2 %>%
+  dplyr::group_by(time_snc_full_disturbance) %>%
+  dplyr::summarise(
+    mean_hgt = mean(mean_hgt, na.rm = TRUE),
+    n = dplyr::n()
+  )
+
+ggplot(both_levels_re2, aes(time_snc_full_disturbance, mean_hgt)) +
+  geom_point(alpha = 0.2) +
+  stat_summary(fun = mean, geom = "point", size = 3, colour = "red") +
+  theme_classic()
+
+
+
+gam_mean_hgt_both_level <- gam(
+  mean_hgt ~ 
+    planting_intensity*anti_browsing_intensity +
+    s(time_snc_full_disturbance, by = level, k = 4) +
+    grndwrk_intensity+
+    year_f +
+    level +
+    s(plot_id, bs = "re"),
+  data = both_levels_re2,
+  family = tw(link = "log"),
+  method = "REML"
+)
+
+gam_mean_hgt_both_level2 <- gam(
+  mean_hgt ~ 
+    planting_intensity*anti_browsing_intensity +
+    s(time_snc_full_disturbance, k = 4) +
+    s(time_snc_full_disturbance, by = level, k = 4) +
+    grndwrk_intensity+
+    year_f +
+    level +
+    s(plot_id, bs = "re"),
+  data = both_levels_re2,
+  family = tw(link = "log"),
+  method = "REML"
+)
+
+gam_mean_hgt_final <- gam(
+  mean_hgt ~ 
+    planting_intensity * anti_browsing_intensity +
+    s(time_snc_full_disturbance, k = 4) +
+    grndwrk_intensity +
+    year_f +
+    level +
+    s(plot_id, bs = "re"),
+  data = both_levels_re2,
+  family = tw(link = "log"),
+  method = "REML"
+)
+
+
+gam_mean_hgt_both_level
+
+pred_hgt_level <- ggpredict(
+  gam_mean_hgt_final,
+  terms = c("time_snc_full_disturbance", "level")   # both levels
+)
+
+plot(pred_hgt_level) + theme_classic()
+
+
+
+
+
+
 
 
 gam_mean_hgt_sub <- gam(
@@ -2106,9 +2193,9 @@ plot(pred_hgt_level) + theme_classic()
 # chcek for spatial autocorrelation 
 
 # Extract residuals
-df_sp <- plot_df_AEF %>%
+df_sp <- df_plot_clean %>%
   #dplyr::filter(level == "plot") %>%
-  dplyr::mutate(resid = residuals(gam_mean_hgt_base))
+  dplyr::mutate(resid = residuals(gam_mean_hgt_plot))
 
 # Create spatial object
 coords <- as.matrix(df_sp[, c("x", "y")])
@@ -2121,26 +2208,9 @@ lw <- spdep::nb2listw(nb, style = "W")
 spdep::moran.test(df_sp$resid, lw)
 
 
-gam_mean_hgt_spatial <- gam(
-  mean_hgt ~ 
-    planting_intensity * anti_browsing_intensity +
-    s(time_snc_full_disturbance, by = year_f, k = 4) +
-    grndwrk_intensity +
-    year_f +
-    s(x, y, k = 20) +
-    s(plot_id, bs = "re"),
-  data = plot_df_AEF,
-  family = tw(link = "log"),
-  method = "REML"
-)
-
-AIC(gam_mean_hgt_base, gam_mean_hgt_spatial)
-summary(gam_mean_hgt_spatial)$dev.expl
-
-
-fin.m.hgt.plot    <- gam_mean_hgt_plot #gam_mean_hgt_intensity02_int1_plot#gam_mean_hgt_intensity02_int1
-fin.m.hgt.subplot <- gam_mean_hgt_sub #gam_mean_hgt_intensity02_int1_plot#gam_mean_hgt_intensity02_int1
-fin.m.hgt.both    <- gam_mean_hgt_both #gam_mean_hgt_intensity02_int1_plot#gam_mean_hgt_intensity02_int1
+#fin.m.hgt.plot    <- gam_mean_hgt_plot #gam_mean_hgt_intensity02_int1_plot#gam_mean_hgt_intensity02_int1
+#fin.m.hgt.subplot <- gam_mean_hgt_sub #gam_mean_hgt_intensity02_int1_plot#gam_mean_hgt_intensity02_int1
+#fin.m.hgt.both    <- gam_mean_hgt_both #gam_mean_hgt_intensity02_int1_plot#gam_mean_hgt_intensity02_int1
 
 
 
@@ -2176,7 +2246,7 @@ gam_cv_hgt_bin_sub <- gam(
   family = binomial(link = "logit")
 )
 
-gam_cv_hgt_bin_level <- gam(
+gam_cv_hgt_bin_both <- gam(
   cv_hgt_present ~
     s(time_snc_full_disturbance, k = 7) +
     planting_intensity*anti_browsing_intensity +
@@ -2304,6 +2374,21 @@ gam_rich_both <- gam(
   family = nb(link = "log")
 )
 
+
+gam_rich_both_pois <- gam(
+  sp_richness ~
+    planting_intensity*anti_browsing_intensity +
+    s(time_snc_full_disturbance, k = 7) +
+    grndwrk_intensity +
+    level +
+    year_f +
+    s(plot_id, bs = "re"),
+  data = both_levels_re2,
+  method = "REML",
+  family = poisson(link = "log"),
+)
+
+
 gam_rich_plot <- gam(
   sp_richness ~
     planting_intensity*anti_browsing_intensity +
@@ -2338,35 +2423,106 @@ pred_rich_time <- ggpredict(
 plot(pred_rich_time)
 
 
-fin.m.rich <- gam_rich_both #gam_richness_intensity_nb
+#fin.m.rich <- gam_rich_both #gam_richness_intensity_nb
 
 
 
 ##### Summaries and Export -----------
-summary(fin.m.hgt)
-appraise(fin.m.hgt)
+all.models <- list(
+  gam_mean_hgt_plot, gam_mean_hgt_both, gam_mean_hgt_sub,
+  gam_cv_hgt_bin_plot, gam_cv_hgt_bin_sub, gam_cv_hgt_bin_both,
+  gam_cv_hgt_pos_sub, gam_cv_hgt_pos_plot, gam_cv_hgt_pos_both,
+  gam_eff_plot, gam_eff_sub, gam_eff_both,
+  gam_rich_both, gam_rich_plot, gam_rich_sub
+)
 
-summary(fin.m.cv.bin)
-appraise(fin.m.cv.bin)
-
-summary(fin.m.cv.pos)
-appraise(fin.m.cv.pos)
-
-summary(fin.m.eff)
-appraise(fin.m.eff)
-
-summary(fin.m.rich)
-appraise(fin.m.rich)
-
+lapply(all.models, summary)
+#lapply(all.models, appraise)
 
 
 fin.models <- list(
-  hgt   = fin.m.hgt,
+  hgt   = gam_mean_hgt_plot,
  # cvbin = fin.m.cv.bin,
-  cvpos = fin.m.cv.pos,
-  eff   = fin.m.eff,
-  rich  = fin.m.rich
+  cvpos = gam_cv_hgt_pos_plot,
+  eff   = gam_eff_plot,
+  rich  = gam_rich_both
 )
+
+lapply(fin.models, appraise)
+
+# Make quick plots for time since disturbnace ---------------------------------------
+
+# helper: ggpredict + return a ggplot object (so ggarrange works)
+pp <- function(model, terms, title = NULL, xlab = NULL, ylab = NULL) {
+  pr <- ggpredict(model, terms = terms)
+  
+  p <- plot(pr) + theme_classic()
+  
+  if (!is.null(title)) p <- p + ggtitle(title)
+  if (!is.null(xlab) || !is.null(ylab)) p <- p + labs(x = xlab, y = ylab)
+  
+  p
+}
+
+# --- build plots (both-level models) ---
+p_hgt  <- pp(
+  gam_mean_hgt_both,
+  terms = c("time_snc_full_disturbance", "level"),
+  title = "Mean height [m]",
+  xlab  = "Time since disturbance (years)",
+  ylab  = "Predicted mean height"
+)
+
+# p_cv_bin <- pp(
+#   gam_cv_hgt_bin_level,
+#   terms = c("time_snc_full_disturbance", "level"),
+#   title = "CV present (binary part)",
+#   xlab  = "Time since disturbance (years)",
+#   ylab  = "Pr(CV > 0)"
+# )
+
+p_cv_pos <- pp(
+  gam_cv_hgt_pos_both,
+  terms = c("time_snc_full_disturbance", "level"),
+  title = "CV (positive part)",
+  xlab  = "Time since disturbance (years)",
+  ylab  = "Predicted CV"
+)
+
+p_eff <- pp(
+  gam_eff_both,
+  terms = c("time_snc_full_disturbance", "level"),
+  title = "Effective species number",
+  xlab  = "Time since disturbance (years)",
+  ylab  = "Predicted effective #"
+)
+
+p_rich <- pp(
+  gam_rich_both,
+  terms = c("time_snc_full_disturbance", "level"),
+  title = "Species richness",
+  xlab  = "Time since disturbance (years)",
+  ylab  = "Predicted richness"
+)
+
+# --- arrange in one group ---
+p_all <- ggarrange(
+  p_hgt, #p_cv_bin, 
+  p_cv_pos,
+  p_eff, p_rich,
+  ncol = 2, nrow = 2,
+  labels = c("[a]", "[b]", "[c]", "[d]"),
+  font.label = list(size = 10, face = "plain"),
+  common.legend = TRUE,
+  legend = "right"
+)
+
+p_all
+
+# END !!!!
+
+
+
 
 
 ##### Get bar plot of effect sizes -------------------------------------------------
