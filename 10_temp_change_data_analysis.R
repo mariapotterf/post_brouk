@@ -34,6 +34,7 @@ library(RColorBrewer)
 library(ggridges)
 library(scales)
 library(forcats) # order factors
+library(broom)
 
 
 source('my_variables.R')
@@ -138,7 +139,7 @@ species_levels <- top10_by_year %>%
   arrange(share_all) %>%                 # small at top, big at bottom (since we reverse later)
   pull(species)
 
-
+species_levels
 #### Single species plots chars ----------------------
 
 # Summarize number of species per plot, only for n > 1 trees - why is that??
@@ -359,7 +360,7 @@ p_occurence <-
     legend.text = element_text(size = 8)
   ) +
   theme(
-    legend.key.width  = unit(1.8, "lines"),   # wider
+    legend.key.width  = unit(1, "lines"),   # wider
     legend.key.height = unit(0.4, "lines")    # shorter → not square
   )
   
@@ -2133,7 +2134,7 @@ pred_hgt_level <- ggpredict(
 plot(pred_hgt_level) + theme_classic()
 
 
-##### chcek for spatial autocorrelation  ------------------
+###### chceck for spatial autocorrelation  ------------------
 
 # Extract residuals
 df_sp <- df_plot_clean %>%
@@ -2541,9 +2542,10 @@ fin.models <- list(
   rich  = gam_rich_both
 )
 
-lapply(fin.models, appraise)
+lapply(fin.models, summary)
 
-# Make quick plots for time since disturbnace ---------------------------------------
+# Plots ----------------------------------------------------------------------------
+##  Time since disturbnace cross-scale ---------------------------------------
 
 
 
@@ -2649,10 +2651,8 @@ ggsave('outFigs/p_time_since.png',
 
 ##### Get bar plot of effect sizes -------------------------------------------------
 
-models_intensity_all <- fin.models
-
 # Extract parametric terms
-model_intensity_all_df <- map_dfr(models_intensity_all, tidy, parametric = TRUE, .id = "response") %>%
+model_intensity_all_df <- map_dfr(fin.models, tidy, parametric = TRUE, .id = "response") %>%
   filter(term != "(Intercept)") %>%
   mutate(
     lower = estimate - 1.96 * std.error,
@@ -2671,10 +2671,10 @@ model_intensity_all_df <- map_dfr(models_intensity_all, tidy, parametric = TRUE,
     ),
     
     response = dplyr::recode(response,
-                             "eff" = "Species diversity\n[Effective #]",
-                             "rich" = "Species richness\n[#]",
-                             "hgt" = "Mean height\n[m]",
-                             "cvpos" = "Height variability\n[CV, %]",
+                             "eff" = "Effective species [#]",
+                             "rich" = "Species richness [#]",
+                             "hgt" = "Mean height [m]",
+                             "cvpos" = "CV [%]",
                              .default = response
     ),
     
@@ -2682,12 +2682,13 @@ model_intensity_all_df <- map_dfr(models_intensity_all, tidy, parametric = TRUE,
     lower_adj = ifelse(abs(estimate) < 0.01, 0, lower),
     upper_adj = ifelse(abs(estimate) < 0.01, 0, upper),
     
-    response = factor(response, levels = c(
-      "Mean height\n[m]",
+    response = factor(response, 
+                      levels = c(
+                        "Mean height [m]",
      # "Presence Height\nvariability [CV, %]",
-      "Height variability\n[CV, %]",
-      "Species diversity\n[Effective #]",
-      "Species richness\n[#]"
+     "CV [%]",
+     "Effective species [#]",
+     "Species richness [#]"
     )
     )
   )
@@ -2695,10 +2696,14 @@ model_intensity_all_df <- map_dfr(models_intensity_all, tidy, parametric = TRUE,
 # Convert to percentage change (on log-link scale)
 model_intensity_all_df_pct <- model_intensity_all_df %>%
   mutate(
+    # estimate_ratio = exp(estimate),
+    # lower_ratio = exp(lower),
+    # upper_ratio = exp(upper),
+    # 
     estimate_pct = (exp(estimate) - 1) * 100,
     lower_pct = (exp(lower) - 1) * 100,
     upper_pct = (exp(upper) - 1) * 100,
-    
+
     # p_signif = case_when(
     #   p.value <= 0.001 ~ "***",
     #   p.value <= 0.01  ~ "**",
@@ -2706,9 +2711,10 @@ model_intensity_all_df_pct <- model_intensity_all_df %>%
     #   TRUE             ~ "n.s."
     # ),
     # format p-values: max 3 decimals, always shown
-    p_label = paste0(
-      "",
-      formatC(p.value, format = "f", digits = 3)
+    # better p-value formatting
+    p_label = dplyr::case_when(
+      p.value < 0.001 ~ "<0.001",
+      TRUE ~ formatC(p.value, format = "f", digits = 3)
     ),
     sig_col = ifelse(p.value < 0.05, "sig", "n.s.")
   )
@@ -2716,8 +2722,8 @@ model_intensity_all_df_pct <- model_intensity_all_df %>%
 # Filter to include only management terms (not year or level)
 management_terms <- c("Planting", 
                       "Browsing\nprotection", 
-                      "Soil\npreparation", 
-                      "Planting×Browsing\nprotection"#,
+                      "Soil\npreparation"#, 
+                      #"Planting×Browsing\nprotection"#,
                       #"Time since disturbance"
 )
 
@@ -2731,218 +2737,73 @@ model_intensity_all_df_pct_mng_clean <- model_intensity_all_df_pct_mng %>%
   dplyr::select(
     response,
     term,
+    # estimate_ratio,
+    # lower_ratio,
+    # upper_ratio,
     estimate_pct,
     lower_pct,
     upper_pct,
     p_label,
     sig_col
   )
-View(model_intensity_all_df_pct_mng_clean)
-
-model_intensity_all_df_pct_mng_clean %>%
-  mutate(
-    ci_width = upper_pct - lower_pct,
-    ci_to_estimate_ratio = ci_width / abs(estimate_pct)
-  ) %>%
-  summarise(
-    mean_ratio = mean(ci_to_estimate_ratio),
-    median_ratio = median(ci_to_estimate_ratio)
-  )
+#View(model_intensity_all_df_pct_mng_clean)
 
 
 p_model_response <-ggplot(model_intensity_all_df_pct_mng, # model_intensity_all_df_pct_mng
-                          aes(x = term, y = estimate_pct, fill = term)) +
+                          aes(x = response, y = estimate_pct, 
+                              fill = response)) +
   geom_hline(yintercept = 0, color = "gray40", linewidth = 0.5) +
-  geom_col(position = "dodge", width = 0.7) +
+  geom_col(position = "dodge", width = 0.7, color = NA) +
+  #geom_col(position = "dodge", width = 0.7) +
+  # geom_errorbar(aes(ymin = lower_pct, ymax = upper_pct), 
+  #               width = 0.15, linewidth = 0.5) +
   geom_errorbar(aes(ymin = lower_pct, ymax = upper_pct), 
-                width = 0.15, linewidth = 0.5) +
-  facet_wrap(~ response, ncol = 4) +
-  theme_classic(base_size = 9) +
+                width = 0.15, linewidth = 0.5, color = "grey30") +
+  facet_wrap(~ term, ncol = 4) +
+  theme_classic(base_size = 8) +
   scale_fill_brewer(palette = "Dark2") +
-  # NEW: Add stars above bars
   geom_text(
-    aes(label = p_label, #p_signif, 
-        y = ifelse(estimate_pct >= 0, 
-                   upper_pct + 5, 
-                   lower_pct - 14),
-        #color = sig_col,
-        fontface = ifelse(p.value < 0.05, "bold", "plain")),
-    vjust = 0,
+    aes(
+      label = p_label,
+      y = ifelse(estimate_pct >= 0, 
+                 upper_pct + 5, 
+                 lower_pct - 14),
+      # y = ifelse(estimate_ratio >= 1,
+      #            upper_ratio * 1.08,
+      #            lower_ratio * 0.92),
+      fontface = ifelse(p.value < 0.05, "bold", "plain")
+    ),
+    vjust = ifelse(model_intensity_all_df_pct_mng$estimate_pct >= 1, 0, 1),
     size = 2.5
-  ) +
+  )+
   # scale_color_manual(values = c("sig" = "black", "n.s." = "grey60")) +
   labs(
-    x = "Management Intensity",
+    x = "",
+    #y = "Effect size (ratio)", # "Multiplicative effect on response"
     y = "Effect on response [%]",
     title = ""
   ) +
+  #coord_cartesian(ylim = c(-80, 120)) +
   theme(
     legend.position = "none",
-    strip.text = element_text(size = 10),
-    axis.text.x = element_text(angle = 30, hjust = 1, face = 'italic'),
+    strip.text = element_text(size = 8),
+    strip.background = element_rect(fill = "white", color = "black", linewidth = 0.6),
+    axis.text.x = element_text(angle = 30, hjust = 1),
     panel.border = element_rect(color = "black", fill = NA, linewidth = 0.6),
     panel.grid.major.y = element_line(color = "gray90", linewidth = 0.3)
   )
 
 p_model_response
 
+
 ggsave('outFigs/p_model_response.png',
        plot =  p_model_response, 
        width = 7, height = 5)
-
-appraise(models_intensity_all[[4]])
-draw(models_intensity[[4]])
-plot.gam(models_intensity[[4]], page = 1)
-
-
-
 
 
 
 
 ### Make plots : 
-##### Time since disturbance  ----------------------------
-#  Mean height
-preds_hgt <- ggpredict(
-  fin.m.hgt,
-  terms = c("time_snc_full_disturbance"),
-  condition = list(level = "plot")
-)
-
-p_hgt <- plot(preds_hgt) +
-  labs(y = "", x = "", title = "[a] Mean\nheight [m]") +
-  theme_classic(base_size = 9) +
-  coord_cartesian(ylim = c(0, 5)) +  # preserve data but fix visible y-range
-  scale_y_continuous(breaks = seq(0, 5, by = 2.5)) +
-  
-  annotate(
-    "text",
-    x = 4,
-    y = Inf,  # small padding above plo
-    label = "0.000",       # your p-value here
-    #hjust = 1.1,               # center from right
-    vjust = 1.5,               # slightly below top
-    size = 3
-  )
-p_hgt
-
-# 2️ CV binary
-pred_bin <- ggpredict(
-  fin.m.cv.bin,
-  terms = c("time_snc_full_disturbance"),
-  condition = list(level = "plot")
-) %>%
-  rename(prob = predicted, prob_low = conf.low, prob_high = conf.high)
-
-#  CV positive
-pred_pos <- ggpredict(
-  fin.m.cv.pos,
-  terms = c("time_snc_full_disturbance"),
-  condition = list(level = "plot")
-) %>%
-  rename(mean_pos = predicted, pos_low = conf.low, pos_high = conf.high)
-
-# 4️⃣ Combine CV
-pred_cv_combined <- left_join(pred_bin, pred_pos, by = c("x")) %>%
-  mutate(
-    expected_cv = prob * mean_pos,
-    lower = prob_low * pos_low,
-    upper = prob_high * pos_high
-  )
-
-p_cv <- ggplot(pred_cv_combined,
-               aes(x = x, y = expected_cv * 100)) +
-  geom_ribbon(aes(ymin = lower * 100, ymax = upper * 100), alpha = 0.2, colour = NA) +
-  geom_line(linewidth = 0.7) +
-  labs(y = "", x = "", title = "[b] Height\nvariability [CV, %]") +
-  theme_classic(base_size = 9) +
-  theme(legend.position = "none") +
-  coord_cartesian(ylim = c(0, 100)) +  # preserve data but fix visible y-range
-  scale_y_continuous(breaks = seq(0, 100, by = 25)) +
-  
-  annotate(
-    "text",
-    x = 4,
-    y = Inf,  # small padding above plo
-    label = "0.876",       # your p-value here
-    #hjust = 1.1,               # center from right
-    vjust = 1.5,               # slightly below top
-    size = 3
-  )
-p_cv
-
-#  Effective species number
-preds_eff <- ggpredict(
-  fin.m.eff,
-  terms = c("time_snc_full_disturbance"),
-  condition = list(level = "plot")
-)
-
-p_eff <- plot(preds_eff) +
-  labs(y = "", x = "", title = "[c] Effective\nspecies [#]") +
-  scale_y_continuous(breaks = seq(0, 15, by = 2)) +
-  theme_classic(base_size = 9) +
-  annotate(
-    "text",
-    x = 4,
-    y = Inf,  # small padding above plo
-    label = "0.489",       # your p-value here
-    #hjust = 1.1,               # center from right
-    vjust = 1.5,               # slightly below top
-    size = 3
-  )
-
-
-# Species richness
-preds_rich <- ggpredict(
-  fin.m.rich,
-  terms = c("time_snc_full_disturbance"),
-  condition = list(level = "plot")
-)
-
-p_rich <- plot(preds_rich) +
-  labs(y = "", x = "", title = "[d] Species\nrichness [#]") +
-  coord_cartesian(ylim = c(0, 10)) +  # preserve data but fix visible y-range
-  scale_y_continuous(breaks = seq(0, 10, by = 2)) +
-  
-  theme_classic(base_size = 9) +
-  annotate(
-    "text",
-    x = 4,
-    y = Inf,  # small padding above plo
-    label = "0.927",       # your p-value here
-    #hjust = 1.1,               # center from right
-    vjust = 1.5,               # slightly below top
-    size = 3
-  )
-p_rich
-
-combined_plot <- ggarrange(
-  p_hgt, p_cv,
-  p_eff, p_rich,
-#  labels = c("[a]", "[b]", "[c]", "[d]"),
-  ncol = 4, nrow = 1,
-  align = "hv",
-  common.legend = TRUE,
-  legend = "top",
-  font.label = list(size = 9, face = "plain", color = "black"),
-  label.x = 0.1,
-  label.y = 0.95
-)
-
-# Optional: annotate bottom
-p_time <- annotate_figure(
-  combined_plot,
-  bottom = text_grob("Years since disturbance", size = 10, face = "plain")
-)
-
-p_time
-
-ggsave('outFigs/time_since.png',
-       p_time, 
-       width = 7, height = 2.5)
-
-
 
 ##### Export summary table all models 
 ###### Collect all values from models -----------------------------
