@@ -3,6 +3,12 @@
 # hold on all variables regarding species classifications
 
 
+earlyspecs_laura <- c("lade","acps","frex","cabe","bepe","alin",
+                      "algl","acca","acpl","soau","soar",
+                      "coav","alvi","potr","poni","ulgl",
+                      "saca","rops")
+
+
 
 # update species labels
 species_labels <- c(
