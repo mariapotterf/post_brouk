@@ -2377,16 +2377,28 @@ ggplot(plot_df_AEF2, aes(time_snc_full_disturbance, beta_jaccard_mean)) +
 
 m_beta_add <- mgcv::gam(
   beta_jaccard_mean ~ 
-    s(time_snc_full_disturbance, k = 5) +
-    #clear_intensity+
-    planting_intensity*anti_browsing_intensity +
+    time_snc_full_disturbance +
+    planting_intensity+anti_browsing_intensity +
     grndwrk_intensity+
-    #s(spruce_share) +
     year_f +
     s(plot_id, bs = "re"),
   data = plot_df_AEF2,
   method = "REML"
 )
+
+
+m_beta_int <- mgcv::gam(
+  beta_jaccard_mean ~ 
+    time_snc_full_disturbance +
+    planting_intensity*anti_browsing_intensity +
+    grndwrk_intensity+
+    year_f +
+    s(plot_id, bs = "re"),
+  data = plot_df_AEF2,
+  method = "REML"
+)
+
+AIC(m_beta_add, m_beta_int)
 appraise(m_beta_add)
 summary(m_beta_add)
 
@@ -2437,7 +2449,6 @@ p_time_beta <- ggplot(pred_time, aes(x = x, y = predicted)) +
 
 ggarrange(p_plant_beta, p_spruce_beta,  p_time_beta,
           ncol =3)
-summary(m_beta_full)
 summary(m_beta_add)
 AIC(m_beta_full, m_beta_add)
 appraise(m_beta_full)
@@ -2495,7 +2506,8 @@ fin.models <- list(
  # cvbin = fin.m.cv.bin,
   cvpos = gam_cv_hgt_pos_both,
   eff   = gam_eff_both,
-  rich  = gam_rich_both
+  rich  = gam_rich_both,
+ beta = m_beta_add
 )
 
 lapply(fin.models, summary)
@@ -2509,7 +2521,9 @@ pp <- function(model, terms, xlab = NULL, ylab = NULL,
                annot = NULL, scale_y = 1,
                annot_x = 3.5, annot_y = NULL) {
   
-  pr <- ggpredict(model, terms = terms)
+  pr <- ggpredict(model, 
+                  terms = terms,
+                  exclude = "s(plot_id)")
   pr <- as.data.frame(pr)
   
   pr$predicted <- pr$predicted * scale_y
@@ -2632,10 +2646,10 @@ p_time_since_all <- ggarrange(
 
 p_time_since_all
 
-ggsave('outFigs/p_time_since.png',
-       plot =  p_time_since_all, 
-       width = 4.5, height = 5,
-       bg = "white")
+# ggsave('outFigs/p_time_since.png',
+#        plot =  p_time_since_all, 
+#        width = 4.5, height = 5,
+#        bg = "white")
 
 
 
@@ -2716,6 +2730,7 @@ model_intensity_all_df <- map_dfr(fin.models, tidy, parametric = TRUE, .id = "re
                              "rich" = "Species richness [#]",
                              "hgt" = "Mean height [m]",
                              "cvpos" = "CV [%]",
+                             "beta" = "Turnover [dim.]",
                              .default = response
     ),
     
@@ -2729,7 +2744,9 @@ model_intensity_all_df <- map_dfr(fin.models, tidy, parametric = TRUE, .id = "re
      # "Presence Height\nvariability [CV, %]",
      "CV [%]",
      "Effective species [#]",
-     "Species richness [#]"
+     "Species richness [#]",
+     "Turnover [dim.]"
+     
     )
     )
   )
@@ -2737,22 +2754,9 @@ model_intensity_all_df <- map_dfr(fin.models, tidy, parametric = TRUE, .id = "re
 # Convert to percentage change (on log-link scale)
 model_intensity_all_df_pct <- model_intensity_all_df %>%
   mutate(
-    # estimate_ratio = exp(estimate),
-    # lower_ratio = exp(lower),
-    # upper_ratio = exp(upper),
-    # 
-    estimate_pct = (exp(estimate) - 1) * 100,
+      estimate_pct = (exp(estimate) - 1) * 100,
     lower_pct = (exp(lower) - 1) * 100,
     upper_pct = (exp(upper) - 1) * 100,
-
-    # p_signif = case_when(
-    #   p.value <= 0.001 ~ "***",
-    #   p.value <= 0.01  ~ "**",
-    #   p.value <= 0.05  ~ "*",
-    #   TRUE             ~ "n.s."
-    # ),
-    # format p-values: max 3 decimals, always shown
-    # better p-value formatting
     p_label = dplyr::case_when(
       p.value < 0.001 ~ "<0.001",
       TRUE ~ formatC(p.value, format = "f", digits = 3)
@@ -2778,9 +2782,6 @@ model_intensity_all_df_pct_mng_clean <- model_intensity_all_df_pct_mng %>%
   dplyr::select(
     response,
     term,
-    # estimate_ratio,
-    # lower_ratio,
-    # upper_ratio,
     estimate_pct,
     lower_pct,
     upper_pct,
@@ -2790,7 +2791,7 @@ model_intensity_all_df_pct_mng_clean <- model_intensity_all_df_pct_mng %>%
 #View(model_intensity_all_df_pct_mng_clean)
 
 
-p_model_response <-ggplot(model_intensity_all_df_pct_mng, # model_intensity_all_df_pct_mng
+p_model_response <-ggplot(model_intensity_all_df_pct_mng, 
                           aes(x = response, y = estimate_pct, 
                               fill = response)) +
   geom_hline(yintercept = 0, color = "gray40", linewidth = 0.5) +
@@ -2809,10 +2810,7 @@ p_model_response <-ggplot(model_intensity_all_df_pct_mng, # model_intensity_all_
       y = ifelse(estimate_pct >= 0, 
                  upper_pct + 5, 
                  lower_pct - 14),
-      # y = ifelse(estimate_ratio >= 1,
-      #            upper_ratio * 1.08,
-      #            lower_ratio * 0.92),
-      fontface = ifelse(p.value < 0.05, "bold", "plain")
+       fontface = ifelse(p.value < 0.05, "bold", "plain")
     ),
     vjust = ifelse(model_intensity_all_df_pct_mng$estimate_pct >= 1, 0, 1),
     size = 2.5
@@ -2842,9 +2840,6 @@ ggsave('outFigs/p_model_response.png',
        width = 7, height = 5)
 
 
-
-
-### Make plots : 
 
 ##### Export summary table all models 
 #### Export model tables  -----------------------------
@@ -2951,9 +2946,6 @@ metrics_df <- bind_rows(map(results, "metrics"))
 final_results <- left_join(metrics_df, 
                            pvals_fmt, 
                            by = "model")
-# View
-View(final_results)
-
 
 
 # Export to Word
