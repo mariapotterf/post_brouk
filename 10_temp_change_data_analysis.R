@@ -2675,27 +2675,29 @@ p_inset_rich <- pp_inset_model(gam_rich_both, scale_y=1,
 # Apply same y-limits to both plots in the pair
 pair_hgt <- (p_hgt + coord_cartesian(ylim = ylim_hgt)) +
   (p_inset_hgt + coord_cartesian(ylim = ylim_hgt)) +
-  plot_layout(widths = c(2.6, 1))
+  plot_layout(widths = c(2.6, 1)) + plot_annotation(title = "[a]")
 
 pair_cv <- (p_cv_pos + coord_cartesian(ylim = ylim_cv)) +
   (p_inset_cv + coord_cartesian(ylim = ylim_cv)) +
-  plot_layout(widths = c(2.6, 1))
+  plot_layout(widths = c(2.6, 1)) + plot_annotation(title = "[b]")
 
 pair_eff <- (p_eff + coord_cartesian(ylim = ylim_eff)) +
   (p_inset_eff + coord_cartesian(ylim = ylim_eff)) +
-  plot_layout(widths = c(2.6, 1))
+  plot_layout(widths = c(2.6, 1)) +
+  plot_annotation(title = "[c]")
 
 pair_rich <- (p_rich + coord_cartesian(ylim = ylim_rich)) +
   (p_inset_rich + coord_cartesian(ylim = ylim_rich)) +
-  plot_layout(widths = c(2.6, 1))
+  plot_layout(widths = c(2.6, 1)) +
+  plot_annotation(title = "[d]")
 
 p_final <- (pair_hgt | pair_cv) /
   (pair_eff | pair_rich) +
-  plot_layout(guides = "collect") &
+  plot_layout(guides = "collect") & #+  plot_annotation(tag_levels = list(c("[a]", "[b]", "[c]", "[d]")))  
+#&
   theme(legend.position = "bottom")
 
 p_final
-
 
 ggsave('outFigs/p_time_scale.png',
        plot =  p_final, 
