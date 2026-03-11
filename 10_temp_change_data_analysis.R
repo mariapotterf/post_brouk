@@ -1899,11 +1899,6 @@ lw <- spdep::nb2listw(nb, style = "W")
 spdep::moran.test(df_sp$resid, lw)
 
 
-#fin.m.hgt.plot    <- gam_mean_hgt_plot #gam_mean_hgt_intensity02_int1_plot#gam_mean_hgt_intensity02_int1
-#fin.m.hgt.subplot <- gam_mean_hgt_sub #gam_mean_hgt_intensity02_int1_plot#gam_mean_hgt_intensity02_int1
-#fin.m.hgt.both    <- gam_mean_hgt_both #gam_mean_hgt_intensity02_int1_plot#gam_mean_hgt_intensity02_int1
-
-
 
 
 
@@ -2257,6 +2252,219 @@ plot(pred_rich_time)
 #fin.m.rich <- gam_rich_both #gam_richness_intensity_nb
 
 
+##### Species turnover: alpha, gamma and beta (species turnover) diversity ---------------------------
+# Jaccard dissimilairty - == beta diversity/turnover
+# long -> wide community matrix at subplot level
+comm_sub <- dat_overlap_mng_upd2 %>%
+  mutate(n = coalesce(n, 0L)) %>%
+  filter(!is.na(species), species != "") %>%
+  group_by(plot, year, subplot, species) %>%
+  summarise(n = sum(n), .groups = "drop") %>%
+  tidyr::pivot_wider(
+    names_from = species,
+    values_from = n,
+    values_fill = 0
+  )
+
+beta_within_plotyear <- function(df_plotyear) {
+  meta <- df_plotyear %>% dplyr::select(plot, year, subplot)
+  mat  <- df_plotyear %>% dplyr::select(-plot, -year, -subplot) %>% as.data.frame()
+  
+  # drop empty subplots (all zeros)
+  keep <- rowSums(mat) > 0
+  mat  <- mat[keep, , drop = FALSE]
+  meta <- meta[keep, , drop = FALSE]
+  
+  n_sub <- nrow(mat)
+  
+  # if <2 subplots with any stems, turnover is undefined
+  if (n_sub < 2) {
+    return(tibble::tibble(
+      plot = unique(meta$plot),
+      year = unique(meta$year),
+      n_subplots_nonempty = n_sub,
+      beta_jaccard_mean = NA_real_,
+      beta_bray_mean = NA_real_,
+      alpha_rich_mean = if (n_sub == 1) sum(mat[1, ] > 0) else NA_real_,
+      gamma_rich = if (n_sub == 1) sum(colSums(mat) > 0) else NA_real_,
+      beta_whittaker = NA_real_
+    ))
+  }
+  
+  # Presence/absence for Jaccard
+  mat_pa <- (mat > 0) * 1
+  
+  # Pairwise dissimilarities
+  d_jac  <- vegan::vegdist(mat_pa, method = "jaccard", binary = TRUE)
+  d_bray <- vegan::vegdist(mat,    method = "bray")
+  
+  # Richness alpha/gamma and Whittaker beta
+  alpha <- rowSums(mat_pa)
+  gamma <- sum(colSums(mat_pa) > 0)
+  betaW <- gamma / mean(alpha)
+  
+  tibble::tibble(
+    plot = unique(meta$plot),
+    year = unique(meta$year),
+    n_subplots_nonempty = n_sub,
+    beta_jaccard_mean = mean(as.numeric(d_jac),  na.rm = TRUE),   # 0..1 (higher = more turnover)
+    beta_bray_mean    = mean(as.numeric(d_bray), na.rm = TRUE),   # 0..1 (higher = more turnover)
+    alpha_rich_mean   = mean(alpha),
+    gamma_rich        = gamma,
+    beta_whittaker    = betaW                                     # >=1 (higher = more turnover)
+  )
+}
+
+
+beta_plotyear <- comm_sub %>%
+  group_by(plot, year) %>%
+  group_split() %>%
+  purrr::map_dfr(beta_within_plotyear)
+
+beta_plotyear
+
+
+#beta_jaccard_mean (0–1):
+# ~0 = subplots share the same species (homogenized)
+# ~1 = subplots share few/no species (high turnover)
+# 
+# beta_bray_mean (0–1):
+#   like above, but accounts for abundance (stem counts)
+
+# beta_whittaker (≥1):
+#   1 = plot richness equals mean subplot richness (no turnover)
+# 2.4 (like you estimated) = plot has ~2.4× the richness of an average subplot
+
+plot_df_AEF2 <- plot_df_AEF %>% 
+  left_join(beta_plotyear)
+
+# small adjustment to use beta family
+eps <- 0.001
+plot_df_AEF2$beta_jaccard_mean <- 
+  pmin(pmax(plot_df_AEF2$beta_jaccard_mean, eps), 1 - eps)
+
+
+# quick check over time
+ggplot(plot_df_AEF2, 
+       aes(x = time_snc_full_disturbance, 
+           y = beta_jaccard_mean)) +
+  geom_jitter(alpha = 0.4) +
+  geom_smooth(method = "gam", 
+              formula = y ~ s(x, k = 7)) +
+  theme_classic()
+
+
+cor.test(plot_df_AEF2$time_snc_full_disturbance,
+         plot_df_AEF2$beta_jaccard_mean,
+         method = "spearman")
+
+cor.test(plot_df_AEF2$planting_intensity,
+         plot_df_AEF2$spruce_share,
+         method = "spearman")
+
+plot_df_AEF2 %>%
+  dplyr::group_by(time_snc_full_disturbance) %>%
+  dplyr::summarise(
+    beta_jaccard_mean = mean(beta_jaccard_mean, na.rm = TRUE),
+    n = dplyr::n()
+  )
+
+ggplot(plot_df_AEF2, aes(time_snc_full_disturbance, beta_jaccard_mean)) +
+  geom_jitter(alpha = 0.2) +
+  stat_summary(fun = mean, geom = "point", size = 3, colour = "red") +
+  theme_classic()
+
+
+m_beta_add <- mgcv::gam(
+  beta_jaccard_mean ~ 
+    s(time_snc_full_disturbance, k = 5) +
+    #clear_intensity+
+    planting_intensity*anti_browsing_intensity +
+    grndwrk_intensity+
+    #s(spruce_share) +
+    year_f +
+    s(plot_id, bs = "re"),
+  data = plot_df_AEF2,
+  method = "REML"
+)
+appraise(m_beta_add)
+summary(m_beta_add)
+
+m_beta_betar <- gam(
+  beta_jaccard_mean ~ 
+    time_snc_full_disturbance +
+    planting_intensity*anti_browsing_intensity +
+    grndwrk_intensity+
+    year_f +
+    s(plot_id, bs = "re"),
+  family = betar(link = "logit"),
+  data = plot_df_AEF2
+)
+summary(m_beta_betar)
+appraise(m_beta_betar)
+
+pred <- ggpredict(
+  m_beta_add,
+  terms = c("time_snc_full_disturbance[0:8]"),   # both levels
+  #terms = c("time_snc_full_disturbance")   # both levels
+  type = 'fixed',
+  exclude = "s(plot_id)"
+)
+
+plot(pred) + theme_classic()
+
+
+pred_plant <- ggpredict(
+  m_beta_add,
+  terms = "planting_intensity [0:1 by=0.05]",
+  exclude = "s(plot_id)"
+)
+
+pred_time <- ggpredict(
+  m_beta_add,
+  terms = "time_snc_full_disturbance [all]",
+  exclude = "s(plot_id)"
+)
+
+p_time_beta <- ggplot(pred_time, aes(x = x, y = predicted)) +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2) +
+  geom_line(linewidth = 1) +
+  labs(x = "Time since full disturbance (years)",
+       y = "Predicted Jaccard beta") +
+  theme_classic() 
+
+
+
+ggarrange(p_plant_beta, p_spruce_beta,  p_time_beta,
+          ncol =3)
+summary(m_beta_full)
+summary(m_beta_add)
+AIC(m_beta_full, m_beta_add)
+appraise(m_beta_full)
+plot(m_beta_add, page = 1)
+
+concurvity(m_beta_add, full = TRUE)
+
+
+
+# check correlation between planting and anti-browsing
+cor(plot_df_AEF2$planting_intensity,
+    plot_df_AEF2$anti_browsing_intensity,
+    use = "complete.obs")
+#[1] 0.6491358
+
+cor.test(plot_df_AEF2$planting_intensity,
+         plot_df_AEF2$anti_browsing_intensity,
+         use = "complete.obs")
+
+
+
+
+
+
+
+
+
 
 ##### Summaries and Export -----------
 all.models <- list(
@@ -2272,7 +2480,8 @@ all.models <- list(
   # gam_eff_plot, 
   # gam_eff_sub, 
   gam_eff_both,
-  gam_rich_both#, 
+  gam_rich_both,
+  m_beta_add   # jaccard beta dissimilarity
   # gam_rich_plot, 
   # gam_rich_sub
 )
@@ -2296,38 +2505,34 @@ lapply(fin.models, summary)
 
 
 
-pp <- function(model, terms, title = NULL, xlab = NULL, ylab = NULL,
-               annot = NULL, scale_y = 1) {
+pp <- function(model, terms, xlab = NULL, ylab = NULL,
+               annot = NULL, scale_y = 1,
+               annot_x = 3.5, annot_y = NULL) {
   
   pr <- ggpredict(model, terms = terms)
+  pr <- as.data.frame(pr)
   
-  # scale predictions if needed
   pr$predicted <- pr$predicted * scale_y
   pr$conf.low  <- pr$conf.low  * scale_y
   pr$conf.high <- pr$conf.high * scale_y
   
-  p <- plot(pr) + 
-    labs(
-      title = NULL,
-      color = "Scale",
-      fill = "Scale"
-    )+
-    theme(
-      axis.title = element_text(size = 7)   # x and y axis labels
-    ) +
-    theme_classic()
+  p <- ggplot(pr, aes(x = x, y = predicted, colour = group, fill = group)) +
+    geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2, colour = NA) +
+    geom_line(linewidth = 0.8) +
+    labs(x = xlab, y = ylab, colour = "Scale") +
+    scale_color_manual(values = c("subplot"="grey80","plot"="grey30")) +
+    scale_fill_manual(values = c("subplot"="grey80","plot"="grey30"), guide="none") +
+    theme_classic() +
+    theme(axis.title = element_text(size = 7))
   
-  if (!is.null(title)) p <- p + ggtitle(title)
-  if (!is.null(xlab) || !is.null(ylab)) p <- p + labs(x = xlab, y = ylab)
-  
-  if (!is.null(annot)) {
+  if(!is.null(annot)){
     p <- p + annotate(
       "text",
-      x = -Inf, y = Inf,
+      x = annot_x,
+      y = annot_y,
       label = annot,
-      hjust = -0.05,
-      vjust = 1.2,
-      size = 2.5
+      size = 2.5,
+      hjust = 0.5
     )
   }
   
@@ -2335,43 +2540,83 @@ pp <- function(model, terms, title = NULL, xlab = NULL, ylab = NULL,
 }
 
 
+pp_inset_model <- function(model, scale_y = 1, p_lab = NULL,
+                           annot_x = 1.5, annot_y = NULL){
+  
+  pr <- ggpredict(model, terms="level")
+  pr <- as.data.frame(pr)
+  
+  pr$predicted <- pr$predicted * scale_y
+  pr$conf.low  <- pr$conf.low  * scale_y
+  pr$conf.high <- pr$conf.high * scale_y
+  
+  ggplot(pr, aes(x=x,y=predicted, colour=x))+
+    geom_errorbar(aes(ymin=conf.low,ymax=conf.high), width=.08) +
+    geom_point(size=2.4) +
+    annotate(
+      "text",
+      x = annot_x,
+      y = annot_y,
+      label = p_lab,
+      size = 2.5
+    )+
+    scale_color_manual(values=c("subplot"="grey80","plot"="grey30"),guide="none")+
+    theme_classic(base_size=8)+
+    theme(
+      axis.title = element_blank(),
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      axis.line.y = element_blank(),
+      axis.text.x = element_text(size=7),
+      legend.position="none",
+      plot.margin = margin(5,5,5,0)
+    )
+}
+
+ylim_hgt  <- c(0.2,2.0)
+ylim_cv   <- c(10,85)
+ylim_eff  <- c(1,12)
+ylim_rich <- c(0.8,7)
+
+y_time_hgt  <- ylim_hgt[2]*0.98
+y_time_cv   <- ylim_cv[2]*0.98
+y_time_eff  <- ylim_eff[2]*0.98
+y_time_rich <- ylim_rich[2]*0.98
 
 p_hgt <- pp(
   gam_mean_hgt_base,
-  terms = c("time_snc_full_disturbance[0:7]", "level"),
- # title = "Mean height [m]",
- # xlab  = "Time since disturbance (years)",
-  ylab  = "Mean height [m]",
-  annot = "Time: p = 0.004\nScale: p < 0.001"
-)
+  terms=c("time_snc_full_disturbance[0:7]","level"),
+  ylab="Mean height [m]",
+  annot="Time:\np = 0.004",
+  annot_y=y_time_hgt
+) + coord_cartesian(ylim=ylim_hgt)
 
 p_cv_pos <- pp(
   gam_cv_hgt_pos_both,
-  terms = c("time_snc_full_disturbance[0:7]", "level"),
-#  xlab  = "Time since disturbance (years)",
-  ylab  = "CV [%]",
-  annot = "Time: p = 0.668\nScale: p < 0.001",
-  scale_y = 100
-)
+  terms=c("time_snc_full_disturbance[0:7]","level"),
+  ylab="CV [%]",
+  annot="Time:\np = 0.668",
+  scale_y=100,
+  annot_y=y_time_cv
+) + coord_cartesian(ylim=ylim_cv)
 
 p_eff <- pp(
   gam_eff_both,
-  terms = c("time_snc_full_disturbance[0:7]", "level"),
- # title = "Effective species number",
-  xlab  = "Time since disturbance\n(years)",
-  ylab  = "Effective species [#]",
-  annot = "Time: p = 0.452\nScale: p < 0.001"
-)
+  terms=c("time_snc_full_disturbance[0:7]","level"),
+  xlab="Time since disturbance\n(years)",
+  ylab="Effective species [#]",
+  annot="Time:\np = 0.452",
+  annot_y=y_time_eff
+) + coord_cartesian(ylim=ylim_eff)
 
 p_rich <- pp(
   gam_rich_both,
-  terms = c("time_snc_full_disturbance[0:7]", "level"),
- # title = NA, # "Species richness",
-  xlab  = "Time since disturbance\n(years)",
-  ylab  = "Species richness [#]",
-  annot = "Time: p = 0.896\nScale: p < 0.001"
-)
-
+  terms=c("time_snc_full_disturbance[0:7]","level"),
+  xlab="Time since disturbance\n(years)",
+  ylab="Species richness [#]",
+  annot="Time:\np = 0.896",
+  annot_y=y_time_rich
+) + coord_cartesian(ylim=ylim_rich)
 
 p_time_since_all <- ggarrange(
   p_hgt,
@@ -2393,6 +2638,55 @@ ggsave('outFigs/p_time_since.png',
        bg = "white")
 
 
+
+# combine time plots with erro plot from models  --------
+
+p_inset_hgt  <- pp_inset_model(gam_mean_hgt_base, scale_y=1,
+                               p_lab="Scale:\np < 0.001",
+                               annot_y=y_time_hgt)
+
+p_inset_cv   <- pp_inset_model(gam_cv_hgt_pos_both, scale_y=100,
+                               p_lab="Scale:\np < 0.001",
+                               annot_y=y_time_cv)
+
+p_inset_eff  <- pp_inset_model(gam_eff_both, scale_y=1,
+                               p_lab="Scale:\np < 0.001",
+                               annot_y=y_time_eff)
+
+p_inset_rich <- pp_inset_model(gam_rich_both, scale_y=1,
+                               p_lab="Scale:\np < 0.001",
+                               annot_y=y_time_rich)
+
+
+# Apply same y-limits to both plots in the pair
+pair_hgt <- (p_hgt + coord_cartesian(ylim = ylim_hgt)) +
+  (p_inset_hgt + coord_cartesian(ylim = ylim_hgt)) +
+  plot_layout(widths = c(2.6, 1))
+
+pair_cv <- (p_cv_pos + coord_cartesian(ylim = ylim_cv)) +
+  (p_inset_cv + coord_cartesian(ylim = ylim_cv)) +
+  plot_layout(widths = c(2.6, 1))
+
+pair_eff <- (p_eff + coord_cartesian(ylim = ylim_eff)) +
+  (p_inset_eff + coord_cartesian(ylim = ylim_eff)) +
+  plot_layout(widths = c(2.6, 1))
+
+pair_rich <- (p_rich + coord_cartesian(ylim = ylim_rich)) +
+  (p_inset_rich + coord_cartesian(ylim = ylim_rich)) +
+  plot_layout(widths = c(2.6, 1))
+
+p_final <- (pair_hgt | pair_cv) /
+  (pair_eff | pair_rich) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+
+p_final
+
+
+ggsave('outFigs/p_time_scale.png',
+       plot =  p_final, 
+       width = 6, height = 5,
+       bg = "white")
 
 
 
@@ -2671,15 +2965,6 @@ tab_df(final_results,
 
 
 
-# Export model summaries to Word
-
-# tab_model(
-#   unlist(fin.models),
-#   show.icc = FALSE,
-#   show.re.var = TRUE,
-#   show.r2 = TRUE,
-#   file = "outTable/forest_model_summaries_intensity.doc"
-# )
 
 
 
@@ -2990,229 +3275,6 @@ both_levels_long_capped %>%
   count(value_capped) %>%
   mutate(share = round(100 * n / sum(n), 1)) %>%
   arrange(value_capped)
-
-
-##### Species turnover: alpha, gamma and beta (species turnover) diversity ---------------------------
-
-# long -> wide community matrix at subplot level
-comm_sub <- dat_overlap_mng_upd2 %>%
-  mutate(n = coalesce(n, 0L)) %>%
-  filter(!is.na(species), species != "") %>%
-  group_by(plot, year, subplot, species) %>%
-  summarise(n = sum(n), .groups = "drop") %>%
-  tidyr::pivot_wider(
-    names_from = species,
-    values_from = n,
-    values_fill = 0
-  )
-
-beta_within_plotyear <- function(df_plotyear) {
-  meta <- df_plotyear %>% dplyr::select(plot, year, subplot)
-  mat  <- df_plotyear %>% dplyr::select(-plot, -year, -subplot) %>% as.data.frame()
-  
-  # drop empty subplots (all zeros)
-  keep <- rowSums(mat) > 0
-  mat  <- mat[keep, , drop = FALSE]
-  meta <- meta[keep, , drop = FALSE]
-  
-  n_sub <- nrow(mat)
-  
-  # if <2 subplots with any stems, turnover is undefined
-  if (n_sub < 2) {
-    return(tibble::tibble(
-      plot = unique(meta$plot),
-      year = unique(meta$year),
-      n_subplots_nonempty = n_sub,
-      beta_jaccard_mean = NA_real_,
-      beta_bray_mean = NA_real_,
-      alpha_rich_mean = if (n_sub == 1) sum(mat[1, ] > 0) else NA_real_,
-      gamma_rich = if (n_sub == 1) sum(colSums(mat) > 0) else NA_real_,
-      beta_whittaker = NA_real_
-    ))
-  }
-  
-  # Presence/absence for Jaccard
-  mat_pa <- (mat > 0) * 1
-  
-  # Pairwise dissimilarities
-  d_jac  <- vegan::vegdist(mat_pa, method = "jaccard", binary = TRUE)
-  d_bray <- vegan::vegdist(mat,    method = "bray")
-  
-  # Richness alpha/gamma and Whittaker beta
-  alpha <- rowSums(mat_pa)
-  gamma <- sum(colSums(mat_pa) > 0)
-  betaW <- gamma / mean(alpha)
-  
-  tibble::tibble(
-    plot = unique(meta$plot),
-    year = unique(meta$year),
-    n_subplots_nonempty = n_sub,
-    beta_jaccard_mean = mean(as.numeric(d_jac),  na.rm = TRUE),   # 0..1 (higher = more turnover)
-    beta_bray_mean    = mean(as.numeric(d_bray), na.rm = TRUE),   # 0..1 (higher = more turnover)
-    alpha_rich_mean   = mean(alpha),
-    gamma_rich        = gamma,
-    beta_whittaker    = betaW                                     # >=1 (higher = more turnover)
-  )
-}
-
-
-beta_plotyear <- comm_sub %>%
-  group_by(plot, year) %>%
-  group_split() %>%
-  purrr::map_dfr(beta_within_plotyear)
-
-beta_plotyear
-
-
-#beta_jaccard_mean (0–1):
-# ~0 = subplots share the same species (homogenized)
-# ~1 = subplots share few/no species (high turnover)
-# 
-# beta_bray_mean (0–1):
-#   like above, but accounts for abundance (stem counts)
-
-# beta_whittaker (≥1):
-#   1 = plot richness equals mean subplot richness (no turnover)
-# 2.4 (like you estimated) = plot has ~2.4× the richness of an average subplot
-
-plot_df_AEF2 <- plot_df_AEF %>% 
-  left_join(beta_plotyear)
-
-
-# quick check over time
-ggplot(plot_df_AEF2, 
-       aes(x = time_snc_full_disturbance, 
-           y = beta_jaccard_mean)) +
-  geom_jitter(alpha = 0.4) +
-  geom_smooth(method = "gam", 
-              formula = y ~ s(x, k = 7)) +
-  theme_classic()
-
-
-cor.test(plot_df_AEF2$time_snc_full_disturbance,
-         plot_df_AEF2$beta_jaccard_mean,
-         method = "spearman")
-
-cor.test(plot_df_AEF2$planting_intensity,
-         plot_df_AEF2$spruce_share,
-         method = "spearman")
-
-
-
-m_beta_full <- mgcv::gam(
-  beta_jaccard_mean ~ 
-    s(time_snc_full_disturbance, k = 5) +
-    #clear_intensity+
-    planting_intensity*anti_browsing_intensity +
-    spruce_share +
-    s(plot_id, bs = "re"),
-  data = plot_df_AEF2,
-  method = "REML"
-)
-
-m_beta_add <- mgcv::gam(
-  beta_jaccard_mean ~ 
-    s(time_snc_full_disturbance, k = 5) +
-    #clear_intensity+
-    planting_intensity + anti_browsing_intensity +
-    s(spruce_share) +
-    s(plot_id, bs = "re"),
-  data = plot_df_AEF2,
-  method = "REML"
-)
-
-m_beta_add_smpl <- mgcv::gam(
-  beta_jaccard_mean ~ 
-    s(time_snc_full_disturbance, k = 5) +
-    #clear_intensity+
-    planting_intensity + anti_browsing_intensity +
-    # s(spruce_share) +
-    s(plot_id, bs = "re"),
-  data = plot_df_AEF2,
-  method = "REML"
-)
-
-m_beta_add2 <- mgcv::gam(
-  beta_jaccard_mean ~ 
-    s(time_snc_full_disturbance, k = 5) +
-    #clear_intensity+
-    s(planting_intensity, k = 5) + anti_browsing_intensity +
-    s(spruce_share) +
-    s(plot_id, bs = "re"),
-  data = plot_df_AEF2,
-  method = "REML"
-)
-
-AIC(m_beta_add_smpl, m_beta_add) # model is slightly better if used only as a linear term
-fin.m.jaccard <- m_beta_add
-
-# Population-level prediction (exclude random effect)
-pred_spruce <- ggpredict(
-  m_beta_add,
-  terms = "spruce_share [0:1 by=0.02]",
-  exclude = "s(plot_id)"
-)
-pred_plant <- ggpredict(
-  m_beta_add,
-  terms = "planting_intensity [0:1 by=0.05]",
-  exclude = "s(plot_id)"
-)
-
-pred_time <- ggpredict(
-  m_beta_add,
-  terms = "time_snc_full_disturbance [all]",
-  exclude = "s(plot_id)"
-)
-
-p_time_beta <- ggplot(pred_time, aes(x = x, y = predicted)) +
-  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2) +
-  geom_line(linewidth = 1) +
-  labs(x = "Time since full disturbance (years)",
-       y = "Predicted Jaccard beta") +
-  theme_classic() 
-
-
-p_spruce_beta <- ggplot(pred_spruce, aes(x = x, y = predicted)) +
-  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2) +
-  geom_line(linewidth = 1) +
-  labs(x = "Spruce share",
-       y = "Predicted Jaccard beta") +
-  theme_classic()  
-
-
-
-p_plant_beta <- ggplot(pred_plant, aes(x = x, y = predicted)) +
-  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2) +
-  geom_line(linewidth = 1) +
-  labs(x = "Planting intensity",
-       y = "Predicted Jaccard beta") +
-  theme_classic() 
-
-
-
-ggarrange(p_plant_beta, p_spruce_beta,  p_time_beta,
-          ncol =3)
-summary(m_beta_full)
-summary(m_beta_add)
-AIC(m_beta_full, m_beta_add)
-appraise(m_beta_full)
-plot(m_beta_add, page = 1)
-
-concurvity(m_beta_add, full = TRUE)
-
-
-
-# check correlation between planting and anti-browsing
-cor(plot_df_AEF2$planting_intensity,
-    plot_df_AEF2$anti_browsing_intensity,
-    use = "complete.obs")
-#[1] 0.6491358
-
-cor.test(plot_df_AEF2$planting_intensity,
-         plot_df_AEF2$anti_browsing_intensity,
-         use = "complete.obs")
-
-
 
 
 
