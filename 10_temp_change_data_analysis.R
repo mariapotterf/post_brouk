@@ -2513,11 +2513,11 @@ fin.models <- list(
 
 lapply(fin.models, summary)
 
-# get predicted means
-fin.models4 <- fin.models[names(fin.models) != "beta"]
+# get predicted means only for models that have both levels - chet change across scales
+fin.models.levels <- fin.models[names(fin.models) != "beta"]
 
 emm_results <- map_dfr(
-  fin.models4,
+  fin.models.levels,
   ~ broom::tidy(emmeans(.x, ~ level, type = 'response')),
   .id = "model"
 )
@@ -2536,7 +2536,7 @@ emm_change <- emm_results %>%
 emm_change
 
 
-# changes for management 
+# changes for management : from 0 to 1 intensity
 
 emm_planting <- map_dfr(
   fin.models,
@@ -2552,6 +2552,14 @@ emm_planting <- map_dfr(
 
 emm_planting
 
+planting_pct <- emm_planting %>%
+  select(model, planting_intensity, response) %>%
+  pivot_wider(names_from = planting_intensity,
+              values_from = response) %>%
+  mutate(
+    percent_change = 100 * (`1` - `0`) / `0`
+  )
+planting_pct
 
 # Plots ----------------------------------------------------------------------------
 ##  Time since disturbnace cross-scale ---------------------------------------
@@ -2884,6 +2892,182 @@ ggsave('outFigs/p_model_response.png',
 
 
 
+## TEST START
+#### Effect of management: predicted % change from 0 to 1 at plot level ----
+
+# labels
+response_labels <- c(
+  "hgt"   = "Mean height [m]",
+  "cvpos" = "CV [%]",
+  "eff"   = "Effective species [#]",
+  "rich"  = "Species richness [#]",
+  "beta"  = "Turnover [dim.]"
+)
+
+term_labels <- c(
+  "planting_intensity" = "Planting",
+  "anti_browsing_intensity" = "Browsing\nprotection",
+  "grndwrk_intensity" = "Soil\npreparation"
+)
+
+# helper: get emmeans predictions for one focal management variable
+get_mng_emm <- function(model, model_name, focal_term) {
+  
+  at_list <- switch(
+    focal_term,
+    "planting_intensity" = list(
+      planting_intensity = c(0, 1)
+    ),
+    "anti_browsing_intensity" = list(
+      anti_browsing_intensity = c(0, 1)
+    ),
+    "grndwrk_intensity" = list(
+      grndwrk_intensity = c(0, 1)
+    )
+  )
+  
+  emmeans::emmeans(
+    model,
+    specs = stats::as.formula(paste0("~ ", focal_term)),
+    at = at_list,
+    type = "response"
+  ) %>%
+    summary(infer = c(TRUE, TRUE)) %>%
+    as.data.frame() %>%
+    mutate(
+      model = model_name,
+      focal_term = focal_term
+    )
+}
+
+# only management terms / responses you want in the plot
+mods_mng <- fin.models[c("hgt", "cvpos", "eff", "rich")]
+
+# get predictions for all management variables
+emm_mng <- map_dfr(
+  names(mods_mng),
+  function(nm) {
+    mod <- mods_mng[[nm]]
+    bind_rows(
+      get_mng_emm(mod, nm, "planting_intensity"),
+      get_mng_emm(mod, nm, "anti_browsing_intensity"),
+      get_mng_emm(mod, nm, "grndwrk_intensity")
+    )
+  }
+)
+
+# get model-term p-values (same logic as your old figure)
+pvals_mng <- map_dfr(
+  mods_mng,
+  ~ broom::tidy(.x, parametric = TRUE),
+  .id = "model"
+) %>%
+  filter(term %in% c("planting_intensity", "anti_browsing_intensity", "grndwrk_intensity")) %>%
+  transmute(
+    model,
+    focal_term = term,
+    p.value,
+    p_label = case_when(
+      p.value < 0.001 ~ "<0.001",
+      TRUE ~ formatC(p.value, format = "f", digits = 3)
+    )
+  )
+
+# identify the 0/1 column for each focal term
+emm_mng2 <- emm_mng %>%
+  mutate(
+    intensity = case_when(
+      focal_term == "planting_intensity" ~ planting_intensity,
+      focal_term == "anti_browsing_intensity" ~ anti_browsing_intensity,
+      focal_term == "grndwrk_intensity" ~ grndwrk_intensity
+    ),
+    response = response, #coalesce(response, estimate),   # for safety across model families
+    response_lab = recode(model, !!!response_labels),
+    term = recode(focal_term, !!!term_labels)
+  )
+
+# compute % change from predicted means
+model_intensity_all_df_pct_mng <- emm_mng2 %>%
+  select(model, focal_term, term, response_lab, intensity, response, lower.CL, upper.CL) %>%
+  pivot_wider(
+    names_from = intensity,
+    values_from = c(response, lower.CL, upper.CL),
+    names_sep = "_"
+  ) %>%
+  left_join(pvals_mng, by = c("model", "focal_term")) %>%
+  mutate(
+    estimate_pct = 100 * (response_1 - response_0) / response_0,
+    
+    # approximate visual CI for the percent change
+    lower_pct = 100 * (lower.CL_1 - upper.CL_0) / upper.CL_0,
+    upper_pct = 100 * (upper.CL_1 - lower.CL_0) / lower.CL_0,
+    
+    sig_col = ifelse(p.value < 0.05, "sig", "n.s."),
+    response = factor(
+      response_lab,
+      levels = c(
+        "Mean height [m]",
+        "CV [%]",
+        "Effective species [#]",
+        "Species richness [#]"
+      )
+    )
+  )
+
+# plot
+p_model_response <- ggplot(
+  model_intensity_all_df_pct_mng,
+  aes(x = response, y = estimate_pct, fill = response)
+) +
+  geom_hline(yintercept = 0, color = "gray40", linewidth = 0.5) +
+  geom_col(width = 0.7, color = NA) +
+  geom_errorbar(
+    aes(ymin = lower_pct, ymax = upper_pct),
+    width = 0.15,
+    linewidth = 0.5,
+    color = "grey30"
+  ) +
+  geom_text(
+    aes(
+      label = p_label,
+      y =  upper_pct + 12, 
+      # ifelse(estimate_pct >= 0,
+      #            upper_pct + 12,
+      #            lower_pct - 10),
+      fontface = ifelse(p.value < 0.05, "bold", "plain")
+    ),
+    size = 2.5
+  ) +
+  facet_wrap(~ term, ncol = 3) +
+  theme_classic(base_size = 8) +
+  scale_fill_brewer(palette = "Dark2") +
+  labs(
+    x = "",
+    y = "Effect on response [%]"
+  ) +
+  theme(
+    legend.position = "none",
+    strip.text = element_text(size = 8),
+    strip.background = element_rect(fill = "white", color = "black", linewidth = 0.6),
+    axis.text.x = element_text(angle = 30, hjust = 1),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.6),
+    panel.grid.major.y = element_line(color = "gray90", linewidth = 0.3)
+  )
+
+p_model_response
+
+ggsave(
+  "outFigs/p_model_response.png",
+  plot = p_model_response,
+  width = 7,
+  height = 5
+)
+
+
+### TEST END
+
+
+
 
 ##### Export summary table all models 
 #### Export model tables  -----------------------------
@@ -3053,11 +3237,6 @@ p_spruce_shares_boxplot <- ggarrange(p1, p2,
 ggsave("outFigs/spruce_share_boxplots.png", 
        plot = p_spruce_shares_boxplot, 
        width = 7, height = 3.2, units = "in", dpi = 300)
-
-
-
-
-
 
 
 
