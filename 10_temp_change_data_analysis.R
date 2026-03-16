@@ -35,6 +35,7 @@ library(ggridges)
 library(scales)
 library(forcats) # order factors
 library(broom)
+library(emmeans) # get estimated avareges from models
 
 
 source('my_variables.R')
@@ -2129,7 +2130,7 @@ gam_eff_sub <- gam(
 
 gam_eff_both <- gam(
   effective_numbers ~
-    planting_intensity*anti_browsing_intensity +
+    planting_intensity+anti_browsing_intensity +
     s(time_snc_full_disturbance, k = 3) +
     grndwrk_intensity +
     level +
@@ -2507,10 +2508,50 @@ fin.models <- list(
   cvpos = gam_cv_hgt_pos_both,
   eff   = gam_eff_both,
   rich  = gam_rich_both,
- beta = m_beta_add
+  beta = m_beta_add
 )
 
 lapply(fin.models, summary)
+
+# get predicted means
+fin.models4 <- fin.models[names(fin.models) != "beta"]
+
+emm_results <- map_dfr(
+  fin.models4,
+  ~ broom::tidy(emmeans(.x, ~ level, type = 'response')),
+  .id = "model"
+)
+
+emm_results
+
+emm_change <- emm_results %>%
+  select(model, level, response) %>%
+  pivot_wider(names_from = level, values_from = response) %>%
+  mutate(
+    diff = plot - subplot,
+    ratio = plot / subplot,
+    percent_change = (plot - subplot) / subplot * 100
+  )
+
+emm_change
+
+
+# changes for management 
+
+emm_planting <- map_dfr(
+  fin.models,
+  ~ broom::tidy(
+    emmeans(.x,
+            ~ planting_intensity,
+            at = list(planting_intensity = c(0,1)),
+            type = "response",
+            level = "plot")
+  ),
+  .id = "model"
+)
+
+emm_planting
+
 
 # Plots ----------------------------------------------------------------------------
 ##  Time since disturbnace cross-scale ---------------------------------------
@@ -2840,6 +2881,7 @@ p_model_response
 ggsave('outFigs/p_model_response.png',
        plot =  p_model_response, 
        width = 7, height = 5)
+
 
 
 
