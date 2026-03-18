@@ -2755,7 +2755,7 @@ ggsave('outFigs/p_time_scale.png',
 
 
 
-#### Effect of management: predicted % change from 0 to 1 at plot level ----
+#### Effect of management: predicted % change from 0 to 1 at plot level (not as coefficients)----
 
 # labels
 response_labels <- c(
@@ -2777,33 +2777,57 @@ get_mng_emm <- function(model, model_name, focal_term) {
   
   at_list <- switch(
     focal_term,
-    "planting_intensity" = list(
-      planting_intensity = c(0, 1)
-    ),
-    "anti_browsing_intensity" = list(
-      anti_browsing_intensity = c(0, 1)
-    ),
-    "grndwrk_intensity" = list(
-      grndwrk_intensity = c(0, 1)
-    )
+    "planting_intensity" = list(planting_intensity = c(0, 1)),
+    "anti_browsing_intensity" = list(anti_browsing_intensity = c(0, 1)),
+    "grndwrk_intensity" = list(grndwrk_intensity = c(0, 1))
   )
   
-  emmeans::emmeans(
-    model,
-    specs = stats::as.formula(paste0("~ ", focal_term)),
-    at = at_list,
-    type = "response"
-  ) %>%
+  # beta model has no 'level', so exclude it only there
+  emm_call <- if (model_name == "beta") {
+    emmeans::emmeans(
+      model,
+      specs = stats::as.formula(paste0("~ ", focal_term)),
+      at = at_list,
+      type = "response",
+      exclude = "level"
+    )
+  } else {
+    emmeans::emmeans(
+      model,
+      specs = stats::as.formula(paste0("~ ", focal_term)),
+      at = at_list,
+      type = "response"
+    )
+  }
+  
+  emm_call %>%
     summary(infer = c(TRUE, TRUE)) %>%
     as.data.frame() %>%
-    mutate(
+    dplyr::mutate(
       model = model_name,
       focal_term = focal_term
     )
 }
 
+emmeans::emmeans(
+  gam_eff_both,
+  ~ planting_intensity,
+  at = list(planting_intensity = c(0, 1)),
+  type = "response"
+)
+
+
+emmeans::emmeans(
+  m_beta_add,
+  ~ planting_intensity,
+  at = list(planting_intensity = c(0, 1)),
+  type = "response"
+)
+
+
+
 # only management terms / responses you want in the plot
-mods_mng <- fin.models[c("hgt", "cvpos", "eff", "rich")]
+mods_mng <- fin.models[c("hgt", "cvpos", "eff", "rich", "beta")]
 
 # get predictions for all management variables
 emm_mng <- map_dfr(
@@ -2843,14 +2867,15 @@ emm_mng2 <- emm_mng %>%
       focal_term == "anti_browsing_intensity" ~ anti_browsing_intensity,
       focal_term == "grndwrk_intensity" ~ grndwrk_intensity
     ),
-    response = response, #coalesce(response, estimate),   # for safety across model families
+    response_plot = dplyr::coalesce(response, emmean),
     response_lab = recode(model, !!!response_labels),
     term = recode(focal_term, !!!term_labels)
   )
 
 # compute % change from predicted means
 model_intensity_all_df_pct_mng <- emm_mng2 %>%
-  select(model, focal_term, term, response_lab, intensity, response, lower.CL, upper.CL) %>%
+  select(model, focal_term, term, response_lab, intensity, response_plot, lower.CL, upper.CL) %>%
+  rename(response = response_plot) %>% # rename back
   pivot_wider(
     names_from = intensity,
     values_from = c(response, lower.CL, upper.CL),
@@ -2871,7 +2896,8 @@ model_intensity_all_df_pct_mng <- emm_mng2 %>%
         "Mean height [m]",
         "CV [%]",
         "Effective species [#]",
-        "Species richness [#]"
+        "Species richness [#]",
+        "Turnover [dim.]"
       )
     )
   )
@@ -2926,8 +2952,22 @@ ggsave(
 )
 
 
-### TEST END
+model_intensity_summary <- model_intensity_all_df_pct_mng %>%
+  dplyr::select(
+    response,
+    term,
+    estimate_pct,
+    lower_pct,
+    upper_pct,
+    p_label
+  ) %>%
+  dplyr::rename(
+    effect_pct = estimate_pct,
+    ci_low_pct = lower_pct,
+    ci_high_pct = upper_pct
+  )
 
+model_intensity_summary
 
 
 
