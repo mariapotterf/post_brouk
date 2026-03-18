@@ -12,6 +12,7 @@
 /outGifsSPEI/
 /outTableSPEI/
 /outFigSPEI/
+/outFigsTest/
 /reports/
 *.html
 combined_gam_plots.png
