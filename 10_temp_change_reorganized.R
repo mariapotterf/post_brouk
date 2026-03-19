@@ -617,10 +617,6 @@ sub_df_AEF <- sub_df %>%
 
 
 
-
-
-
-
 plot_df_AEF <- plot_df %>%
   select(-level, -ID, -w) %>%
   mutate(year    = as.integer(year),
@@ -1474,12 +1470,69 @@ tab_df(final_results,
        file  = "outTable/models_summary_final_results.doc")
 
 ## 7c. Spatial export for collaborators
-plot_sf_AEF <- plot_df_AEF2 %>%
+plot_sf_AEF <- plot_df_AEF %>%
   sf::st_as_sf(coords = c("x", "y"), crs = 3035, remove = FALSE)
 
 sf::st_write(
   plot_sf_AEF,
-  dsn          = "outDataShare/Karim_AEF/regeneration_chars_3035.gpkg",
+  dsn          = "outDataShare/Karim_AEF/regeneration_chars_plot_3035.gpkg",
   layer        = "plot",
   delete_layer = TRUE
 )
+
+
+sub_sf_AEF <- sub_df_AEF %>%
+  sf::st_as_sf(coords = c("x", "y"), crs = 3035, remove = FALSE)
+
+sf::st_write(
+  sub_sf_AEF,
+  dsn          = "outDataShare/Karim_AEF/regeneration_chars_subplot_3035.gpkg",
+  layer        = "subplot",
+  delete_layer = TRUE
+)
+
+# checkf for coordiante systems
+
+## 7c. Spatial export for collaborators
+plot_sf_AEF <- plot_df_AEF %>%
+  sf::st_as_sf(coords = c("x", "y"), crs = 3035, remove = FALSE)
+
+sf::st_write(
+  plot_sf_AEF,
+  dsn          = "outDataShare/Karim_AEF/regeneration_chars_plot_3035.gpkg",
+  layer        = "plot",
+  delete_layer = TRUE
+)
+
+
+sub_sf_AEF <- sub_df_AEF %>%
+  sf::st_as_sf(coords = c("x", "y"), crs = 3035, remove = FALSE)
+
+sf::st_write(
+  sub_sf_AEF,
+  dsn          = "outDataShare/Karim_AEF/regeneration_chars_subplot_3035.gpkg",
+  layer        = "subplot",
+  delete_layer = TRUE
+)
+
+# check for coordinate systems
+summary(plot_df_AEF$x)
+summary(plot_df_AEF$y)
+
+summary(sub_df_AEF$x)
+summary(sub_df_AEF$y)
+
+
+# quick sanity check
+ggplot(plot_df_AEF, aes(x, y)) +
+  geom_point() +
+  coord_equal()
+
+
+# Check CRS
+sf::st_crs(plot_sf_AEF)
+sf::st_crs(sub_sf_AEF)
+
+# Plot together
+plot(sf::st_geometry(plot_sf_AEF), col = "blue")
+plot(sf::st_geometry(sub_sf_AEF), col = "red", add = TRUE)
