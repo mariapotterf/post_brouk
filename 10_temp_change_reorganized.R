@@ -144,6 +144,8 @@ pp_inset_model <- function(model, scale_y = 1, p_lab = NULL,
 
 dat_overlap <- fread('outData/full_table_23_25.csv')
 
+hist(dat_overlap$x)
+
 dat_master_subplot <- dat_overlap %>%
   dplyr::select(plot, subplot, year, status) %>%
   distinct()
@@ -396,6 +398,14 @@ iv_leaf_plot_wide <- iv_leaf_plot %>%
   dplyr::select(plot, year, leaf_type, IV) %>%
   tidyr::pivot_wider(names_from = leaf_type, values_from = IV, names_prefix = "IV_")
 
+
+iv_leaf_sub_wide <- iv_leaf_sub %>%
+  dplyr::select(subplot, year, leaf_type, IV) %>%
+  tidyr::pivot_wider(names_from = leaf_type, values_from = IV, names_prefix = "IV_")
+
+
+
+
 ## 3b. Community-weighted means (CWM: shade & drought tolerance)
 wvar <- "n"   # weight by stem counts; alternatives: "basal_area_cm2" or "hgt_est"
 
@@ -589,6 +599,28 @@ df_plot_clean <- both_levels_re2 %>% filter(level == "plot")
 df_sub_clean  <- both_levels_re2 %>% filter(level == "subplot")
 
 ## 3h. AEF export table (beta added after §4)
+
+sub_df_AEF <- sub_df %>%
+  select(-level, -w) %>%
+  mutate(year    = as.integer(year),
+         plot_id = as.character(plot_id)) %>%
+  rename(plot = plot_id,
+         subplot = ID) %>%
+  left_join(iv_leaf_sub_wide, by = join_by(subplot, year)) %>%
+  mutate(
+    time_snc_full_disturbance = pmin(time_snc_full_disturbance, 8),
+    plot_id = factor(plot),
+    year_f  = factor(year),
+  ) %>%
+  mutate(across(all_of(c("cv_hgt", "mean_hgt", "sp_richness", "effective_numbers")),
+                ~ replace_na(.x, 0)))
+
+
+
+
+
+
+
 plot_df_AEF <- plot_df %>%
   select(-level, -ID, -w) %>%
   mutate(year    = as.integer(year),
