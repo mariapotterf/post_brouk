@@ -55,8 +55,8 @@ traits_full<- traits_full %>%
 )
 
 ## --- Field data: 2023 , EPSG:25832 - ETRS89 / UTM zone 32N
-dat23_subplot    <- data.table::fread("outData/subplot_full_2023.csv")   # subplot-level table
-dat23_sf         <- sf::st_read("outData/sf_context_2023.gpkg")          # subplot spatial data
+dat23_subplot    <- data.table::fread("outData/subplot_full_2023_allcountries.csv")   # subplot-level table
+dat23_sf         <- sf::st_read("outData/sf_context_2023_allcountries.gpkg")          # subplot spatial data
 
 # Select and rename
 dat23_sf_min <- dat23_sf %>%
@@ -620,19 +620,11 @@ length(unique(dat_overlap$plot))
 
 ### export important tables ---------------
 
-fwrite(dat_subplot_mng2, 'outData/full_table_23_25.csv')
-fwrite(dat_overlap,      'outData/full_table_overlap_23_25.csv')
+fwrite(dat_subplot_mng2, 'outData/full_table_23_25.csv')          # data covering all countries, including CZ in 2023
+fwrite(dat_overlap,      'outData/full_table_overlap_23_25.csv')  # just overlapping sites
 
 # subplots history - 2025 - for Miso
 fwrite(dat_subplots25_history,      'outDataShare/dat_subplots25_history.csv')
-
-
-
-# check if coordinates are specific per subplot
-dat_subplot_mng2 %>% 
-  filter(n >1) %>% 
-  select(plot, subplot, year, x,y) %>% 
-  print(200)
 
 
 
