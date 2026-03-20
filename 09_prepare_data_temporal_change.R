@@ -628,5 +628,11 @@ fwrite(dat_subplots25_history,      'outDataShare/dat_subplots25_history.csv')
 
 
 
+# check if coordinates are specific per subplot
+dat_subplot_mng2 %>% 
+  filter(n >1) %>% 
+  select(plot, subplot, year, x,y) %>% 
+  print(200)
+
 
 
