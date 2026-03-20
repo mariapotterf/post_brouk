@@ -32,17 +32,19 @@ library(tidyr)
 
 # Read files --------------------------------------
 
-# 2023 
-dat23_subplot <- fread('outData/subplot_full_2023.csv')
-dat23_cluster <- fread('outData/df_cluster_2023.csv')
+# 2023 read data across Europe, not just czechia
+# dat23_subplot <- fread('outData/subplot_full_2023.csv')
+dat23_subplot <- fread('outData/subplot_full_2023_allcountries.csv')
+#dat23_cluster <- fread('outData/df_cluster_2023.csv')
 
 # Save spatial subplot data with cluster IDs
-dat23_sf <- st_read("outData/sf_context_2023.gpkg")
+dat23_sf <- st_read("outData/sf_context_2023_allcountries.gpkg")
+#dat23_sf <- st_read("outData/sf_context_2023.gpkg")
 
 
 # 2025
 dat25_subplot <- fread('outData/subplot_full_2025.csv')
-dat25_cluster <- fread('outData/df_cluster_2025.csv')
+#dat25_cluster <- fread('outData/df_cluster_2025.csv')
 
 # Save spatial subplot data with cluster IDs
 dat25_sf <- st_read("outData/subplot_with_clusters_2025.gpkg")
