@@ -13,6 +13,8 @@
 # ============================================================
 
 
+# 2026/03/20 -> need to update the plot only for czechia!!! whole EU data were generated for karim
+
 # 0. Setup -------------------------------------------------------
 
 gc()
@@ -607,6 +609,42 @@ both_levels_re2 <- bind_rows(sub_df, plot_df) %>%
     cv_hgt_present    = as.integer(cv_hgt > 0),
     active_regeneration = (planting_intensity + anti_browsing_intensity) / 2
   )
+
+
+# add country indicator
+both_levels_re2 <- both_levels_re2 %>% 
+  mutate(
+  region = str_extract(plot_id, "^\\d+(?=_)"),
+  country = case_when(
+    region %in% c("11", "12", "14", "18", "19", "20", "25") ~ 11L,
+    region == "17"                                           ~ 12L,
+    region %in% c("15", "26")                               ~ 13L,
+    region == "13"                                           ~ 14L,
+    region == "16"                                           ~ 15L,
+    region == "23"                                           ~ 16L,
+    region == "21"                                           ~ 17L,
+    region == "22"                                           ~ 18L,
+    region %in% c("24", "27")                               ~ 19L,
+    TRUE                                                     ~ NA_integer_
+  ),
+  country_name = case_when(
+    country == 11 ~ "Germany",
+    country == 12 ~ "Poland",
+    country == 13 ~ "Czech Republic",
+    country == 14 ~ "Austria",
+    country == 15 ~ "Slovakia",
+    country == 16 ~ "Slovenia",
+    country == 17 ~ "Italy",
+    country == 18 ~ "Switzerland",
+    country == 19 ~ "France",
+    TRUE          ~ NA_character_
+  )
+) %>% 
+  mutate(country_name   = factor(country_name),
+         region = factor(region),
+         country_name = factor(country_name))
+
+
 
 table(both_levels_re2$cv_hgt_present)
 
@@ -1499,37 +1537,8 @@ sf::st_write(
   delete_layer = TRUE
 )
 
-
 sub_sf_AEF <- sub_df_AEF %>%
   sf::st_as_sf(coords = c("x", "y"), crs = 3035, remove = FALSE)
-
-sf::st_write(
-  sub_sf_AEF,
-  dsn          = "outDataShare/Karim_AEF/regeneration_chars_subplot_3035.gpkg",
-  layer        = "subplot",
-  delete_layer = TRUE
-)
-
-sub_col_names  <- colnames(sub_sf_AEF)
-plot_col_names <- colnames(plot_sf_AEF)
-
-# checkf for coordiante systems
-
-## 7c. Spatial export for collaborators
-plot_sf_AEF <- plot_df_AEF %>%
-  sf::st_as_sf(coords = c("x", "y"), crs = 3035, remove = FALSE)
-
-sf::st_write(
-  plot_sf_AEF,
-  dsn          = "outDataShare/Karim_AEF/regeneration_chars_plot_3035.gpkg",
-  layer        = "plot",
-  delete_layer = TRUE
-)
-
-
-sub_sf_AEF <- sub_df_AEF %>%
-  sf::st_as_sf(coords = c("x", "y"), crs = 3035, remove = FALSE)
-
 sf::st_write(
   sub_sf_AEF,
   dsn          = "outDataShare/Karim_AEF/regeneration_chars_subplot_3035.gpkg",
@@ -1540,7 +1549,6 @@ sf::st_write(
 # check for coordinate systems
 summary(plot_df_AEF$x)
 summary(plot_df_AEF$y)
-
 summary(sub_df_AEF$x)
 summary(sub_df_AEF$y)
 
@@ -1558,3 +1566,18 @@ sf::st_crs(sub_sf_AEF)
 # Plot together
 plot(sf::st_geometry(plot_sf_AEF), col = "blue")
 plot(sf::st_geometry(sub_sf_AEF), col = "red", add = TRUE)
+
+
+
+# Sanity check 2 - on map
+
+library(rnaturalearth)
+
+europe <- ne_countries(continent = "Europe", returnclass = "sf") %>%
+  st_transform(3035)
+
+ggplot() +
+  geom_sf(data = europe, fill = "grey90", colour = "white") +
+  geom_sf(data = plot_sf_AEF, colour = "steelblue", size = 0.8) +
+  coord_sf(xlim = c(3800000, 5400000), ylim = c(2400000, 3500000))
+
