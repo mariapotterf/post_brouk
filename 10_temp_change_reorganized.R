@@ -625,6 +625,7 @@ both_levels_re2 <- both_levels_re2 %>%
     region == "21"                                           ~ 17L,
     region == "22"                                           ~ 18L,
     region %in% c("24", "27")                               ~ 19L,
+    is.na(region)                                           ~ 13L,  # bare IDs -> Czechia
     TRUE                                                     ~ NA_integer_
   ),
   country_name = case_when(
@@ -653,7 +654,7 @@ df_sub_clean  <- both_levels_re2 %>% filter(level == "subplot")
 
 ## 3h. AEF export table (beta added after §4)
 
-sub_df_AEF <- sub_df %>%
+sub_df_AEF <- df_sub_clean %>%
   select(-level, -w, 
          -x, -y) %>% # remove wrong coordinates
   mutate(year    = as.integer(year),
@@ -672,7 +673,7 @@ sub_df_AEF <- sub_df %>%
 
 
 
-plot_df_AEF <- plot_df %>%
+plot_df_AEF <- df_plot_clean %>%
   select(-level, -ID, -w,
          -x, -y) %>%
   mutate(year    = as.integer(year),
@@ -1539,6 +1540,7 @@ sf::st_write(
 
 sub_sf_AEF <- sub_df_AEF %>%
   sf::st_as_sf(coords = c("x", "y"), crs = 3035, remove = FALSE)
+
 sf::st_write(
   sub_sf_AEF,
   dsn          = "outDataShare/Karim_AEF/regeneration_chars_subplot_3035.gpkg",
@@ -1552,11 +1554,6 @@ summary(plot_df_AEF$y)
 summary(sub_df_AEF$x)
 summary(sub_df_AEF$y)
 
-
-# quick sanity check
-ggplot(plot_df_AEF, aes(x, y)) +
-  geom_point() +
-  coord_equal()
 
 
 # Check CRS
