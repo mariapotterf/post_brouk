@@ -612,16 +612,10 @@ mng_plot_intensity <- mng_subplot_scores %>%
 dat_subplot_mng2 <- dat_subplot_mng %>% 
   left_join(mng_plot_intensity, by = c('plot', 'year'))
 
-# keep only overlapping plots
-dat_overlap <- dat_subplot_mng2 %>% 
-  filter(status == 'both')
-# filter(status == "both") %>% # keep only overlapping sites
-length(unique(dat_overlap$plot))
 
 ### export important tables ---------------
 
 fwrite(dat_subplot_mng2, 'outData/full_table_23_25.csv')          # data covering all countries, including CZ in 2023
-fwrite(dat_overlap,      'outData/full_table_overlap_23_25.csv')  # just overlapping sites
 
 # subplots history - 2025 - for Miso
 fwrite(dat_subplots25_history,      'outDataShare/dat_subplots25_history.csv')
