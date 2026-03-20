@@ -609,7 +609,6 @@ mng_plot_intensity <- mng_subplot_scores %>%
   ) %>% 
   select(-n_subplots)
 
-#### !!!! need to contiinue to check the coordinates systems between 23&25 data!!!
 dat_subplot_mng2 <- dat_subplot_mng %>% 
   left_join(mng_plot_intensity, by = c('plot', 'year'))
 
