@@ -170,6 +170,21 @@ tree_summary <- dat_overlap %>%
   mutate(share = n_trees_recovery / total_trees * 100)
 
 
+# Get subplot xy
+dat_sub_xy <- dat_overlap %>%
+  dplyr::select(subplot, year, x, y) %>%
+  dplyr::distinct()
+
+
+dat_plot_xy <- dat_overlap %>%
+  dplyr::group_by(plot, year) %>%
+  dplyr::summarise(
+    x = mean(x, na.rm = TRUE),
+    y = mean(y, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+
 # 2. Management data cleaning ------------------------------------
 
 management_vars <- c("clear", "grndwrk", "logging_trail", "planting", "anti_browsing")
@@ -601,12 +616,14 @@ df_sub_clean  <- both_levels_re2 %>% filter(level == "subplot")
 ## 3h. AEF export table (beta added after §4)
 
 sub_df_AEF <- sub_df %>%
-  select(-level, -w) %>%
+  select(-level, -w, 
+         -x, -y) %>% # remove wrong coordinates
   mutate(year    = as.integer(year),
          plot_id = as.character(plot_id)) %>%
   rename(plot = plot_id,
          subplot = ID) %>%
   left_join(iv_leaf_sub_wide, by = join_by(subplot, year)) %>%
+  dplyr::left_join(dat_sub_xy, by = dplyr::join_by(subplot, year)) %>%   # add new averaged xy
   mutate(
     time_snc_full_disturbance = pmin(time_snc_full_disturbance, 8),
     plot_id = factor(plot),
@@ -618,11 +635,13 @@ sub_df_AEF <- sub_df %>%
 
 
 plot_df_AEF <- plot_df %>%
-  select(-level, -ID, -w) %>%
+  select(-level, -ID, -w,
+         -x, -y) %>%
   mutate(year    = as.integer(year),
          plot_id = as.character(plot_id)) %>%
   rename(plot = plot_id) %>%
   left_join(iv_leaf_plot_wide, by = join_by(plot, year)) %>%
+  dplyr::left_join(dat_plot_xy, by = dplyr::join_by(plot, year)) %>%   # add new averaged xy
   mutate(
     time_snc_full_disturbance = pmin(time_snc_full_disturbance, 8),
     plot_id = factor(plot),
@@ -1469,7 +1488,7 @@ tab_df(final_results,
        title = "Model Summary Table",
        file  = "outTable/models_summary_final_results.doc")
 
-## 7c. Spatial export for collaborators
+## 7c. Spatial export for collaborators -------------------------------------
 plot_sf_AEF <- plot_df_AEF %>%
   sf::st_as_sf(coords = c("x", "y"), crs = 3035, remove = FALSE)
 
@@ -1490,6 +1509,9 @@ sf::st_write(
   layer        = "subplot",
   delete_layer = TRUE
 )
+
+sub_col_names  <- colnames(sub_sf_AEF)
+plot_col_names <- colnames(plot_sf_AEF)
 
 # checkf for coordiante systems
 
