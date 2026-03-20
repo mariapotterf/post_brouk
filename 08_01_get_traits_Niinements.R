@@ -12,9 +12,14 @@ library(data.table)
 #  Input
 niin_path   <- "raw/traits_database/Niinemets_2006.xls"  # adjust if needed
 dat_overlap <- fread('outData/full_table_overlap_23_25.csv')
+dat_allcountries <-fread('outData/subplot_full_2023_allcountries.csv')
 
-# Your species codes from dat_subplot_mng$species
-sp_codes <- unique(dat_overlap$species)
+# Your species codes from dat_subplot_mng$species - get species for CZ, for 10 countries
+sp_codes_CZ  <- unique(dat_overlap$species)
+sp_codes_all <- unique(dat_allcountries$species)
+
+# merge all species to get traits
+sp_codes <- unique(c(sp_codes_CZ, sp_codes_all))
 sp_codes <- sp_codes[!sp_codes %in% c("", "ots1")]
 
 # Read Niinemets + keep essential columns 
@@ -31,6 +36,13 @@ eco_traits <- eco_traits_raw %>%
   mutate(Species = str_squish(Species))
 
 
+# which one are missing?
+
+in_data_not_map <- setdiff(sp_codes, sp_map$species_code)
+in_map_not_data <- setdiff(sp_map$species_code, sp_codes)
+
+
+
 # Map my acronyms to latin ones, indicate reason fror merge
 # 'species_latin' must either be an exact species in Niinemets OR a genus label
 # for which we will compute a genus mean (e.g., "Quercus", "Salix", "Betula").
@@ -40,6 +52,8 @@ sp_map <- tribble(
   "pisy",        "Pinus sylvestris",        "",
   "lade",        "Larix decidua",           "",
   "absp",        "Abies alba",              "Abies sp. -> proxy A. alba",
+  "abal",        "Abies alba",              "Direct species-level code, distinct from absp",
+  "quro",        "Quercus robur",           "Species-level, distinct from qusp genus proxy",
   "psme",        "Pseudotsuga menziesii",   "Fix spelling if needed (not 'mensiesii')",
   "taba",        "Taxus baccata",           "",
   "fasy",        "Fagus sylvatica",         "",
@@ -71,6 +85,7 @@ sp_map <- tribble(
   "aial",        "Ailanthus altissima",        "Map to A. viridis in Niinemets if needed",
   "osca",        "Ostrya carpinifolia",     "If missing in Niinemets, proxy with Carpinus betulus",
   "fror",        "Fraxinus ornus",          ""
+  
   
 )
 
