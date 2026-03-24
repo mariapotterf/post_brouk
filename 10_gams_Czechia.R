@@ -1218,31 +1218,33 @@ p_height_seral_mng <- ggplot(height_seral_mng_year,
 # 7. Tables & export ---------------------------------------------
 
 ## 7a. Save figures
-ggsave("outFigsTest/p_species_composition.png",
+ggsave("outFigsCZ/p_species_composition.png",
        p_species_composition, width = 7, height = 3, dpi = 300)
 
-ggsave("outFigsTest/p_violin.png",
+ggsave("outFigsCZ/p_violin.png",
        p_violin, width = 7, height = 2.5, dpi = 300)
-ggsave("outFigsTest/p_violin.svg",
+ggsave("outFigsCZ/p_violin.svg",
        p_violin, width = 7, height = 2.5, dpi = 300)
 
-ggsave("outFigsTest/p_time_scale.png",
+ggsave("outFigsCZ/p_time_scale.png",
        p_final, width = 6, height = 5, dpi = 300, bg = "white")
 
-ggsave("outFigsTest/p_model_response.png",
+ggsave("outFigsCZ/p_model_response.png",
        p_model_response, width = 7, height = 5, dpi = 300)
 
-ggsave("outFigsTest/p_management_intensity_plot_simpler.png",# - this one cuts
+ggsave("outFigsCZ/p_management_intensity_plot_simpler.png",# - this one cuts
        p_management_intensity_plot_simpler, width = 5, height = 2.1, dpi = 300)
 
-ggsave("outFigsTest/p_combined_disturb_fig.png",
+ggsave("outFigsCZ/p_combined_disturb_fig.png",
        p_combined_disturb_fig, width = 5, height = 2.5, dpi = 300)
 
-ggsave("outFigsTest/spruce_share_boxplots.png",
+ggsave("outFigsCZ/spruce_share_boxplots.png",
        p_spruce_shares_boxplot, width = 7, height = 3.2, dpi = 300)
 
-ggsave("outFigsTest/density_plot.png",
+ggsave("outFigsCZ/density_plot.png",
        p_height_seral_mng, width = 6, height = 4, dpi = 300)
+
+
 
 ## 7b. Model summary table -> Word
 clean_term  <- function(x) x %>%
