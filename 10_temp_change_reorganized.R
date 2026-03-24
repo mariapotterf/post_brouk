@@ -18,9 +18,9 @@
 
 
 # 0. Setup -------------------------------------------------------
-
 gc()
 set.seed(1234)
+
 
 ## Libraries
 library(terra);      library(sf)
@@ -40,113 +40,10 @@ library(patchwork)
 ## Project variables (palettes, labels, species lists, species_class, earlyspecs_laura)
 source('my_variables.R')
 
-## ggplot theme
-theme_set(
-  theme_classic2(base_size = 10) +
-    theme(axis.title = element_text(size = 10),
-          axis.text  = element_text(size = 10))
-)
-
-## Constants
-area_subplot_m2 <- 4
-area_plot_m2    <- 5 * 4
-
-## Shared axis label
-x_lab_time_snc_full_dist <- "Time since stand\nreplacing disturbance (years)"
-
-## Shared factor level labels
-# intensity_levels <- c("0\u201319", "20\u201339", "40\u201359", "60\u201379", "80\u2013100")
-# low_classes      <- c("0\u201319", "20\u201339")
-
-
-intensity_levels <-  c("0–19", "20–39", "40–59", "60–79", "80–100")
-low_classes <- c("0–19", "20–39")
-applied_mng_intens_order <- c("0–19", "20–39","40–59", "60–79", "80–100") 
-
-
-
-activity_intens_labels <- c(
-  "clear_intensity"         = "Salvage\nlogging",
-  "grndwrk_intensity"       = "Soil\npreparation",
-  "planting_intensity"      = "Planting",
-  "anti_browsing_intensity" = "Browsing\nprotection"
-)
-
-## Helper functions
-
-safe_max <- function(x) if (all(is.na(x))) NA_real_ else max(x, na.rm = TRUE)
-
-wfun <- function(x) ifelse(is.na(x) | x < 0, 0, x)
-
-calc_iv_core <- function(data, size_var, ...) {
-  data %>%
-    group_by(..., species) %>%
-    summarise(
-      n_sp    = sum(n, na.rm = TRUE),
-      size_sp = sum({{ size_var }}, na.rm = TRUE),
-      .groups = "drop_last"
-    ) %>%
-    mutate(
-      RA       = n_sp / sum(n_sp, na.rm = TRUE),
-      size_tot = sum(size_sp, na.rm = TRUE),
-      RS       = dplyr::if_else(size_tot > 0, size_sp / size_tot, NA_real_),
-      IV       = (RA + RS) / 2
-    ) %>%
-    select(-size_tot) %>%
-    ungroup()
-}
-
-calc_iv_subplot <- function(data, size_var) calc_iv_core(data, {{ size_var }}, plot, year, subplot)
-calc_iv_plot    <- function(data, size_var) calc_iv_core(data, {{ size_var }}, plot, year)
-
-## Plotting helpers for model predictions (used in §5-6)
-pp <- function(model, terms, xlab = NULL, ylab = NULL,
-               annot = NULL, scale_y = 1,
-               annot_x = 3.5, annot_y = NULL) {
-  pr <- ggpredict(model, terms = terms, exclude = "s(plot_id)") %>%
-    as.data.frame() %>%
-    mutate(across(c(predicted, conf.low, conf.high), ~ . * scale_y))
-
-  p <- ggplot(pr, aes(x = x, y = predicted, colour = group, fill = group)) +
-    geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2, colour = NA) +
-    geom_line(linewidth = 0.8) +
-    labs(x = xlab, y = ylab, colour = "Scale") +
-    scale_color_manual(values = c("subplot" = "grey80", "plot" = "grey30")) +
-    scale_fill_manual( values = c("subplot" = "grey80", "plot" = "grey30"), guide = "none") +
-    theme_classic() +
-    theme(axis.title = element_text(size = 7))
-
-  if (!is.null(annot))
-    p <- p + annotate("text", x = annot_x, y = annot_y,
-                      label = annot, size = 2.5, hjust = 0.5)
-  p
-}
-
-pp_inset_model <- function(model, scale_y = 1, p_lab = NULL,
-                           annot_x = 1.5, annot_y = NULL) {
-  pr <- ggpredict(model, terms = "level") %>%
-    as.data.frame() %>%
-    mutate(across(c(predicted, conf.low, conf.high), ~ . * scale_y))
-
-  ggplot(pr, aes(x = x, y = predicted, colour = x)) +
-    geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = .08) +
-    geom_point(size = 2.4) +
-    annotate("text", x = annot_x, y = annot_y, label = p_lab, size = 2.5) +
-    scale_color_manual(values = c("subplot" = "grey80", "plot" = "grey30"), guide = "none") +
-    theme_classic(base_size = 8) +
-    theme(axis.title      = element_blank(),
-          axis.text.y     = element_blank(),
-          axis.ticks.y    = element_blank(),
-          axis.line.y     = element_blank(),
-          axis.text.x     = element_text(size = 7),
-          legend.position = "none",
-          plot.margin     = margin(5, 5, 5, 0))
-}
-
 
 # 1. Data ingestion & QC -----------------------------------------
 
-dat_overlap <- fread('outData/full_table_23_25.csv')
+dat_overlap <- fread('outData/full_table_23_25.csv') # contacis data acros 10 Eu countries, CZ is collected 2x times
 
 hist(dat_overlap$x)
 
@@ -274,6 +171,42 @@ management_intensity <- mng_subplot %>%
 
 dat_overlap_mng_upd2 <- dat_overlap_mng_upd %>%
   left_join(management_intensity, by = c("plot", "year", "n_subplots"))
+
+
+# add indication of country and region
+dat_overlap_mng_upd2 <- dat_overlap_mng_upd2 %>% 
+  mutate(
+  region = str_extract(plot, "^\\d+(?=_)"),
+  country = case_when(
+    region %in% c("11", "12", "14", "18", "19", "20", "25") ~ 11L,
+    region == "17"                                           ~ 12L,
+    region %in% c("15", "26")                               ~ 13L,
+    region == "13"                                           ~ 14L,
+    region == "16"                                           ~ 15L,
+    region == "23"                                           ~ 16L,
+    region == "21"                                           ~ 17L,
+    region == "22"                                           ~ 18L,
+    region %in% c("24", "27")                               ~ 19L,
+    is.na(region)                                           ~ 13L,  # bare IDs -> Czechia
+    TRUE                                                     ~ NA_integer_
+  ),
+  country_name = case_when(
+    country == 11 ~ "Germany",
+    country == 12 ~ "Poland",
+    country == 13 ~ "Czechia",
+    country == 14 ~ "Austria",
+    country == 15 ~ "Slovakia",
+    country == 16 ~ "Slovenia",
+    country == 17 ~ "Italy",
+    country == 18 ~ "Switzerland",
+    country == 19 ~ "France",
+    TRUE          ~ NA_character_
+  )
+) %>% 
+  mutate(country_name   = factor(country_name),
+         region = factor(region),
+         country_name = factor(country_name))
+
 
 ## Subplot and plot management tables
 df_mng_sub <- dat_overlap_mng_upd2 %>%
@@ -848,204 +781,14 @@ both_levels_re2 %>%
   count(planted, protected)
 
 
-# 5. Models (GAMs) -----------------------------------------------
-# All GAMs: REML, random effect s(plot_id, bs="re")
-# Families: tw(log) continuous, nb(log) counts, binomial(logit) binary
+# 5. Export EU level data ----------------------------------
 
-## 5a. Mean height
-gam_mean_hgt_both <- gam(
-  mean_hgt ~
-    planting_intensity * anti_browsing_intensity +
-    s(time_snc_full_disturbance, k = 4) +
-    grndwrk_intensity + year_f + level +
-    s(plot_id, bs = "re"),
-  data   = both_levels_re2 %>% dplyr::filter(mean_hgt < 6),
-  family = tw(link = "log"),
-  method = "REML"
-)
-
-## 5b. CV height — binary (structural heterogeneity present/absent)
-gam_cv_hgt_bin_both <- gam(
-  cv_hgt_present ~
-    s(time_snc_full_disturbance, k = 7) +
-    planting_intensity * anti_browsing_intensity +
-    grndwrk_intensity + level + year_f +
-    s(plot_id, bs = "re"),
-  data   = both_levels_re2,
-  family = binomial(link = "logit"),
-  method = "REML"
-)
-
-## 5c. CV height — positive part
-gam_cv_hgt_pos_both <- gam(
-  cv_hgt_pos ~
-    planting_intensity * anti_browsing_intensity +
-    s(time_snc_full_disturbance, k = 7) +
-    grndwrk_intensity + level + year_f +
-    s(plot_id, bs = "re"),
-  data   = both_levels_re2,
-  family = tw(link = "log"),
-  method = "REML"
-)
-
-## 5d. Effective species number
-gam_eff_both <- gam(
-  effective_numbers ~
-    planting_intensity + anti_browsing_intensity +
-    s(time_snc_full_disturbance, k = 3) +
-    grndwrk_intensity + level + year_f +
-    s(plot_id, bs = "re"),
-  data   = both_levels_re2,
-  family = tw(link = "log"),
-  method = "REML"
-)
-
-## 5e. Species richness
-gam_rich_both <- gam(
-  sp_richness ~
-    planting_intensity * anti_browsing_intensity +
-    s(time_snc_full_disturbance, k = 7) +
-    grndwrk_intensity + level + year_f +
-    s(plot_id, bs = "re"),
-  data   = both_levels_re2,
-  family = nb(link = "log"),
-  method = "REML"
-)
-
-## 5f. Beta diversity (Jaccard)
-m_beta_add <- mgcv::gam(
-  beta_jaccard_mean ~
-    time_snc_full_disturbance +
-    planting_intensity + anti_browsing_intensity +
-    grndwrk_intensity + year_f +
-    s(plot_id, bs = "re"),
-  data   = plot_df_AEF2,
-  method = "REML"
-)
-
-## Final model list
-fin.models <- list(
-  hgt   = gam_mean_hgt_both,
-  cvpos = gam_cv_hgt_pos_both,
-  eff   = gam_eff_both,
-  rich  = gam_rich_both,
-  beta  = m_beta_add
-)
-
-lapply(fin.models, summary)
-
-## 5g. emmeans: scale effect (subplot vs plot)
-fin.models.levels <- fin.models[names(fin.models) != "beta"]
-
-emm_results <- map_dfr(
-  fin.models.levels,
-  ~ broom::tidy(emmeans(.x, ~ level, type = "response")),
-  .id = "model"
-)
-
-emm_change <- emm_results %>%
-  select(model, level, response) %>%
-  pivot_wider(names_from = level, values_from = response) %>%
-  mutate(diff           = plot - subplot,
-         ratio          = plot / subplot,
-         percent_change = (plot - subplot) / subplot * 100)
-
-emm_change
-
-## 5h. emmeans: management effect (intensity 0 -> 1)
-response_labels <- c(
-  hgt   = "Mean height [m]",
-  cvpos = "CV [%]",
-  eff   = "Effective species [#]",
-  rich  = "Species richness [#]",
-  beta  = "Turnover [dim.]"
-)
-
-term_labels <- c(
-  planting_intensity      = "Planting",
-  anti_browsing_intensity = "Browsing\nprotection",
-  grndwrk_intensity       = "Soil\npreparation"
-)
-
-get_mng_emm <- function(model, model_name, focal_term) {
-  at_list <- switch(
-    focal_term,
-    "planting_intensity"      = list(planting_intensity      = c(0, 1)),
-    "anti_browsing_intensity" = list(anti_browsing_intensity = c(0, 1)),
-    "grndwrk_intensity"       = list(grndwrk_intensity       = c(0, 1))
-  )
-  emm_call <- if (model_name == "beta") {
-    emmeans::emmeans(model,
-                     specs   = stats::as.formula(paste0("~ ", focal_term)),
-                     at      = at_list,
-                     type    = "response",
-                     exclude = "level")
-  } else {
-    emmeans::emmeans(model,
-                     specs = stats::as.formula(paste0("~ ", focal_term)),
-                     at    = at_list,
-                     type  = "response")
-  }
-  emm_call %>%
-    summary(infer = c(TRUE, TRUE)) %>%
-    as.data.frame() %>%
-    dplyr::mutate(model = model_name, focal_term = focal_term)
-}
-
-emm_mng <- map_dfr(
-  names(fin.models),
-  function(nm) {
-    bind_rows(
-      get_mng_emm(fin.models[[nm]], nm, "planting_intensity"),
-      get_mng_emm(fin.models[[nm]], nm, "anti_browsing_intensity"),
-      get_mng_emm(fin.models[[nm]], nm, "grndwrk_intensity")
-    )
-  }
-)
-
-pvals_mng <- map_dfr(fin.models, ~ broom::tidy(.x, parametric = TRUE), .id = "model") %>%
-  filter(term %in% c("planting_intensity", "anti_browsing_intensity", "grndwrk_intensity")) %>%
-  transmute(model, focal_term = term, p.value,
-            p_label = case_when(p.value < 0.001 ~ "<0.001",
-                                TRUE ~ formatC(p.value, format = "f", digits = 3)))
-
-emm_mng2 <- emm_mng %>%
-  mutate(
-    intensity = case_when(
-      focal_term == "planting_intensity"      ~ planting_intensity,
-      focal_term == "anti_browsing_intensity" ~ anti_browsing_intensity,
-      focal_term == "grndwrk_intensity"       ~ grndwrk_intensity
-    ),
-    response_plot = dplyr::coalesce(response, emmean),
-    response_lab  = recode(model, !!!response_labels),
-    term          = recode(focal_term, !!!term_labels)
-  )
-
-model_intensity_all_df_pct_mng <- emm_mng2 %>%
-  select(model, focal_term, term, response_lab, intensity, response_plot, lower.CL, upper.CL) %>%
-  rename(response = response_plot) %>%
-  pivot_wider(names_from  = intensity,
-              values_from = c(response, lower.CL, upper.CL),
-              names_sep   = "_") %>%
-  left_join(pvals_mng, by = c("model", "focal_term")) %>%
-  mutate(
-    estimate_pct = 100 * (response_1 - response_0) / response_0,
-    lower_pct    = 100 * (lower.CL_1 - upper.CL_0) / upper.CL_0,
-    upper_pct    = 100 * (upper.CL_1 - lower.CL_0) / lower.CL_0,
-    sig_col      = ifelse(p.value < 0.05, "sig", "n.s."),
-    response     = factor(response_lab,
-                          levels = c("Mean height [m]", "CV [%]",
-                                     "Effective species [#]",
-                                     "Species richness [#]",
-                                     "Turnover [dim.]"))
-  )
-
-model_intensity_summary <- model_intensity_all_df_pct_mng %>%
-  dplyr::select(response, term, estimate_pct, lower_pct, upper_pct, p_label) %>%
-  dplyr::rename(effect_pct  = estimate_pct,
-                ci_low_pct  = lower_pct,
-                ci_high_pct = upper_pct)
-model_intensity_summary
+# ── Save objects for CZ-only analysis ──────────────────────────
+data.table::fwrite(both_levels_re2, "outData/both_levels_re2_all_countries.csv")
+data.table::fwrite(plot_df_AEF2,    "outData/plot_df_AEF2_all_countries.csv")
+data.table::fwrite(sub_df_AEF,      "outData/sub_df_AEF_all_countries.csv")
+data.table::fwrite(beta_plotyear,   "outData/beta_plotyear_all_countries.csv")
+data.table::fwrite(dat_overlap_mng_upd2,   "outData/dat_full_species_all_countries.csv")
 
 
 # 6. Figures -----------------------------------------------------
