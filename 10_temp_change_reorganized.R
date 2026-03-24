@@ -1,6 +1,10 @@
 # ============================================================
 # Forest regeneration: temporal change analysis 2023-2025
 # ============================================================
+
+
+# includes data from EU countries (2023) and for Czechia (2023&2025)
+
 # Sections:
 #   0. Setup
 #   1. Data ingestion & QC
@@ -12,8 +16,6 @@
 #   7. Tables & export
 # ============================================================
 
-
-# 2026/03/20 -> need to update the plot only for czechia!!! whole EU data were generated for karim
 
 # 0. Setup -------------------------------------------------------
 
@@ -631,7 +633,7 @@ both_levels_re2 <- both_levels_re2 %>%
   country_name = case_when(
     country == 11 ~ "Germany",
     country == 12 ~ "Poland",
-    country == 13 ~ "Czech Republic",
+    country == 13 ~ "Czechia",
     country == 14 ~ "Austria",
     country == 15 ~ "Slovakia",
     country == 16 ~ "Slovenia",
