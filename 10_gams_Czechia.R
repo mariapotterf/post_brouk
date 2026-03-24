@@ -1235,14 +1235,8 @@ ggsave("outFigsTest/p_model_response.png",
 ggsave("outFigsTest/p_management_intensity_plot_simpler.png",# - this one cuts
        p_management_intensity_plot_simpler, width = 5, height = 2.1, dpi = 300)
 
-ggsave("outFigsTest/mng_intensity_plot.png",
-       p_management_intensity_plot_simpler, width = 5, height = 2.1, dpi = 300)
-
 ggsave("outFigsTest/p_combined_disturb_fig.png",
        p_combined_disturb_fig, width = 5, height = 2.5, dpi = 300)
-
-ggsave("outFigsTest/p_combined_management_intens.png",
-       p_combined_management_intens, width = 6, height = 5, dpi = 300)
 
 ggsave("outFigsTest/spruce_share_boxplots.png",
        p_spruce_shares_boxplot, width = 7, height = 3.2, dpi = 300)
