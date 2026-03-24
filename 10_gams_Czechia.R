@@ -28,18 +28,764 @@ source('my_variables.R')
 
 
 
-# Filter data from both level: lot and subplot from EU 
+# Filter data from both level: lot and subplot from EU  ----------------------
+both_levels_cz <- fread("outData/both_levels_re2_all_countries.csv") %>%
+  filter(country_name == "Czechia") %>%
+  mutate(
+    level        = factor(level, levels = c("subplot", "plot")),
+    plot_id      = factor(plot_id),
+    year_f       = factor(year),
+    country_name = factor(country_name),
+    region       = factor(region)
+  )
 
-both_levels_cz <- data.table::fread("outData/outData/both_levels_re2_all_countries.csv.csv") %>%
-  filter(country_name == "Czechia")
+plot_df_cz <- fread("outData/plot_df_AEF2_all_countries.csv") %>%
+  filter(country_name == "Czechia") %>%
+  mutate(
+    plot_id      = factor(plot),
+    year_f       = factor(year),
+    country_name = factor(country_name),
+    region       = factor(region)
+  )
 
-plot_df_cz <- data.table::fread("outData/plot_df_AEF2_all_countries.csv") %>%
-  filter(country_name == "Czechia")
+sub_df_cz <- fread("outData/sub_df_AEF_all_countries.csv") %>%
+  filter(country_name == "Czechia") %>%
+  mutate(
+    plot_id      = factor(plot),
+    year_f       = factor(year),
+    country_name = factor(country_name),
+    region       = factor(region)
+  )
 
-sub_df_cz <- data.table::fread("outData/sub_df_AEF_all_countries.csv") %>%
-  filter(country_name == "Czechia")
+# read full data with each species
+dat_overlap <- fread("outData/dat_full_species_all_countries.csv") %>%
+  filter(country_name == "Czechia") %>%
+  mutate(
+    plot      = factor(plot)
+  )
 
 
+# ── Sanity check ───────────────────────────────────────────────
+cat("Plots CZ:   ", n_distinct(both_levels_cz$plot_id), "\n")
+cat("Years:      ", sort(unique(both_levels_cz$year)), "\n")
+cat("Levels:     ", levels(both_levels_cz$level), "\n")
+cat("plot_df rows:", nrow(plot_df_cz), "\n")
+cat("sub_df rows: ", nrow(sub_df_cz), "\n")
+
+
+# Species composition -------------------------------------------------------------------
+
+
+# Summary --------------------------------------
+## Analyze data: first check up ----------------------
+# get master table, having all unique plots and subplots - even teh empty ones
+dat_master_subplot <- dat_overlap %>% 
+  dplyr::select(plot, subplot, year, status) %>% 
+  distinct()
+
+table(dat_master_subplot$year)  
+table(dat_master_subplot$status)  
+
+n_plots_total <- length(unique(dat_master_subplot$plot))     # 208, 333
+n_plots_total # 208,. 333 over 2 years, 125 recoccurs
+
+n_subplots_total <-length(unique(dat_master_subplot$subplot))  # 1665
+n_subplots_total # 1665
+
+
+# filter only data with stem values 
+dat_overlap_populated <- dat_overlap %>% 
+  dplyr::filter(n>0)
+
+# make a dataset where if n is NA, replace by 0
+dat_overlap_n0 <- dat_overlap %>% 
+  mutate(n = ifelse(is.na(n), 0, n))  
+
+
+## Species composition --------------------------------------------------
+
+
+### Get summary across all trees and study sites --------------------------
+# 0) Safe counts (treat NA counts as 0)
+df <- dat_overlap %>%
+  mutate(n = coalesce(n, 0L)) %>%
+  filter(!is.na(species) & species != "")
+
+
+# find species with the highest share of stems per year
+# Year-specific totals (denominator per year)
+year_totals <- df %>%
+  dplyr::group_by(year) %>%
+  dplyr::summarise(
+    total_trees = sum(n, na.rm = TRUE),
+    n_plots = dplyr::n_distinct(plot),
+    n_subplots = dplyr::n_distinct(subplot),
+    .groups = "drop"
+  )
+
+# 2) Species x year summary + year-specific share
+species_stem_share_year <- df %>%
+  dplyr::group_by(year, species) %>%
+  dplyr::summarise(
+    stems = sum(n, na.rm = TRUE),
+    plots_present = dplyr::n_distinct(plot[n > 0]),
+    .groups = "drop"
+  ) %>%
+  dplyr::left_join(year_totals %>% dplyr::select(year, total_trees), by = "year") %>%
+  dplyr::mutate(
+    share = round(100 * stems / total_trees, 2)
+  ) %>%
+  dplyr::arrange(dplyr::desc(share), species)
+
+species_stem_share_year
+
+# 3) Top species: option 1 = top 10 PER YEAR
+top10_by_year <- species_stem_share_year %>%
+  dplyr::group_by(year) %>%
+  dplyr::slice_max(order_by = share, n = 10, with_ties = FALSE) %>%
+  dplyr::ungroup()
+
+# if i have two years, thise leads to 11 species: "absp" "acps" "besp" "fasy" "lade" "piab" "pisy" "potr" "qusp" "saca" "soau"
+# 'absp' has the lowest share: 1.95%, only on 10 plots - can i remove it?
+
+# 4) Palette for plotting (consistent colors across ALL top species across years)
+# order by total share across both years (ascending = small top, big bottom for coord flip)
+species_levels <- top10_by_year %>%
+  group_by(species) %>%
+  summarise(share_all = sum(share, na.rm = TRUE), .groups = "drop") %>%
+  arrange(share_all) %>%
+  pull(species)
+
+# v_top_species follows the same order (not alphabetical)
+v_top_species <- species_levels
+
+species_levels
+
+#### Single species plots chars ----------------------
+
+# Summarize number of species per plot, only for n > 1 trees - why is that??
+plots_with_species_counts <- df %>%
+  filter(n >= 1) %>% 
+  group_by(plot) %>%
+  summarise(
+    n_species = n_distinct(species),
+    .groups = "drop"
+  )
+
+# Filter to plots with exactly 1 species
+single_species_plots <- plots_with_species_counts %>%
+  dplyr::filter(n_species == 1)
+
+# Step 4: Join back to original to get the species name
+species_per_single_species_plot <- df %>%
+  filter(n >= 1) %>%
+  semi_join(single_species_plots, by = "plot") %>%
+  group_by(plot, species) %>%
+  summarise(n_trees = sum(n), .groups = "drop")  # just to show tree count if needed
+
+# Count how many plots per species
+summary_species <- species_per_single_species_plot %>%
+  count(species, name = "single_plots") %>%
+  arrange(desc(single_plots)) %>% 
+  mutate(share = single_plots/333)
+
+# Print result
+print(summary_species)
+
+
+#### Stem density per species per top X species --------------------------------
+df_stem_dens_species <- df %>% 
+  group_by(plot, year, species, n_subplots ) %>%
+  summarize(sum_n = sum(n, na.rm =T)) %>% 
+  mutate(scaling_factor = 10000/(n_subplots * 4),
+         stem_dens = sum_n*scaling_factor) #%>% 
+# mutate(log_sum_stem_density = log10(stem_dens + 1)) #%>%  # Adding 1 to avoid log(0)
+#ungroup()
+
+# get total sum and calculate as average value over all sites 
+df_stem_dens_species_sum <- 
+  df_stem_dens_species %>% 
+  group_by(species, year) %>% #, year
+  summarise(stem_dens = sum(stem_dens, na.rm = T)) %>% #,
+  mutate(stem_dens_avg = stem_dens/n_plots_total) #,
+
+
+df_stem_dens_species <- 
+  df_stem_dens_species %>% 
+  ungroup(.) %>% 
+  filter(sum_n >0) %>% 
+  filter(species %in% v_top_species) %>% 
+  dplyr::group_by(species, year) %>%
+  dplyr::mutate(median_stem_density = median(stem_dens, na.rm = TRUE)) %>% 
+  dplyr::ungroup(.) %>%
+  mutate(species = factor(species, levels = rev(v_top_species))) # Set custom order
+
+
+
+# make a barplot of stem occurence ---------------------------
+
+#Make sure every species appears in both years (missing gets 0)
+top10_by_year_clean <- top10_by_year %>%
+  dplyr::select(year, species, share) %>%
+  tidyr::complete(year, species = species_levels, fill = list(share = 0)) %>%
+  mutate(
+    species = factor(species, levels = species_levels),
+    year = factor(year)  # for alpha legend control
+  )
+
+# 3) Plot: same hue per species, lighter/darker by year
+p_bar <- top10_by_year_clean %>%
+  ggplot(aes(x = share, y = species, fill = species, alpha = year)) +
+  geom_col(position = position_dodge(width = 0.7), 
+           width = 0.6, 
+           aes(colour = factor(year))) + # "grey50"
+  scale_x_continuous(labels = label_number(accuracy = 1, suffix = ""),
+                     expand = expansion(mult = c(0.02, 0.05))) +
+  scale_y_discrete(
+    limits = species_levels,
+    labels = species_labels,   # keep your mapping
+    drop = FALSE
+  ) +
+  scale_colour_manual(
+    values = c("2023" = "grey50",
+               "2025" = "black"),
+    guide = "none"   # prevents second legend
+  )+
+  scale_fill_manual(values = species_colors, guide = "none") +
+  scale_alpha_manual(
+    name = "Survey year",
+    values = c("2023" = 0.45, "2025" = 1.00),  # lighter vs darker
+    guide = "none",                              # set to "legend" if you want it
+    breaks = c("2025", "2023")  # controls legend order
+  ) +
+  
+  labs(x = "Stems share [%]", y = "") +
+  theme_classic2(base_size = 10) +
+  theme(
+    axis.text.y = element_text(
+      face = "italic",
+      size = 8
+    )
+  )
+p_bar
+
+####  Get species occurence from total number of plots -------------
+# Total number of unique plots
+total_plots <- dat_overlap %>%
+  pull(plot, year) %>%
+  n_distinct()
+
+# Share of plots per species (where species are present = non-zero stems)
+species_occurence <- 
+  df_stem_dens_species %>%
+  ungroup(.) %>% 
+  dplyr::filter(sum_n > 0) %>%                 # Only where species occurred
+  distinct(species, year, plot) %>%    #year,       # Unique species × plot combos
+  count(species, year, name = "n_plots")  %>% #year, %>%  # Count number of plots per species
+  mutate(share_of_plots = n_plots / total_plots*100) %>% 
+  arrange()
+
+species_occurence
+
+# Plot
+p_occurence <- 
+  species_occurence %>% 
+  filter(species %in% v_top_species ) %>% 
+  mutate(species = factor(species, levels = species_levels)) %>% 
+  ggplot(aes(x = share_of_plots, 
+             y = species, 
+             fill = species,
+             alpha = factor(year))) +
+  geom_col(position = position_dodge(width = 0.7), 
+           width = 0.6,
+           aes(colour = factor(year))) +
+  scale_x_continuous(labels = scales::label_number(accuracy = 1), 
+                     expand = expansion(mult = c(0.05, 0.05))) +
+  scale_fill_manual(values = species_colors, 
+                    guide = "none") +
+  scale_alpha_manual(
+    name = "Survey year",
+    values = c("2025" = 1,
+               "2023" = 0.45),
+    breaks = c("2025", "2023")
+  ) +
+  
+  scale_colour_manual(
+    name = "Survey year",
+    values = c("2025" = "black",
+               "2023" = "grey50"),
+    breaks = c("2025", "2023")
+  )+
+  labs(
+    x = "Species occurence [%]",
+    y = NULL#,
+    # fill = "Year"
+  ) +
+  theme_classic(base_size = 10) +
+  theme(
+    axis.text.y = element_blank(),
+    
+    # legend inside bottom-right
+    legend.position = c(0.98, 0.02),
+    legend.justification = c(1, 0),
+    
+    # make legend box readable inside plot
+    #legend.background = element_rect(fill = "white", colour = "grey70"),
+    legend.key = element_rect(fill = NA),
+    legend.title = element_text(size = 9),
+    legend.text = element_text(size = 8)
+  ) +
+  theme(
+    legend.key.width  = unit(1, "lines"),   # wider
+    legend.key.height = unit(0.4, "lines")    # shorter → not square
+  )
+
+
+p_occurence
+
+p_bar <- p_bar + 
+  theme(plot.margin = margin(t = 12, 
+                             r = 5, 
+                             b = 5, 
+                             l = 5))
+p_occurence <- p_occurence + 
+  theme(plot.margin = margin(t = 12, 
+                             r = 5, 
+                             b = 5, 
+                             l = 5))
+
+
+p_species_composition <- ggarrange(p_bar, p_occurence,# p_density,  
+                                   ncol = 2, common.legend = F, 
+                                   align = "h",        # <-- critical
+                                   widths = c(1.5, 1),
+                                   labels = c("[a]", "[b]"),
+                                   font.label = list(size = 10, face = "plain"),
+                                   label.x = 0.02,    # near left edge
+                                   label.y = 1.01     # just above plot
+)
+
+p_species_composition
+
+# Export to PNG
+# ggsave("outFigs/p_species_composition.png", 
+#        plot = p_species_composition,
+#        width = 7, height = 3, units = "in", dpi = 300)
+
+
+
+### Total trees per year --------------------------------------------------------
+total_trees_per_year <- dat_overlap %>%
+  group_by(year) %>%
+  summarise(
+    total_trees = sum(n, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+tree_summary <- dat_overlap %>%
+  group_by(year, seral_stage ) %>%
+  summarise(
+    n_trees_recovery = sum(n, na.rm = TRUE),
+    .groups = "drop"
+  ) %>% 
+  left_join(total_trees_per_year) %>% 
+  mutate(share = n_trees_recovery /total_trees * 100)
+
+
+summary(tree_summary)
+
+
+
+
+
+## 6b. Management intensity plot (simpler stacked bar)
+fill_colors <- brewer.pal(length(intensity_levels), "YlOrRd")
+
+
+# START
+## Management Subplot level -----------------------------------------------------------
+
+df_mng_sub <- dat_overlap %>% 
+  #dplyr::filter(year == "2023") %>% # keep management oionly frm 2023 for consistency
+  distinct(plot, subplot,year,
+           clear,
+           grndwrk,
+           logging_trail,
+           planting,
+           anti_browsing,
+           clear_intensity,           
+           grndwrk_intensity,         
+           logging_trail_intensity,  
+           planting_intensity ,       
+           anti_browsing_intensity#,   
+          
+  )
+
+
+df_mng_plot <- df_mng_sub %>% 
+  select(plot, year, 
+         clear_intensity,           
+         grndwrk_intensity,         
+         logging_trail_intensity,  
+         planting_intensity ,       
+         anti_browsing_intensity) %>% 
+  distinct()
+
+
+mng_sub_props <- 
+  df_mng_sub %>%
+  # group by year???
+  pivot_longer(cols = c(clear, grndwrk, logging_trail, planting, anti_browsing),
+               names_to = "activity",
+               values_to = "applied") %>%
+  mutate(applied = replace_na(applied, 0)) %>% 
+  group_by(activity, applied, year) %>%
+  # View()
+  summarise(n = n(), .groups = "drop") %>%
+  group_by(activity) %>%
+  mutate(proportion = n / sum(n)*100)
+
+mng_sub_props
+
+
+# First extract proportion for applied == 1 per activity
+mng_sub_applied_order <- mng_sub_props %>%
+  filter(applied == 1) %>%
+  arrange(desc(proportion)) %>%
+  pull(activity) %>% 
+  unique()
+
+
+# Prepare data for diverging bar plot
+mng_sub_conv <-  mng_sub_props %>%
+  mutate(proportion = ifelse(applied == 0, -proportion, proportion),
+         applied = ifelse(applied == 1, "Presence", "Absence")) %>% 
+  arrange(desc(proportion)) %>% 
+  mutate(activity = factor(activity, levels = rev(mng_sub_applied_order))) #%>%
+
+#library(forcats)
+
+activity_labels <- c(
+  "clear" = "Salvage logging",
+  "grndwrk" = "Soil\npreparation", # "Groundwork", #
+  "planting" = "Planting",
+  "anti_browsing" = "Browsing\nprotection",
+  "logging_trail" = "Logging trail"
+)
+
+# Create diverging bar plot - need to check for divide where site is salvage logging = 1 in 2023 but 0 in 2025
+ggplot(mng_sub_conv, aes(x = proportion, y = activity, fill = applied)) +
+  geom_col(width = 0.2, col = 'black') +
+  scale_x_continuous(#labels = scales::percent_format(accuracy = 1),
+    breaks = seq(-100, 100, 50),
+    limits = c(-100, 100),
+    labels = function(x) paste0(abs(x), "%")) +
+  scale_fill_manual(values = c("Presence" = "red", 
+                               "Absence" = "darkgreen")) +
+  scale_y_discrete(labels = activity_labels) +
+  geom_vline(xintercept = 0, color = 'darkgrey', lty = 'dashed')+
+  labs(x = "Share of subplots [%]", 
+       y = "",
+       title = "",
+       fill = "") +
+  theme_classic2() +
+  facet_grid(.~year) +
+  annotate("text", x = -80, y = 5.5, label = "Absence", hjust = 0, size = 2.5, fontface = "bold") +
+  annotate("text", x =  80, y = 5.5, label = "Presence",     hjust = 1, size = 2.5, fontface = "bold") +
+  theme(panel.grid.major.y = element_blank(),
+        axis.text.y = element_text(size = 10, face = "italic"),
+        legend.position = "none",
+        text = element_text(size = 10))
+
+
+# 
+### Plot level: binary  ------------------------------------
+df_master_mng_intensity <- dat_overlap %>% 
+  #dplyr::filter(year == "2023") %>% # keep management oionly frm 2023 for consistency
+  distinct(plot, year,
+           # intensities
+           clear_intensity,           
+           grndwrk_intensity,         
+           logging_trail_intensity,  
+           planting_intensity ,      
+           anti_browsing_intensity
+           
+  )
+nrow(df_master_mng_intensity)
+
+mng_intensity_props <- 
+  df_master_mng_intensity %>%
+  pivot_longer(cols = c(clear_intensity,           
+                        grndwrk_intensity,         
+                        logging_trail_intensity,  
+                        planting_intensity ,       
+                        anti_browsing_intensity
+  ),
+  names_to = "activity",
+  values_to = "applied") %>%
+  group_by(activity, applied, year) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  group_by(activity) %>%
+  mutate(proportion = n / sum(n)*100)
+
+mng_intensity_props
+
+mng_intensity_props <- mng_intensity_props %>%
+  mutate(
+    intensity_class = cut(
+      applied,
+      breaks = c(-Inf, 0.19, 0.39, 0.59, 0.79, Inf),
+      labels = c("0–19", "20–39", "40–59", "60–79", "80–100"),
+      right = TRUE
+    ),
+    intensity_binary = case_when(
+      intensity_class == "0–19" ~ "no",
+      TRUE ~ "yes"
+    )
+  )
+
+
+# prepare for binary classifucation  - need to group first, as I have two years
+mng_sub_conv <- mng_intensity_props %>%
+  mutate(
+    intensity_binary = factor(intensity_binary, levels = c('no', 'yes')),
+    intensity_class = factor(intensity_class, levels = intensity_levels)
+  ) %>% 
+  group_by(activity, intensity_binary) %>% 
+  summarise(proportion = sum(proportion, na.rm = T))
+
+# prepare for intensity classification
+mng_sub_intensity <- mng_intensity_props %>%
+  mutate(
+    intensity_binary = factor(intensity_binary, levels = c('no', 'yes')),
+    intensity_class = factor(intensity_class, levels = intensity_levels)#,
+    #activity = factor(activity, levels = applied_mng_intens_order)
+  ) %>% 
+  group_by(activity, intensity_class) %>% 
+  summarise(proportion = sum(proportion, na.rm = T))
+
+
+# define colors 
+fill_colors <- brewer.pal(length(intensity_levels), "YlOrRd")
+
+# for binary: Flip "no" values to negative
+mng_sub_conv_plot <- mng_sub_conv %>%
+  mutate(proportion_plot = if_else(intensity_binary == "no", -proportion, proportion))
+
+# for intensity - flip low intensity to left side of the plot
+mng_shifted <- mng_sub_intensity %>%
+  mutate(
+    intensity_class = factor(intensity_class, levels = intensity_levels),
+    proportion_shifted = if_else(intensity_class %in% low_classes, -proportion, proportion),
+    # reverse class order for right-hand side only
+    intensity_class_plot = fct_relevel(
+      intensity_class,
+      c("80–100","60–79", "40–59","0–19","20–39" )
+    ),
+    activity = factor(activity, levels = rev(c(
+      "clear_intensity",
+      "grndwrk_intensity",      
+      "planting_intensity",     
+      "anti_browsing_intensity",
+      "logging_trail_intensity"
+    )))
+  )
+
+
+activity_intens_labels <- c(
+  "clear_intensity" = "Salvage\nlogging",
+  "grndwrk_intensity" =  "Soil\npreparation", #"Groundwork", 
+  "planting_intensity" = "Planting",
+  "anti_browsing_intensity" = "Browsing\nprotection"#,
+  #"logging_trail_intensity" = "Logging trail"
+)
+
+p_management_bin_plot <- mng_sub_conv_plot %>% 
+  filter(activity != "logging_trail_intensity") %>% 
+  droplevels(.) %>% 
+  ggplot(aes(x = proportion_plot, y = activity,
+             fill = intensity_binary )) +
+  geom_col(width = 0.2, color = "black") +
+  scale_fill_manual(values =  c("no" = "forestgreen", "yes" = "red")#,
+                    #name = "Intensity class",
+                    #breaks = intensity_levels
+  ) +
+  geom_vline(xintercept = 0, color = "grey", 
+             linewidth = 0.8, lty = 'dashed') +
+  ylab('') +
+  scale_y_discrete(labels = activity_intens_labels) +   # 👈 this does the relabeling
+  scale_x_continuous(labels = abs, name = "Plots share [%]") +
+  annotate("text", x = -60, y = 4.5, label = "Not Applied", hjust = 0, size = 2.5, fontface = "bold") +
+  annotate("text", x =  80, y = 4.5, label = "Applied",     hjust = 1, size = 2.5, fontface = "bold") +
+  theme_classic2() +
+  theme(
+    legend.position = "none",
+    axis.title = element_text(size = 8),
+    axis.text = element_text(size = 8),
+    panel.grid.major.y = element_blank()
+  )
+
+p_management_bin_plot
+
+
+p_management_intensity_plot <- mng_shifted %>% 
+  filter(activity != "logging_trail_intensity") %>% 
+  droplevels(.) %>% 
+  ggplot(aes(x = proportion_shifted, 
+             y = activity,
+             fill = intensity_class_plot)) +
+  geom_vline(xintercept = 0, color = "grey", 
+             linewidth = 0.5, lty = 'dashed') +
+  geom_col(width = 0.4, color = "black") +
+  scale_fill_manual(values = fill_colors, name = "Intensity class",
+                    breaks = intensity_levels) +
+  ylab('') +
+  scale_y_discrete(labels = activity_intens_labels) +   # 👈 this does the relabeling
+  scale_x_continuous(labels = abs, name = "Plots share [%]") +
+  annotate("text", x = -80, y = 4.5, label = "Low intensity", hjust = 0, size = 2.5, fontface = "bold") +
+  annotate("text", x =  80, y = 4.5, label = "High intensity",     hjust = 1, size = 2.5, fontface = "bold") +
+  theme_classic2() +
+  theme(
+    legend.position = "right",
+    axis.text.y = element_text(size = 10),
+    panel.grid.major.y = element_blank()
+  )
+
+p_management_intensity_plot
+
+# # Save as PNG
+ggsave("outFigs/mng_intensity_plot.png", plot = p_management_intensity_plot,
+       width = 5, height = 2.1, units = "in", dpi = 300)
+
+
+
+# make management intensity plot simpler
+p_management_intensity_plot_simpler <- 
+  mng_shifted %>% 
+  filter(activity != "logging_trail_intensity") %>% 
+  droplevels(.) %>% 
+  ggplot(aes(x = proportion , 
+             y = activity,
+             fill = intensity_class_plot)) +
+  geom_col(width = 0.4, color = "black") +
+  scale_fill_manual(values = fill_colors, 
+                    name = "Management intensity\nclass",
+                    breaks = intensity_levels) +
+  ylab('') +
+  scale_y_discrete(labels = activity_intens_labels) +   # 👈 this does the relabeling
+  scale_x_continuous(labels = abs, 
+                     name = "Plots share [%]") +
+  theme_classic2() +
+  theme(
+    legend.position = "right",
+    axis.text.y = element_text(size = 10),
+    panel.grid.major.y = element_blank()
+  )
+
+p_management_intensity_plot_simpler
+
+# # Save as PNG
+ggsave("outFigs/p_management_intensity_plot_simpler.png", 
+       plot = p_management_intensity_plot_simpler,
+       width = 5, height = 1.9, units = "in", dpi = 300)
+
+
+# Summarize counts per class
+intensity_class_summary_counts <- mng_intensity_props %>%
+  group_by(activity, intensity_class) %>%
+  summarise(n_plots = sum(n), .groups = "drop")
+
+#Full class breakdown with % and formatted "n (%)"
+intensity_class_summary_percent <- intensity_class_summary_counts %>%
+  group_by(activity) %>%
+  mutate(share = round(100 * n_plots / sum(n_plots), 1)) %>%
+  unite(col = "value", n_plots, share, sep = " (") %>%
+  mutate(value = paste0(value, "%)")) %>%
+  pivot_wider(names_from = intensity_class, values_from = value)
+
+# Add low/high total columns (counts + %)
+low_high_summary <- intensity_class_summary_counts %>%
+  mutate(group = case_when(
+    intensity_class %in% c("0–19", "20–39") ~ "Low",
+    intensity_class %in% c("40–59", "60–79", "80–100") ~ "High"
+  )) %>%
+  group_by(activity, group) %>%
+  summarise(n_plots = sum(n_plots), .groups = "drop") %>%
+  group_by(activity) %>%
+  mutate(share = round(100 * n_plots / sum(n_plots), 1)) %>%
+  unite(col = "value", n_plots, share, sep = " (") %>%
+  mutate(value = paste0(value, "%)")) %>%
+  pivot_wider(names_from = group, values_from = value)
+
+# Combine and sort by High intensity count
+intensity_class_summary_final <- intensity_class_summary_percent %>%
+  left_join(low_high_summary, by = "activity") %>%
+  mutate(
+    high_n = as.numeric(str_extract(High, "^[0-9]+"))  # extract count before "("
+  ) %>%
+  arrange(desc(high_n)) %>%
+  select(-high_n)  # optional: remove helper column
+
+# View final table
+intensity_class_summary_final 
+
+
+
+
+
+
+## 6c. Disturbance history
+plot_context_chars <- df %>%
+  dplyr::select(plot, year, status, disturbance_year, forest_year,
+                disturbance_length, time_snc_full_disturbance, time_snc_part_disturbance,
+                planting_intensity, clear_intensity, grndwrk_intensity,
+                logging_trail_intensity, anti_browsing_intensity) %>%
+  distinct() %>%
+  mutate(disturbance_year = case_when(disturbance_year < 2018 ~ 2018,
+                                      disturbance_year > 2022 ~ 2022,
+                                      TRUE ~ disturbance_year),
+         time_since_disturbance = year - disturbance_year)
+
+summary_disturbance_year <- plot_context_chars %>%
+  count(disturbance_year, name = "n") %>%
+  mutate(share = round(100 * n / sum(n), 1))
+
+summary_time_since <- plot_context_chars %>%
+  count(time_since_disturbance, name = "n") %>%
+  mutate(share = round(100 * n / sum(n), 1))
+
+p_hist_dist_year <- plot_context_chars %>%
+  count(disturbance_year) %>%
+  ggplot(aes(x = disturbance_year, y = n)) +
+  geom_col(fill = "grey80", color = "black", width = 0.8) +
+  scale_x_continuous(breaks = seq(2018, 2022, 2)) +
+  labs(x = "Disturbance Year\n", y = "Number of Plots [#]") +
+  theme_classic2() +
+  theme(axis.text = element_text(size = 8), axis.title = element_text(size = 8))
+
+p_hist_time_since_dist <- plot_context_chars %>%
+  count(time_since_disturbance) %>%
+  ggplot(aes(x = time_since_disturbance, y = n)) +
+  geom_col(fill = "grey80", color = "black", width = 0.8) +
+  labs(x = "Time since disturbance\n[years]", y = "Number of Plots [#]") +
+  theme_classic2() +
+  theme(axis.text = element_text(size = 8), axis.title = element_text(size = 8))
+
+p_combined_disturb_fig <- ggarrange(
+  p_hist_dist_year, p_hist_time_since_dist,
+  labels = c("[a]", "[b]"),
+  font.label = list(size = 10, face = "plain"),
+  widths = c(0.9, 1.1), ncol = 2, nrow = 1
+)
+
+p_combined_management_intens <- ggarrange(
+  p_combined_disturb_fig,
+  p_management_intensity_plot_simpler,
+  labels = c(" ", "[c]"),
+  font.label = list(size = 10, face = "plain"),
+  ncol = 1, nrow = 2,
+  heights = c(1.2, 1.2)
+)
 
 
 
@@ -243,156 +989,6 @@ model_intensity_summary <- model_intensity_all_df_pct_mng %>%
 model_intensity_summary
 
 
-# 6. Figures -----------------------------------------------------
-
-## 6a. Species composition (stem share + occurrence)
-top10_by_year_clean <- top10_by_year %>%
-  dplyr::select(year, species, share) %>%
-  tidyr::complete(year, species = species_levels, fill = list(share = 0)) %>%
-  mutate(species = factor(species, levels = species_levels),
-         year    = factor(year))
-
-p_bar <- top10_by_year_clean %>%
-  ggplot(aes(x = share, y = species, fill = species, alpha = year)) +
-  geom_col(position = position_dodge(width = 0.7), width = 0.6,
-           aes(colour = factor(year))) +
-  scale_x_continuous(labels = label_number(accuracy = 1, suffix = ""),
-                     expand = expansion(mult = c(0.02, 0.05))) +
-  scale_y_discrete(limits = species_levels, labels = species_labels, drop = FALSE) +
-  scale_colour_manual(values = c("2023" = "grey50", "2025" = "black"), guide = "none") +
-  scale_fill_manual(values = species_colors, guide = "none") +
-  scale_alpha_manual(name = "Survey year",
-                     values  = c("2023" = 0.45, "2025" = 1.00),
-                     guide   = "none",
-                     breaks  = c("2025", "2023")) +
-  labs(x = "Stems share [%]", y = "") +
-  theme_classic2(base_size = 10) +
-  theme(axis.text.y   = element_text(face = "italic", size = 8),
-        plot.margin   = margin(t = 12, r = 5, b = 5, l = 5))
-
-p_occurence <- species_occurence %>%
-  filter(species %in% v_top_species) %>%
-  mutate(species = factor(species, levels = species_levels)) %>%
-  ggplot(aes(x = share_of_plots, y = species,
-             fill = species, alpha = factor(year))) +
-  geom_col(position = position_dodge(width = 0.7), width = 0.6,
-           aes(colour = factor(year))) +
-  scale_x_continuous(labels = scales::label_number(accuracy = 1),
-                     expand = expansion(mult = c(0.05, 0.05))) +
-  scale_fill_manual(values = species_colors, guide = "none") +
-  scale_alpha_manual(name = "Survey year",
-                     values = c("2025" = 1, "2023" = 0.45),
-                     breaks = c("2025", "2023")) +
-  scale_colour_manual(name = "Survey year",
-                      values = c("2025" = "black", "2023" = "grey50"),
-                      breaks = c("2025", "2023")) +
-  labs(x = "Species occurence [%]", y = NULL) +
-  theme_classic(base_size = 10) +
-  theme(axis.text.y        = element_blank(),
-        legend.position    = c(0.98, 0.02),
-        legend.justification = c(1, 0),
-        legend.key         = element_rect(fill = NA),
-        legend.title       = element_text(size = 9),
-        legend.text        = element_text(size = 8),
-        legend.key.width   = unit(1, "lines"),
-        legend.key.height  = unit(0.4, "lines"),
-        plot.margin        = margin(t = 12, r = 5, b = 5, l = 5))
-
-p_species_composition <- ggarrange(
-  p_bar, p_occurence,
-  ncol = 2, common.legend = FALSE, align = "h",
-  widths = c(1.5, 1),
-  labels = c("[a]", "[b]"),
-  font.label = list(size = 10, face = "plain"),
-  label.x = 0.02, label.y = 1.01
-)
-
-## 6b. Management intensity plot (simpler stacked bar)
-fill_colors <- brewer.pal(length(intensity_levels), "YlOrRd")
-
-p_management_intensity_plot_simpler <- mng_shifted %>%
-  filter(activity != "logging_trail_intensity") %>%
-  droplevels() %>%
-  ggplot(aes(x = proportion, y = activity, fill = intensity_class_plot)) +
-  geom_col(width = 0.4, color = "black") +
-  scale_fill_manual(values = fill_colors,
-                    name   = "Management intensity\nclass",
-                    breaks = intensity_levels) +
-  scale_y_discrete(labels = activity_intens_labels) +
-  scale_x_continuous(labels = abs, name = "Plots share [%]") +
-  ylab("") +
-  theme_classic2() +
-  theme(legend.position = "right", axis.text.y = element_text(size = 10))
-
-p_management_bin_plot <- mng_sub_conv %>%
-  filter(activity != "logging_trail_intensity") %>%
-  droplevels() %>%
-  ggplot(aes(x = proportion_plot, y = activity, fill = intensity_binary)) +
-  geom_col(width = 0.2, color = "black") +
-  scale_fill_manual(values = c("no" = "forestgreen", "yes" = "red")) +
-  geom_vline(xintercept = 0, color = "grey", linewidth = 0.8, lty = "dashed") +
-  scale_y_discrete(labels = activity_intens_labels) +
-  scale_x_continuous(labels = abs, name = "Plots share [%]") +
-  annotate("text", x = -60, y = 4.5, label = "Not Applied", hjust = 0, size = 2.5, fontface = "bold") +
-  annotate("text", x =  80, y = 4.5, label = "Applied",     hjust = 1, size = 2.5, fontface = "bold") +
-  ylab("") +
-  theme_classic2() +
-  theme(legend.position = "none",
-        axis.title = element_text(size = 8),
-        axis.text  = element_text(size = 8))
-
-## 6c. Disturbance history
-plot_context_chars <- dat_overlap_mng_upd2 %>%
-  dplyr::select(plot, year, status, disturbance_year, forest_year,
-                disturbance_length, time_snc_full_disturbance, time_snc_part_disturbance,
-                planting_intensity, clear_intensity, grndwrk_intensity,
-                logging_trail_intensity, anti_browsing_intensity) %>%
-  distinct() %>%
-  mutate(disturbance_year = case_when(disturbance_year < 2018 ~ 2018,
-                                      disturbance_year > 2022 ~ 2022,
-                                      TRUE ~ disturbance_year),
-         time_since_disturbance = year - disturbance_year)
-
-summary_disturbance_year <- plot_context_chars %>%
-  count(disturbance_year, name = "n") %>%
-  mutate(share = round(100 * n / sum(n), 1))
-
-summary_time_since <- plot_context_chars %>%
-  count(time_since_disturbance, name = "n") %>%
-  mutate(share = round(100 * n / sum(n), 1))
-
-p_hist_dist_year <- plot_context_chars %>%
-  count(disturbance_year) %>%
-  ggplot(aes(x = disturbance_year, y = n)) +
-  geom_col(fill = "grey80", color = "black", width = 0.8) +
-  scale_x_continuous(breaks = seq(2018, 2022, 2)) +
-  labs(x = "Disturbance Year\n", y = "Number of Plots [#]") +
-  theme_classic2() +
-  theme(axis.text = element_text(size = 8), axis.title = element_text(size = 8))
-
-p_hist_time_since_dist <- plot_context_chars %>%
-  count(time_since_disturbance) %>%
-  ggplot(aes(x = time_since_disturbance, y = n)) +
-  geom_col(fill = "grey80", color = "black", width = 0.8) +
-  labs(x = "Time since disturbance\n[years]", y = "Number of Plots [#]") +
-  theme_classic2() +
-  theme(axis.text = element_text(size = 8), axis.title = element_text(size = 8))
-
-p_combined_disturb_fig <- ggarrange(
-  p_hist_dist_year, p_hist_time_since_dist,
-  labels = c("[a]", "[b]"),
-  font.label = list(size = 10, face = "plain"),
-  widths = c(0.9, 1.1), ncol = 2, nrow = 1
-)
-
-p_combined_management_intens <- ggarrange(
-  p_combined_disturb_fig,
-  p_management_intensity_plot_simpler,
-  labels = c(" ", "[c]"),
-  font.label = list(size = 10, face = "plain"),
-  ncol = 1, nrow = 2,
-  heights = c(1.2, 1.2)
-)
 
 ## 6d. Cross-scale violin distributions
 response_vars <- c("mean_hgt", "cv_hgt", "effective_numbers", "sp_richness")
@@ -586,7 +1182,7 @@ p_spruce_shares_boxplot <- ggarrange(
 )
 
 ## 6h. Height by seral stage x management (heatmap)
-dat_clean <- dat_overlap_mng_upd2 %>%
+dat_clean <- df %>%
   as_tibble() %>%
   dplyr::filter(!is.na(hgt_est), !is.na(n), n > 0)
 
