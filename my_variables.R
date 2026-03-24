@@ -1,5 +1,107 @@
 
 
+## ggplot theme
+theme_set(
+  theme_classic2(base_size = 10) +
+    theme(axis.title = element_text(size = 10),
+          axis.text  = element_text(size = 10))
+)
+
+## Constants
+area_subplot_m2 <- 4
+area_plot_m2    <- 5 * 4
+
+## Shared axis label
+x_lab_time_snc_full_dist <- "Time since stand\nreplacing disturbance (years)"
+
+intensity_levels <-  c("0–19", "20–39", "40–59", "60–79", "80–100")
+low_classes <- c("0–19", "20–39")
+applied_mng_intens_order <- c("0–19", "20–39","40–59", "60–79", "80–100") 
+
+
+
+activity_intens_labels <- c(
+  "clear_intensity"         = "Salvage\nlogging",
+  "grndwrk_intensity"       = "Soil\npreparation",
+  "planting_intensity"      = "Planting",
+  "anti_browsing_intensity" = "Browsing\nprotection"
+)
+
+## Helper functions
+
+safe_max <- function(x) if (all(is.na(x))) NA_real_ else max(x, na.rm = TRUE)
+
+wfun <- function(x) ifelse(is.na(x) | x < 0, 0, x)
+
+calc_iv_core <- function(data, size_var, ...) {
+  data %>%
+    group_by(..., species) %>%
+    summarise(
+      n_sp    = sum(n, na.rm = TRUE),
+      size_sp = sum({{ size_var }}, na.rm = TRUE),
+      .groups = "drop_last"
+    ) %>%
+    mutate(
+      RA       = n_sp / sum(n_sp, na.rm = TRUE),
+      size_tot = sum(size_sp, na.rm = TRUE),
+      RS       = dplyr::if_else(size_tot > 0, size_sp / size_tot, NA_real_),
+      IV       = (RA + RS) / 2
+    ) %>%
+    select(-size_tot) %>%
+    ungroup()
+}
+
+calc_iv_subplot <- function(data, size_var) calc_iv_core(data, {{ size_var }}, plot, year, subplot)
+calc_iv_plot    <- function(data, size_var) calc_iv_core(data, {{ size_var }}, plot, year)
+
+## Plotting helpers for model predictions (used in §5-6)
+pp <- function(model, terms, xlab = NULL, ylab = NULL,
+               annot = NULL, scale_y = 1,
+               annot_x = 3.5, annot_y = NULL) {
+  pr <- ggpredict(model, terms = terms, exclude = "s(plot_id)") %>%
+    as.data.frame() %>%
+    mutate(across(c(predicted, conf.low, conf.high), ~ . * scale_y))
+  
+  p <- ggplot(pr, aes(x = x, y = predicted, colour = group, fill = group)) +
+    geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2, colour = NA) +
+    geom_line(linewidth = 0.8) +
+    labs(x = xlab, y = ylab, colour = "Scale") +
+    scale_color_manual(values = c("subplot" = "grey80", "plot" = "grey30")) +
+    scale_fill_manual( values = c("subplot" = "grey80", "plot" = "grey30"), guide = "none") +
+    theme_classic() +
+    theme(axis.title = element_text(size = 7))
+  
+  if (!is.null(annot))
+    p <- p + annotate("text", x = annot_x, y = annot_y,
+                      label = annot, size = 2.5, hjust = 0.5)
+  p
+}
+
+pp_inset_model <- function(model, scale_y = 1, p_lab = NULL,
+                           annot_x = 1.5, annot_y = NULL) {
+  pr <- ggpredict(model, terms = "level") %>%
+    as.data.frame() %>%
+    mutate(across(c(predicted, conf.low, conf.high), ~ . * scale_y))
+  
+  ggplot(pr, aes(x = x, y = predicted, colour = x)) +
+    geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = .08) +
+    geom_point(size = 2.4) +
+    annotate("text", x = annot_x, y = annot_y, label = p_lab, size = 2.5) +
+    scale_color_manual(values = c("subplot" = "grey80", "plot" = "grey30"), guide = "none") +
+    theme_classic(base_size = 8) +
+    theme(axis.title      = element_blank(),
+          axis.text.y     = element_blank(),
+          axis.ticks.y    = element_blank(),
+          axis.line.y     = element_blank(),
+          axis.text.x     = element_text(size = 7),
+          legend.position = "none",
+          plot.margin     = margin(5, 5, 5, 0))
+}
+
+
+
+
+
 # hold on all variables regarding species classifications
 
 
@@ -90,4 +192,6 @@ species_class <- tibble::tribble(
   "soto", "deciduous",
   "ulsp", "deciduous"
 )
+
+
 
