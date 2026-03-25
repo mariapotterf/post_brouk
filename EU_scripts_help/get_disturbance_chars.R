@@ -105,7 +105,7 @@ process_point_edge <- function(point, disturbance, buffer_dist = 1500) {
 }
 
 # ── Main function: terrain + disturbance + edge distance ───────
-extract_env_info <- function(country_key, points_all, buffer_dist = 1500) {
+extract_env_info <- function(country_key, points_all, buffer_dist = 500) {
   print(paste("Processing", country_key))
   
   # 1. subset points
@@ -191,7 +191,7 @@ final_env <- final_env %>%
   )
 
 # ── Export ─────────────────────────────────────────────────────
-fwrite(final_env, "outData/env_chars_subplots.csv")
+fwrite(final_env, "EU_scripts_help/env_chars_subplots.csv")
 
 
 
