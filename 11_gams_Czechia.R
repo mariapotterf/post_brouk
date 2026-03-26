@@ -109,6 +109,7 @@ dat_overlap_n0 <- dat_overlap %>%
 ### Get summary across all trees and study sites --------------------------
 # 0) Safe counts (treat NA counts as 0)
 df <- dat_overlap %>%
+  filter(status == 'both') %>% 
   mutate(n = coalesce(n, 0L)) %>%
   filter(!is.na(species) & species != "")
 
@@ -416,6 +417,262 @@ ggplot(delta_df, aes(x = planting_intensity, y = delta_early)) +
        y = "Change in early-seral share\n(2025 − 2023)") +
   theme_classic()
 
+
+
+# look only at spruce shares and changes --------------------------------
+
+# ── Spruce share change per plot ─────────────────────────────────────────────
+spruce_delta <- dat_overlap %>%
+  filter(status == "both", !is.na(n)) %>%
+  group_by(plot, year) %>%
+  summarise(
+    total_stems  = sum(n, na.rm = TRUE),
+    spruce_stems = sum(n[species == "piab"], na.rm = TRUE),
+    spruce_share = spruce_stems / total_stems,
+    .groups = "drop"
+  ) %>%
+  pivot_wider(
+    names_from  = year,
+    values_from = c(total_stems, spruce_stems, spruce_share),
+    names_sep   = "_"
+  ) %>%
+  mutate(
+    delta_spruce = spruce_share_2025 - spruce_share_2023
+  ) %>%
+  left_join(
+    plot_df_cz %>%
+      filter(year == 2023) %>%
+      select(plot, planting_intensity, anti_browsing_intensity,
+             time_snc_full_disturbance, clear_intensity),
+    by = "plot"
+  ) %>%
+  # was spruce present in 2023? key for legacy vs new arrival
+  mutate(
+    spruce_2023     = spruce_share_2023 > 0,
+    spruce_2025     = spruce_share_2025 > 0,
+    spruce_status   = case_when(
+      spruce_2023 & spruce_2025   ~ "persistent",
+      spruce_2023 & !spruce_2025  ~ "lost",
+      !spruce_2023 & spruce_2025  ~ "new_arrival",
+      !spruce_2023 & !spruce_2025 ~ "absent_both"
+    )
+  )
+
+# ── Summary ───────────────────────────────────────────────────────────────────
+spruce_delta %>%
+  count(spruce_status)
+
+# ── Is new spruce arrival driven by planting? ─────────────────────────────────
+# Key test: new_arrival vs absent_both — does planting differ?
+spruce_delta %>%
+  filter(spruce_status %in% c("new_arrival", "absent_both")) %>%
+  wilcox.test(planting_intensity ~ spruce_status, data = .)
+
+# ── Is persistent spruce share increasing on planted plots? ───────────────────
+spruce_delta %>%
+  filter(spruce_status == "persistent") %>%
+  cor.test(~ delta_spruce + planting_intensity, data = ., method = "spearman")
+
+# ── Linear model: what drives delta spruce share? ─────────────────────────────
+lm_spruce <- lm(
+  delta_spruce ~ planting_intensity + time_snc_full_disturbance + clear_intensity,
+  data = spruce_delta
+)
+summary(lm_spruce)
+plot(lm_spruce)
+
+# ── Plot 1: delta spruce ~ planting intensity, colored by spruce status ───────
+p_spruce_delta <- ggplot(
+  spruce_delta %>% filter(spruce_status != "absent_both"),
+  aes(x = planting_intensity, y = delta_spruce, color = spruce_status)
+) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50") +
+  geom_point(alpha = 0.5, size = 1.8) +
+  geom_smooth(method = "lm", se = TRUE, linewidth = 0.8) +
+  scale_color_manual(
+    values = c(
+      "persistent"  = "#1f78b4",
+      "new_arrival" = "#e31a1c",
+      "lost"        = "#33a02c"
+    ),
+    name = "Spruce status"
+  ) +
+  labs(
+    x = "Planting intensity (2023)",
+    y = "Change in spruce share\n(2025 − 2023)"
+  ) +
+  theme_classic(base_size = 11) +
+  theme(legend.position = c(0.02, 0.98),
+        legend.justification = c(0, 1))
+
+# ── Plot 2: spruce share 2023 vs 2025 per plot, colored by planting ───────────
+p_spruce_scatter <- ggplot(
+  spruce_delta,
+  aes(x = spruce_share_2023, y = spruce_share_2025,
+      color = planting_intensity)
+) +
+  geom_abline(slope = 1, intercept = 0,
+              linetype = "dashed", color = "grey50") +  # no-change line
+  geom_point(alpha = 0.6, size = 1.8) +
+  scale_color_distiller(
+    palette  = "YlOrRd", direction = 1,
+    name     = "Planting\nintensity"
+  ) +
+  labs(
+    x = "Spruce share 2023",
+    y = "Spruce share 2025"
+  ) +
+  theme_classic(base_size = 11)
+# points above diagonal = spruce increasing
+# points below diagonal = spruce decreasing
+# if high-planting points cluster above diagonal → planting drives spruce increase
+
+
+p_spruce_delta
+p_spruce_scatter
+
+
+# spruce alluvial
+spruce_alluvial <- spruce_delta %>%
+  filter(!is.na(spruce_status)) %>%
+  mutate(
+    # classify spruce share into dominance classes
+    spruce_class_2023 = case_when(
+      spruce_share_2023 == 0          ~ "absent",
+      spruce_share_2023 < 0.33        ~ "minor",
+      spruce_share_2023 < 0.66        ~ "codominant",
+      TRUE                            ~ "dominant"
+    ),
+    spruce_class_2025 = case_when(
+      spruce_share_2025 == 0          ~ "absent",
+      spruce_share_2025 < 0.33        ~ "minor",
+      spruce_share_2025 < 0.66        ~ "codominant",
+      TRUE                            ~ "dominant"
+    ),
+    spruce_class_2023 = factor(spruce_class_2023,
+                               levels = c("dominant", "codominant",
+                                          "minor", "absent")),
+    spruce_class_2025 = factor(spruce_class_2025,
+                               levels = c("dominant", "codominant",
+                                          "minor", "absent"))
+  ) %>%
+  count(spruce_class_2023, spruce_class_2025)
+
+# color palette — dark to light green for dominance, grey for absent
+spruce_colors <- c(
+  "dominant"   = "#1a7d1a",
+  "codominant" = "#5aac5a",
+  "minor"      = "#a8d9a8",
+  "absent"     = "#d9d9d9"
+)
+
+p_spruce_alluvial <- ggplot(spruce_alluvial,
+                            aes(axis1 = spruce_class_2023,
+                                axis2 = spruce_class_2025,
+                                y = n)) +
+  geom_alluvium(aes(fill = spruce_class_2023),
+                width = 1/4, alpha = 0.7, knot.pos = 0.4) +
+  geom_stratum(aes(fill = after_stat(stratum)),
+               width = 1/4, color = "white", linewidth = 0.5) +
+  geom_text(stat = "stratum",
+            aes(label = after_stat(stratum)),
+            size = 3.2) +
+  scale_x_discrete(limits = c("2023", "2025"),
+                   expand = expansion(mult = c(0.12, 0.12))) +
+  scale_fill_manual(values = spruce_colors, guide = "none") +
+  labs(x = NULL, y = "Number of plots\nby spruce share [%]") +
+  theme_classic(base_size = 11) +
+  theme(
+    axis.text.x  = element_text(size = 11, face = "bold"),
+    axis.text.y  = element_text(size = 9),
+    axis.line.x  = element_blank(),
+    axis.ticks.x = element_blank()
+  )
+
+p_spruce_alluvial
+
+ggsave("outFigsCZ/p_spruce_alluvial.png",
+       p_spruce_alluvial, width = 5, height = 5, dpi = 300, bg = "white")
+
+
+
+## Spruce share: effect of management? ----------------
+spruce_alluvial_binary <- spruce_delta %>%
+  filter(!is.na(spruce_status)) %>%
+  mutate(
+    spruce_class_2023 = case_when(
+      spruce_share_2023 == 0   ~ "absent",
+      spruce_share_2023 < 0.33 ~ "minor",
+      spruce_share_2023 < 0.66 ~ "codominant",
+      TRUE                     ~ "dominant"
+    ),
+    spruce_class_2025 = case_when(
+      spruce_share_2025 == 0   ~ "absent",
+      spruce_share_2025 < 0.33 ~ "minor",
+      spruce_share_2025 < 0.66 ~ "codominant",
+      TRUE                     ~ "dominant"
+    ),
+    spruce_class_2023 = factor(spruce_class_2023,
+                               levels = c("dominant", "codominant",
+                                          "minor", "absent")),
+    spruce_class_2025 = factor(spruce_class_2025,
+                               levels = c("dominant", "codominant",
+                                          "minor", "absent")),
+    planted = if_else(planting_intensity > 0, "Planted", "Not planted"),
+    planted = factor(planted, levels = c("Not planted", "Planted"))
+  ) %>%
+  count(spruce_class_2023, spruce_class_2025, planted) %>%
+  # % within panel — comparable y axes
+  group_by(planted) %>%
+  mutate(
+    pct       = n / sum(n) * 100,
+    panel_n   = sum(n),
+    panel_lab = paste0(planted, "\n(n=", panel_n, ")")
+  ) %>%
+  ungroup() %>%
+  mutate(panel_lab = factor(panel_lab,
+                            levels = unique(panel_lab[order(planted)])))
+
+p_spruce_planted <- ggplot(
+  spruce_alluvial_binary,
+  aes(axis1 = spruce_class_2023,
+      axis2 = spruce_class_2025,
+      y     = pct)) +
+  geom_alluvium(aes(fill = spruce_class_2023),
+                width = 1/4, alpha = 0.7, knot.pos = 0.4) +
+  geom_stratum(aes(fill = after_stat(stratum)),
+               width = 1/4, color = "black", linewidth = 0.5) +
+  geom_text(stat  = "stratum",
+            aes(label = after_stat(stratum)),
+            size  = 3.0) +
+  scale_x_discrete(
+    limits = c("2023", "2025"),
+    expand = expansion(mult = c(0.22, 0.22))  # room for labels
+  ) +
+  scale_y_continuous(
+    limits = c(0, 100),          # fixed y axis — comparable across panels
+    labels = function(x) paste0(x, "%")
+  ) +
+  scale_fill_manual(values = spruce_colors, guide = "none") +
+  facet_wrap(~ panel_lab, nrow = 1) +
+  labs(x = NULL, y = "Share of plots\nby spruce abundance[%]") +
+  theme_classic(base_size = 11) +
+  theme(
+    axis.text.x    = element_text(size = 10, face = "bold"),
+    axis.text.y    = element_text(size = 9),
+    axis.line.x    = element_blank(),
+    axis.ticks.x   = element_blank(),
+    strip.text     = element_text(size = 10),
+    strip.background = element_rect(fill = "grey95", color = "grey70"),
+    panel.spacing  = unit(1.5, "lines")   # breathing room between panels
+  )
+
+p_spruce_planted
+
+ggsave("outFigsCZ/p_spruce_planted_vs_not.png",
+       p_spruce_planted,
+       width = 7, height = 5, dpi = 300, bg = "white")
+p_spruce_alluvial_pct
 
 
 
