@@ -23,12 +23,13 @@ library(spdep)
 library(sjPlot)
 library(patchwork)
 
-## Project variables (palettes, labels, species lists, species_class, earlyspecs_laura)
+## Project variables (palettes, labels, species lists, species_class, earlyspecs_cz)
 source('my_variables.R')
 
 
 
-# Filter data from both level: lot and subplot from EU  ----------------------
+# Filter data from both level: plot and subplot from EU  ----------------------
+# these are summarized on plot and subplot level 
 both_levels_cz <- fread("outData/both_levels_re2_all_countries.csv") %>%
   filter(country_name == "Czechia") %>%
   mutate(
@@ -57,7 +58,7 @@ sub_df_cz <- fread("outData/sub_df_AEF_all_countries.csv") %>%
     region       = factor(region)
   )
 
-# read full data with each species
+# data with individual species per subplot and plots each species
 dat_overlap <- fread("outData/dat_full_species_all_countries.csv") %>%
   filter(country_name == "Czechia") %>%
   mutate(
@@ -160,6 +161,372 @@ species_levels <- top10_by_year %>%
 v_top_species <- species_levels
 
 species_levels
+
+
+
+# Between years compositional change at PLOT level -----------------
+plots_both_years <- dat_overlap %>%
+  filter(status == "both") %>%
+  distinct(plot, year)
+
+# Species presence per plot × year (at least 1 stem)
+sp_presence <- dat_overlap %>%
+  filter(status == "both", n > 0) %>%
+  distinct(plot, year, species)
+
+# Wide: one row per plot, columns = species, values = year presence
+sp_wide <- sp_presence %>%
+  mutate(present = 1) %>%
+  pivot_wider(names_from = year, 
+              values_from = present,
+              values_fill = 0, names_prefix = "yr_") %>%
+  rename(presence_2023 = yr_2023, 
+         presence_2025 = yr_2025)
+
+# Classify each species × plot as: persistent, new arrival, local loss
+sp_change <- sp_wide %>%
+  mutate(change = case_when(
+    presence_2023 == 1 & presence_2025 == 1 ~ "persistent",
+    presence_2023 == 0 & presence_2025 == 1 ~ "new_arrival",
+    presence_2023 == 1 & presence_2025 == 0 ~ "local_loss",
+    TRUE ~ NA_character_
+  ),
+  seral_stage = case_when(
+    species %in% earlyspecs_cz ~ "early",
+    TRUE ~ "late"          # includes spruce, fir, beech, oak etc.
+  )
+  ) %>%
+  left_join(species_class, by = "species")  # brings in seral_stage / leaf_type
+
+# Per-plot summary: n gains, n losses, net change
+plot_turnover <- sp_change %>%
+  group_by(plot) %>%
+  summarise(
+    n_persistent  = sum(change == "persistent"),
+    n_new_arrival = sum(change == "new_arrival"),
+    n_local_loss  = sum(change == "local_loss"),
+    net_change    = n_new_arrival - n_local_loss,
+    .groups = "drop"
+  )
+
+# Seral-stage breakdown of gains/losses
+seral_change <- sp_change %>%
+  filter(!is.na(seral_stage)) %>%
+  group_by(plot, seral_stage, change) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  pivot_wider(names_from = change, values_from = n, values_fill = 0)
+
+
+# Seral stage stem share per plot × year
+seral_share_plot <- dat_overlap %>%
+  filter(status == "both", !is.na(n), n > 0) %>%
+  mutate(seral_stage = if_else(species %in% earlyspecs_cz, "early", "late")) %>%
+  group_by(plot, year) %>%
+  mutate(total_stems = sum(n)) %>%
+  group_by(plot, year, seral_stage) %>%
+  summarise(
+    share = sum(n) / first(total_stems),
+    .groups = "drop"
+  )
+# Did the early:late ratio change between years?
+seral_ratio <- seral_share_plot %>%
+  pivot_wider(
+    names_from  = c(seral_stage, year),
+    values_from = share,
+    values_fill = 0
+  ) %>%
+  # now one row per plot, columns: early_2023, late_2023, early_2025, late_2025
+  mutate(early_share_2023 = early_2023,
+         early_share_2025 = early_2025)
+
+# check - should be ~125 rows (plots surveyed both years), 6 columns
+glimpse(seral_ratio)
+
+# only keep plots that have data in BOTH years
+seral_ratio_both <- seral_ratio %>%
+  filter(!is.na(early_2023) | late_2023 > 0,
+         !is.na(early_2025) | late_2025 > 0)
+
+wilcox.test(seral_ratio_both$early_share_2023,
+            seral_ratio_both$early_share_2025,
+            paired = TRUE)
+
+
+
+# What are the actual median shares?
+seral_ratio_both %>%
+  summarise(
+    median_early_2023 = median(early_share_2023, na.rm = TRUE),
+    median_early_2025 = median(early_share_2025, na.rm = TRUE),
+    mean_early_2023   = mean(early_share_2023, na.rm = TRUE),
+    mean_early_2025   = mean(early_share_2025, na.rm = TRUE)
+  )
+
+# And how many plots are early-dominated vs late-dominated in each year?
+seral_ratio_both %>%
+  summarise(
+    early_dom_2023 = sum(early_share_2023 > 0.5, na.rm = TRUE),
+    late_dom_2023  = sum(early_share_2023 < 0.5, na.rm = TRUE),
+    early_dom_2025 = sum(early_share_2025 > 0.5, na.rm = TRUE),
+    late_dom_2025  = sum(early_share_2025 < 0.5, na.rm = TRUE)
+  )
+
+# And look at the distribution shape
+par(mfrow = c(1,2))
+hist(seral_ratio_both$early_share_2023, breaks = 20, 
+     main = "2023", xlab = "Early seral share")
+hist(seral_ratio_both$early_share_2025, breaks = 20,
+     main = "2025", xlab = "Early seral share")
+
+
+# Quantify the bimodality more explicitly
+library(ggalluvial)
+
+# Build the data
+traj_alluvial <- seral_ratio_both %>%
+  mutate(
+    traj_2023 = case_when(
+      early_share_2023 < 0.2 ~ "Late-dominated",
+      early_share_2023 > 0.8 ~ "Early-dominated",
+      TRUE                   ~ "Mixed"
+    ),
+    traj_2025 = case_when(
+      early_share_2025 < 0.2 ~ "Late-dominated",
+      early_share_2025 > 0.8 ~ "Early-dominated",
+      TRUE                   ~ "Mixed"
+    ),
+    traj_2023 = factor(traj_2023, levels = c("Early-dominated", "Mixed", "Late-dominated")),
+    traj_2025 = factor(traj_2025, levels = c("Early-dominated", "Mixed", "Late-dominated"))
+  ) %>%
+  count(traj_2023, traj_2025, name = "n")
+
+# Alluvial plot
+p_alluvial <- ggplot(traj_alluvial,
+                     aes(axis1 = traj_2023, axis2 = traj_2025, y = n)) +
+  geom_alluvium(aes(fill = traj_2023), width = 1/4,
+                alpha = 0.6, knot.pos = 0.4) +
+  geom_stratum(aes(fill = after_stat(stratum)),  # ← color bars by class
+               width = 1/4, color = "white", linewidth = 0.5) +
+  geom_text(stat = "stratum",
+            aes(label = after_stat(stratum)),
+            size = 3.2) +
+  scale_x_discrete(limits = c("2023", "2025"),
+                   expand = expansion(mult = c(0.12, 0.12))) +
+  scale_fill_manual(
+    values = c(
+      "Early-dominated" = "#4dac26",
+      "Mixed"           = "#b8b8b8",
+      "Late-dominated"  = "#d01c8b"
+    ),
+    guide = "none"
+  ) +
+  labs(x = NULL, y = "Number of plots") +
+  theme_classic(base_size = 11) +
+  theme(
+    axis.text.x  = element_text(size = 11, face = "bold"),
+    axis.text.y  = element_text(size = 9),
+    axis.line.x  = element_blank(),
+    axis.ticks.x = element_blank()
+  )
+
+p_alluvial
+
+
+# does teh management pushes teh change? 
+
+traj_with_mng <- seral_ratio_both %>%
+  mutate(
+    traj_2023 = case_when(
+      early_share_2023 < 0.2 ~ "late_dominated",
+      early_share_2023 > 0.8 ~ "early_dominated",
+      TRUE                   ~ "mixed"
+    ),
+    traj_2025 = case_when(
+      early_share_2025 < 0.2 ~ "late_dominated",
+      early_share_2025 > 0.8 ~ "early_dominated",
+      TRUE                   ~ "mixed"
+    ),
+    # Did plot stay stable or change?
+    stable = traj_2023 == traj_2025,
+    # Did it move toward late or early seral?
+    direction = case_when(
+      traj_2023 == "early_dominated" & traj_2025 == "mixed"          ~ "toward_late",
+      traj_2023 == "mixed"           & traj_2025 == "late_dominated"  ~ "toward_late",
+      traj_2023 == "mixed"           & traj_2025 == "early_dominated" ~ "toward_early",
+      traj_2023 == "late_dominated"  & traj_2025 == "mixed"           ~ "toward_early",
+      stable                                                           ~ "stable",
+      TRUE                                                             ~ "other"
+    )
+  ) %>%
+  left_join(
+    plot_df_cz %>%
+      filter(year == 2023) %>%
+      select(plot, planting_intensity, time_snc_full_disturbance),
+    by = "plot"
+  )
+
+# Is planting intensity different between stable and changing plots?
+kruskal.test(planting_intensity ~ direction, data = traj_with_mng)
+
+# Pairwise if significant
+pairwise.wilcox.test(traj_with_mng$planting_intensity,
+                     traj_with_mng$direction,
+                     p.adjust.method = "BH")
+
+# Visualize
+ggplot(traj_with_mng, aes(x = direction, y = planting_intensity, fill = direction)) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.7) +
+  geom_jitter(width = 0.15, alpha = 0.4, size = 1) +
+  scale_fill_manual(values = c(
+    "toward_early" = "#4dac26",
+    "toward_late"  = "#d01c8b",
+    "stable"       = "#b8b8b8",
+    "other"        = "#dddddd"
+  )) +
+  labs(x = NULL, y = "Planting intensity") +
+  theme_classic() +
+  theme(legend.position = "none")
+
+
+
+# Delta early share per plot (continuous, not categorical)
+delta_df <- seral_ratio_both %>%
+  mutate(delta_early = early_share_2025 - early_share_2023) %>%
+  left_join(
+    plot_df_cz %>%
+      filter(year == 2023) %>%
+      select(plot, planting_intensity, time_snc_full_disturbance),
+    by = "plot"
+  )
+
+# Does planting predict direction of change?
+cor.test(delta_df$planting_intensity, delta_df$delta_early, method = "spearman")
+
+# Simple model
+lm_delta <- lm(delta_early ~ planting_intensity + time_snc_full_disturbance,
+               data = delta_df)
+summary(lm_delta)
+
+# Plot
+ggplot(delta_df, aes(x = planting_intensity, y = delta_early)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50") +
+  geom_point(alpha = 0.4, size = 1.5) +
+  geom_smooth(method = "lm", color = "#d01c8b", se = TRUE) +
+  labs(x = "Planting intensity (2023)",
+       y = "Change in early-seral share\n(2025 − 2023)") +
+  theme_classic()
+
+
+
+
+
+
+
+
+
+
+
+
+# connect transition between early and seral to  management
+seral_ratio_both %>%
+  mutate(
+    traj_2023 = case_when(
+      early_share_2023 < 0.2 ~ "late_dominated",
+      early_share_2023 > 0.8 ~ "early_dominated",
+      TRUE                   ~ "mixed"
+    ),
+    traj_2025 = case_when(
+      early_share_2025 < 0.2 ~ "late_dominated",
+      early_share_2025 > 0.8 ~ "early_dominated",
+      TRUE                   ~ "mixed"
+    ),
+    transition = paste(traj_2023, traj_2025, sep = " → ")
+  ) %>%
+  left_join(
+    plot_df_cz %>% 
+      filter(year == 2023) %>%
+      select(plot, planting_intensity, anti_browsing_intensity, 
+             clear_intensity, time_snc_full_disturbance),
+    by = "plot"
+  ) %>%
+  group_by(traj_2023, traj_2025) %>%
+  summarise(
+    n                  = n(),
+    mean_planting      = mean(planting_intensity, na.rm = TRUE),
+    mean_antibrowsing  = mean(anti_browsing_intensity, na.rm = TRUE),
+    mean_time          = mean(time_snc_full_disturbance, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(traj_2023, traj_2025)
+
+
+# Quick visualization of the key contrast
+traj_planting <- seral_ratio_both %>%
+  mutate(
+    traj_2023 = case_when(
+      early_share_2023 < 0.1 ~ "late-dominated",
+      early_share_2023 > 0.9 ~ "early-dominated",
+      TRUE                   ~ "mixed"
+    ),
+    traj_2025 = case_when(
+      early_share_2025 < 0.1 ~ "late-dominated",
+      early_share_2025 > 0.9 ~ "early-dominated",
+      TRUE                   ~ "mixed"
+    )
+  ) %>%
+  left_join(
+    plot_df_cz %>%
+      filter(year == 2023) %>%
+      select(plot, planting_intensity),
+    by = "plot"
+  ) %>%
+  group_by(traj_2023, traj_2025) %>%
+  summarise(
+    n             = n(),
+    mean_planting = mean(planting_intensity, na.rm = TRUE),
+    sd_planting   = sd(planting_intensity,   na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  filter(n > 1) %>%   # drop the single early→late plot
+  mutate(
+    traj_2023 = factor(traj_2023, levels = c("early-dominated", "mixed", "late-dominated")),
+    traj_2025 = factor(traj_2025, levels = c("early-dominated", "mixed", "late-dominated")),
+    label = paste0("n=", n)
+  )
+
+ggplot(traj_planting,
+       aes(x = traj_2023, y = traj_2025, fill = mean_planting)) +
+  geom_tile(color = "white", linewidth = 1.2) +
+  geom_text(aes(label = paste0(round(mean_planting, 2), "\n", label)),
+            size = 3.5, lineheight = 1.3) +
+  scale_fill_distiller(palette = "YlOrRd", direction = 1,
+                       name = "Mean planting\nintensity",
+                       limits = c(0, 1)) +
+  labs(x = "Trajectory 2023", y = "Trajectory 2025",
+       title = NULL) +
+  theme_classic(base_size = 11) +
+  theme(axis.text = element_text(size = 10),
+        legend.position = "right")
+
+
+
+# spruce change: legacy vs planted???
+# Does spruce occurrence increase more on planted plots? ------------------------
+spruce_occ_change <- sp_change %>%
+  filter(species == "piab") %>%
+  left_join(plot_df_cz %>% 
+              filter(year == 2023) %>% 
+              select(plot, planting_intensity), 
+            by = "plot") %>%
+  mutate(planted = planting_intensity > 0)
+
+table(spruce_occ_change$change, spruce_occ_change$planted)
+# if new_arrival concentrates on planted = TRUE, that confirms the planting signal
+
+table(spruce_occ_change$change, spruce_occ_change$planting_intensity)
+
+
+
 
 #### Single species plots chars ----------------------
 
@@ -1191,7 +1558,7 @@ height_species_mng_yr <- dat_clean %>%
   dplyr::summarise(total_stems          = sum(n, na.rm = TRUE),
                    mean_height_weighted = weighted.mean(hgt_est, w = n, na.rm = TRUE),
                    .groups = "drop") %>%
-  dplyr::mutate(seral_group = dplyr::if_else(species %in% earlyspecs_laura, "early", "late"))
+  dplyr::mutate(seral_group = dplyr::if_else(species %in% earlyspecs_cz, "early", "late"))
 
 height_seral_mng_year <- height_species_mng_yr %>%
   dplyr::group_by(year, seral_group, planting_intensity, anti_browsing_intensity) %>%
