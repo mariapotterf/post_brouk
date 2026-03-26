@@ -2,12 +2,16 @@
 #   Get terrain characteristics
 # ------------------------------------------------------------------------------
 
+# run on subplot data, then calculate averages fro plot data
+# merge back to vegetation chars and create a table having both plot and subplot data
+
 # ── Paths ──────────────────────────────────────────────────────
 proj1_root <- "C:/Users/potterf/OneDrive - CZU v Praze/Dokumenty/2023_PanEuropean/r_paneurop/"
 elev_path  <- file.path(proj1_root, "rawData/dem")
 dist_path  <- file.path(proj1_root, "rawData/disturb_data")
 
-gpkg_file  <- "C:/Users/potterf/OneDrive - CZU v Praze/Dokumenty/2025_CZU_postbrouk/r_post_brouk/outDataShare/Karim_AEF/regeneration_chars_subplot_3035.gpkg"
+gpkg_sub  <- "C:/Users/potterf/OneDrive - CZU v Praze/Dokumenty/2025_CZU_postbrouk/r_post_brouk/outDataShare/Karim_AEF/regeneration_chars_subplot_3035.gpkg"
+gpkg_plot  <- "C:/Users/potterf/OneDrive - CZU v Praze/Dokumenty/2025_CZU_postbrouk/r_post_brouk/outDataShare/Karim_AEF/regeneration_chars_plot_3035.gpkg"
 
 # ── Libraries ──────────────────────────────────────────────────
 library(terra)
@@ -42,7 +46,8 @@ country_dist_map <- c(
 )
 
 # ── Load all subplots once ─────────────────────────────────────
-all_subplots <- vect(gpkg_file)  # already EPSG:3035
+all_subplots <- vect(gpkg_sub)  # already EPSG:3035
+all_plots   <- vect(gpkg_plot)     # already EPSG:3035
 
 
 cols_remove <- c("pre_dist_trees_n", "area_m2", "pre_dist_dens_ha",
@@ -172,10 +177,10 @@ summary(test$dist_to_edge)
 # ── Run all countries ──────────────────────────────────────────
 out_ls     <- lapply(names(country_dem_map), extract_env_info,
                      points_all = all_subplots)
-final_env  <- do.call(rbind, out_ls)
+final_sub_env  <- do.call(rbind, out_ls)
 
 # ── Fill NAs ───────────────────────────────────────────────────
-final_env <- final_env %>%
+all_sub_env <- final_sub_env %>%
   mutate(ID_short = gsub('.{2}$', '', subplot)) %>%
   group_by(ID_short) %>%
   arrange(ID_short, disturbance_year) %>%
@@ -187,12 +192,66 @@ final_env <- final_env %>%
     slope        = ifelse(is.na(slope),        median(slope,        na.rm = TRUE), slope),
     aspect       = ifelse(is.na(aspect),       median(aspect,       na.rm = TRUE), aspect),
     elevation    = ifelse(is.na(elevation),    median(elevation,    na.rm = TRUE), elevation),
-    dist_to_edge = ifelse(is.na(dist_to_edge), median(dist_to_edge, na.rm = TRUE), dist_to_edge)
+    dist_to_edge = ifelse(is.na(dist_to_edge), median(dist_to_edge, na.rm = TRUE), dist_to_edge),
+    disturbance_year = ifelse(is.na(disturbance_year), median(disturbance_year, na.rm = TRUE), disturbance_year),
+    disturbance_severity = ifelse(is.na(disturbance_severity), median(disturbance_severity, na.rm = TRUE), disturbance_severity)
   )
 
-# ── Export ─────────────────────────────────────────────────────
-fwrite(final_env, "EU_scripts_help/env_chars_subplots.csv")
+# Get value as average per plot for disturbnace chars
+plot_means <- all_sub_env %>%
+  group_by(plot_id, year) %>%
+  summarise(
+    x                    = mean(x,                    na.rm = TRUE),
+    y                    = mean(y,                    na.rm = TRUE),
+    disturbance_year     = mean(disturbance_year,     na.rm = TRUE),
+    disturbance_severity = mean(disturbance_severity, na.rm = TRUE),
+    elevation            = mean(elevation,            na.rm = TRUE),
+    slope                = mean(slope,                na.rm = TRUE),
+    aspect               = mean(aspect,               na.rm = TRUE),
+    dist_to_edge         = mean(dist_to_edge,         na.rm = TRUE),
+    .groups = "drop"
+  )
 
+# add averaged distrubance data back to vegetation chars 
+all_plots_env <- all_plots %>%
+  as.data.frame() %>% 
+  select(-pre_dist_trees_n, -area_m2, -pre_dist_dens_ha, 
+         -time_snc_full_disturbance, -disturbance_year, 
+         -forest_year, -disturbance_length,
+         -x, -y) %>%
+  left_join(plot_means, by = c("plot_id", "year"))
+
+names(all_plots_env)
+names(all_sub_env)
+
+str(all_plots_env)
+str(all_sub_env)
+
+
+# merge into the same table
+# ── 1. add level indicator & subplot ID to plot-level ──────────
+all_sub_env_out <- all_sub_env %>%
+  mutate(level = "subplot") 
+
+all_plots_env_out <- all_plots_env %>%
+  mutate(level = "plot",
+         subplot = NA_character_) %>% # subplots don't exist at plot level
+  select(all_of(names(all_sub_env_out))) # match column order from subplot table
+
+
+# get both levels
+df_both <- bind_rows(all_sub_env_out, all_plots_env_out) %>%
+  arrange(plot_id, year, level, subplot) %>% 
+  mutate(time_since = year - disturbance_year)
+
+
+# ── 3. export ──────────────────────────────────────────────────
+fwrite(df_both, "EU_scripts_help/both_levels_EU_comb.csv")
+
+
+# ── Export -------------------------------------------
+fwrite(final_sub_env, "EU_scripts_help/env_chars_subplots.csv")
+fwrite(all_plots_env,  "EU_scripts_help/env_chars_plots.csv")
 
 
 # check distance calculation -------------------------------------------
@@ -253,3 +312,44 @@ plot(test_point, add = TRUE, col = "blue", pch = 19, cex = 1.5)
 legend("bottomleft", legend = "subplot", pch = 19, col = "blue", bty = "n", cex = 0.8)
 
 par(mfrow = c(1, 1))
+
+
+
+
+# Get climate data --------------------------------------------------------------
+
+dat <- fread("EU_scripts_help/both_levels_EU_comb.csv")
+
+# extract unique plot coordinates
+plots <- dat %>%
+  group_by(plot_id) %>%
+  summarise(x = mean(x),
+            y = mean(y),
+            disturbance_year = first(disturbance_year))
+
+plots_sf <- st_as_sf(
+  plots,
+  coords = c("x","y"),
+  crs = 3035
+)
+
+
+plots_wgs <- st_transform(plots_sf, 4326)
+
+library(terra)
+library(geodata)
+
+tavg <- geodata::worldclim_global(
+  var = "tavg",
+  res = 2.5,        # 2.5 arcmin ≈ 5 km
+  path = "climate"
+)
+
+prec <- geodata::worldclim_global(
+  var = "prec",
+  res = 2.5,
+  path = "climate"
+)
+
+tavg_vals <- terra::extract(tavg, vect(plots_wgs))
+prec_vals <- terra::extract(prec, vect(plots_wgs))
