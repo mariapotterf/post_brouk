@@ -103,13 +103,68 @@ pp_inset_model <- function(model, scale_y = 1, p_lab = NULL,
 
 
 # hold on all variables regarding species classifications
+# update laurs's code for my species
+# earlyspecs_laura <- c("lade","acps","frex","cabe","bepe","alin",
+#                       "algl","acca","acpl","soau","soar",
+#                       "coav","alvi","potr","poni","ulgl",
+#                       "saca","rops")
+
+# change the coding to match my data
+earlyspecs_laura <- c("lade",
+                      "acps",
+                      "frex",
+                      "cabe",
+                      "besp", # from bepe
+                      "alin",
+                      "algl",
+                      "acca",
+                      "acpl",
+                      "soau",
+                      "soar",
+                      "coav", # not present
+                      "alvi",
+                      "potr",
+                      "poni", # not present
+                      "ulsp",  # from ulgl
+                      "saca",
+                      "rops")
 
 
-earlyspecs_laura <- c("lade","acps","frex","cabe","bepe","alin",
-                      "algl","acca","acpl","soau","soar",
-                      "coav","alvi","potr","poni","ulgl",
-                      "saca","rops")
+# from Claude: 
+earlyspecs_cz <- c(
+  # Pioneer conifers - light-demanding, open-ground colonizers
+  "lade",   # Larix decidua
+  "pisy",   # Pinus sylvestris  ← important addition for CZ bark beetle sites
+  "psme",   # Pseudotsuga menziesii ← planted on salvage-logged sites
+  
+  # Classic pioneer broadleaves
+  "besp",   # Betula spp.
+  "potr",   # Populus tremula
+  "posp",   # Populus spp.
+  "saca",   # Salix caprea
+  "sasp",   # Salix spp.
+  "alin",   # Alnus incana
+  "algl",   # Alnus glutinosa
+  "alvi",   # Alnus viridis
+  "soau",   # Sorbus aucuparia
+  "soar",   # Sorbus aria
+  
+  # Secondary pioneers - fast on disturbed ground, moderate shade tolerance
+  "acps",   # Acer pseudoplatanus
+  "acpl",   # Acer platanoides
+  "frex",   # Fraxinus excelsior
+  "ulsp",   # Ulmus spp. - vigorous post-disturbance sprouting
+  "rops",   # Robinia pseudoacacia - invasive but strongly early seral
+  "aial"    # Ailanthus altissima - invasive, aggressive disturbed-ground colonizer
+)
 
+
+
+# > unique(species_class$species)
+# [1] "absp" "piab" "pisy" "psme" "lade" "juni" "taba" "acpl" "acps" "algl" "alin"
+# [12] "besp" "cabe" "fasy" "potr" "prav" "qusp" "saca" "sasp" "soar" "soau" "tisp"
+# [23] "acca" "aehi" "aial" "alvi" "casa" "frex" "fror" "jure" "osca" "posp" "rops"
+# [34] "soto" "ulsp"
 
 
 # update species labels
