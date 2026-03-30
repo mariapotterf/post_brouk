@@ -250,3 +250,38 @@ species_class <- tibble::tribble(
 
 
 
+# divide on functionnal groups
+species_functional <- tribble(
+  ~species, ~func_group,              ~rationale,
+  # ── Spontaneous pioneers: low shade tolerance, rarely planted ──────────────
+  "besp",   "spontaneous_pioneer",    "light-demanding, wind-dispersed, rarely planted",
+  "potr",   "spontaneous_pioneer",    "clonal sprouter, not planted",
+  "saca",   "spontaneous_pioneer",    "wind-dispersed, not planted",
+  "sasp",   "spontaneous_pioneer",    "wind-dispersed, not planted",
+  "soau",   "spontaneous_pioneer",    "bird-dispersed, not planted",
+  "alin",   "spontaneous_pioneer",    "N-fixer, riparian, not planted",
+  "algl",   "spontaneous_pioneer",    "N-fixer, not planted",
+  "alvi",   "spontaneous_pioneer",    "N-fixer, not planted",
+  "rops",   "spontaneous_pioneer",    "invasive, not planted in CZ policy",
+  "aial",   "spontaneous_pioneer",    "invasive, not planted",
+  
+  # ── Economically valuable early-seral: planted AND naturally recruiting ────
+  "pisy",   "economic_early",         "timber value, drought tolerant, planted + natural",
+  "lade",   "economic_early",         "timber value, planted on salvage sites",
+  "psme",   "economic_early",         "timber value, planted on salvage sites",
+  "acps",   "economic_early",         "mixed forest target, moderate shade tolerance",
+  
+  # ── Climate-target late-seral: planted as policy species ──────────────────
+  "fasy",   "planted_late_seral",     "shade tolerant, CZ subsidy target, low drought tol.",
+  "qusp",   "planted_late_seral",     "drought tolerant, CZ subsidy target",
+  "absp",   "planted_late_seral",     "shade tolerant, mixed forest target",
+  "acpl",   "planted_late_seral",     "mixed forest target",
+  "frex",   "planted_late_seral",     "mixed forest target, declining due to ash dieback",
+  "ulsp",   "planted_late_seral",     "mixed forest target",
+  
+  # ── Legacy conifer: the pre-disturbance dominant ───────────────────────────
+  "piab",   "legacy_conifer",         "pre-disturbance dominant, drought sensitive"
+)
+
+
+
