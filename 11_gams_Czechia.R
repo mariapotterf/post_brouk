@@ -421,20 +421,354 @@ ggplot(delta_df, aes(x = planting_intensity, y = delta_early)) +
 
 # look only at spruce shares and changes --------------------------------
 
-# ── Spruce share change per plot ─────────────────────────────────────────────
-spruce_delta <- dat_overlap %>%
+# ── Recode TSD outliers ───────────────────────────────────────────────────────
+dat_overlap_recoded <- dat_overlap %>%
+  mutate(
+    time_snc_full_disturbance = case_when(
+      time_snc_full_disturbance == 0  ~ 1L,
+      time_snc_full_disturbance == 7  ~ 6L,
+      time_snc_full_disturbance == 11 ~ 6L,
+      time_snc_full_disturbance == 13 ~ 6L,  # also visible in your plot
+      TRUE ~ time_snc_full_disturbance
+    )
+  )
+
+# sanity check — should only show 1:6
+cat("TSD values after recode:", 
+    sort(unique(dat_overlap_recoded$time_snc_full_disturbance)), "\n")
+
+
+spruce_tsd_bar <- dat_overlap_recoded %>%
   filter(status == "both", !is.na(n)) %>%
+  group_by(plot, year, time_snc_full_disturbance) %>%
+  summarise(
+    total_stems  = sum(n, na.rm = TRUE),
+    spruce_stems = sum(n[species == "piab"], na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(spruce_share = spruce_stems / total_stems) %>%
+  # deduplicate: one row per plot, use mean share across years if plot appears twice
+  group_by(plot, time_snc_full_disturbance) %>%
+  summarise(
+    spruce_share = mean(spruce_share, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    spruce_class = case_when(
+      spruce_share == 0   ~ "absent",
+      spruce_share < 0.33 ~ "minor",
+      spruce_share < 0.66 ~ "codominant",
+      TRUE                ~ "dominant"
+    ),
+    spruce_class = factor(spruce_class,
+                          levels = c("dominant", "codominant", "minor", "absent")),
+    tsd = factor(time_snc_full_disturbance)
+  ) %>%
+  group_by(tsd) %>%
+  mutate(n_plots_tsd = n_distinct(plot)) %>%
+  ungroup() %>%
+  count(tsd, spruce_class, n_plots_tsd) %>%
+  mutate(
+    pct          = n / n_plots_tsd * 100,
+    width_scaled = scales::rescale(n_plots_tsd, to = c(0.2, 0.9))
+  )
+
+# verify — each tsd should sum to 100%
+spruce_tsd_bar %>% group_by(tsd) %>% summarise(total_pct = sum(pct))
+
+# ── Seral TSD stacked bar ─────────────────────────────────────────────────────
+seral_tsd_bar <- dat_overlap_recoded %>%
+  filter(status == "both", !is.na(n)) %>%
+  mutate(seral = if_else(species %in% earlyspecs_cz, "early", "late")) %>%
+  group_by(plot, year, time_snc_full_disturbance, seral) %>%
+  summarise(stems = sum(n, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(names_from = seral, values_from = stems, values_fill = 0) %>%
+  mutate(
+    total_stems = early + late,
+    seral_share = if_else(total_stems == 0, 0, early / total_stems)
+  ) %>%
+  # deduplicate: one row per plot
+  group_by(plot, time_snc_full_disturbance) %>%
+  summarise(
+    seral_share = mean(seral_share, na.rm = TRUE),
+    total_stems = mean(total_stems, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    seral_class = case_when(
+      total_stems == 0   ~ "No regeneration",   # truly empty plots
+      seral_share == 0   ~ "Late-dominated",   # has stems, all late-seral
+      seral_share <= 0.2 ~ "Late-dominated",
+      seral_share >= 0.8 ~ "Early-dominated",
+      TRUE               ~ "Mixed"
+    ),
+    seral_class = factor(seral_class,
+                         levels = c("Early-dominated", "Mixed", 
+                                    "Late-dominated", #"Late seral only", 
+                                    "No regeneration")),
+    tsd = factor(time_snc_full_disturbance)
+  ) %>%
+  group_by(tsd) %>%
+  mutate(n_plots_tsd = n_distinct(plot)) %>%
+  ungroup() %>%
+  count(tsd, seral_class, n_plots_tsd) %>%
+  mutate(
+    pct          = n / n_plots_tsd * 100,
+    width_scaled = scales::rescale(n_plots_tsd, to = c(0.2, 0.9))
+  )
+
+# verify
+seral_tsd_bar %>% group_by(tsd) %>% summarise(total_pct = sum(pct))
+
+# ── Shared n label data ───────────────────────────────────────────────────────
+spruce_tsd_n <- spruce_tsd_bar %>% distinct(tsd, n_plots_tsd, width_scaled)
+seral_tsd_n  <- seral_tsd_bar  %>% distinct(tsd, n_plots_tsd, width_scaled)
+
+# ── Colors ────────────────────────────────────────────────────────────────────
+seral_colors <- c(
+  "Early-dominated"  = "#4dac26",
+  "Mixed"            = "#b8b8b8",
+  "Late-dominated"   = "#d01c8b",
+ # "Late seral only"  = "#e8c8e8",   # light purple — late but present
+  "No regeneration"  = "#d9d9d9"    # grey — truly empty
+)
+
+# ── Plot function (DRY) ───────────────────────────────────────────────────────
+make_tsd_bar <- function(dat, n_dat, fill_colors, fill_name, y_lab) {
+  ggplot(dat, aes(x = tsd, y = pct, fill = fct_rev(names(fill_colors) %>%
+                                                     factor(., levels = levels(dat[["spruce_class"]] %||%
+                                                                                 dat[["seral_class"]]))))
+  )
+}
+
+# add mid-segments 
+
+# ── Compute segment midpoints for trend lines ─────────────────────────────────
+# We need the cumulative % position (midpoint of each class within each bar)
+
+spruce_tsd_midpoints <- spruce_tsd_bar %>%
+  arrange(tsd, desc(spruce_class)) %>%   # stack order matches geom_col
+  group_by(tsd) %>%
+  mutate(
+    cum_pct  = cumsum(pct),
+    mid_pct  = cum_pct - pct / 2,
+    tsd_num  = as.numeric(as.character(tsd))
+  ) %>%
+  ungroup()
+
+seral_tsd_midpoints <- seral_tsd_bar %>%
+  arrange(tsd, desc(seral_class)) %>%
+  group_by(tsd) %>%
+  mutate(
+    cum_pct  = cumsum(pct),
+    mid_pct  = cum_pct - pct / 2,
+    tsd_num  = as.numeric(as.character(tsd))
+  ) %>%
+  ungroup()
+
+
+# ── Re-make summary data with numeric tsd ────────────────────────────────────
+spruce_tsd_bar <- spruce_tsd_bar %>% mutate(tsd_num = as.numeric(as.character(tsd)))
+seral_tsd_bar  <- seral_tsd_bar  %>% mutate(tsd_num = as.numeric(as.character(tsd)))
+spruce_tsd_n   <- spruce_tsd_n   %>% mutate(tsd_num = as.numeric(as.character(tsd)))
+seral_tsd_n    <- seral_tsd_n    %>% mutate(tsd_num = as.numeric(as.character(tsd)))
+
+
+
+
+# ── Spruce plot ───────────────────────────────────────────────────────────────
+p_spruce_tsd_bar <- ggplot(spruce_tsd_bar,
+                           aes(x = tsd_num, y = pct, fill = spruce_class,
+                               width = width_scaled)) +
+  geom_col() +
+  geom_line(
+    data = spruce_tsd_midpoints %>% mutate(tsd_num = as.numeric(as.character(tsd))),
+    aes(x = tsd_num, y = mid_pct, color = spruce_class, group = spruce_class),
+    linewidth = 0.8, linetype = "dashed", inherit.aes = FALSE
+  ) +
+  geom_point(
+    data = spruce_tsd_midpoints %>% mutate(tsd_num = as.numeric(as.character(tsd))),
+    aes(x = tsd_num, y = mid_pct, color = spruce_class),
+    size = 2, inherit.aes = FALSE
+  ) +
+  geom_text(data = spruce_tsd_n,
+            aes(x = tsd_num, y = 104, label = n_plots_tsd),
+            inherit.aes = FALSE, size = 2.8, color = "grey30") +
+  scale_fill_manual(values  = spruce_colors, name = "Spruce share") +
+  scale_color_manual(values = spruce_colors, guide = "none") +
+  scale_x_continuous(breaks = 1:6) +
+  scale_y_continuous(labels = scales::label_percent(scale = 1),
+                     limits = c(0, 110)) +
+  labs(x = "Time since disturbance (years)", y = "% of plots",
+       title = "Spruce dominance class") +
+  theme_classic(base_size = 11) +
+  theme(legend.position = "right")
+
+# ── Seral plot ────────────────────────────────────────────────────────────────
+p_seral_tsd_bar <- ggplot(seral_tsd_bar,
+                          aes(x = tsd_num, y = pct, fill = seral_class,
+                              width = width_scaled)) +
+  geom_col() +
+  geom_line(
+    data = seral_tsd_midpoints %>% mutate(tsd_num = as.numeric(as.character(tsd))),
+    aes(x = tsd_num, y = mid_pct, color = seral_class, group = seral_class),
+    linewidth = 0.8, linetype = "dashed", inherit.aes = FALSE
+  ) +
+  geom_point(
+    data = seral_tsd_midpoints %>% mutate(tsd_num = as.numeric(as.character(tsd))),
+    aes(x = tsd_num, y = mid_pct, color = seral_class),
+    size = 2, inherit.aes = FALSE
+  ) +
+  geom_text(data = seral_tsd_n,
+            aes(x = tsd_num, y = 104, label = n_plots_tsd),
+            inherit.aes = FALSE, size = 2.8, color = "grey30") +
+  scale_fill_manual(values  = seral_colors, name = "Seral composition") +
+  scale_color_manual(values = seral_colors, guide = "none") +
+  scale_x_continuous(breaks = 1:6) +
+  scale_y_continuous(labels = scales::label_percent(scale = 1),
+                     limits = c(0, 110)) +
+  labs(x = "Time since disturbance (years)", y = "% of plots",
+       title = "Seral stage composition") +
+  theme_classic(base_size = 11) +
+  theme(legend.position = "right")
+
+# ── Combined ──────────────────────────────────────────────────────────────────
+p_tsd_composition <- p_spruce_tsd_bar / p_seral_tsd_bar +
+  plot_annotation(tag_levels = list(c("[a]", "[b]"))) &
+  theme(plot.tag = element_text(size = 10, face = "plain"))
+
+p_tsd_composition
+
+ggsave("outFigsCZ/p_tsd_composition.png",
+       p_tsd_composition, width = 8, height = 7, dpi = 300, bg = "white")
+# how many plots without any stems?
+
+dat_overlap_recoded %>%
+  filter(status == "both") %>%
+  group_by(plot) %>%
+  summarise(total_stems = sum(n, na.rm = TRUE), .groups = "drop") %>%
+  summarise(
+    n_no_regen  = sum(total_stems == 0),
+    n_with_regen = sum(total_stems > 0),
+    total_plots  = n()
+  )
+
+
+# ── Spruce area plot ──────────────────────────────────────────────────────────
+
+spruce_tsd_bar <- spruce_tsd_bar %>%
+  mutate(
+    spruce_class = factor(spruce_class,
+                          levels = c("absent", "minor", "codominant", "dominant")),
+    pct_prop = pct / 100
+  )
+
+seral_tsd_bar <- seral_tsd_bar %>%
+  mutate(
+    seral_class = factor(seral_class,
+                         levels = c("Late-dominated", "Mixed", "Early-dominated")),
+    pct_prop = pct / 100
+  )
+
+# verify — must show levels in the order above
+levels(spruce_tsd_bar$spruce_class)
+levels(seral_tsd_bar$seral_class)
+
+
+p_spruce_tsd_area <- ggplot(
+  spruce_tsd_bar %>% arrange(tsd_num, spruce_class),  # NO as.character()
+  aes(x = tsd_num, y = pct_prop, fill = spruce_class)
+) +
+  geom_area(position = "fill", alpha = 0.85) +
+  geom_vline(xintercept = unique(spruce_tsd_bar$tsd_num),
+             color = "white", linewidth = 0.3, linetype = "dotted") +
+  geom_text(data = spruce_tsd_n,
+            aes(x = tsd_num, y = 1.04, label = n_plots_tsd),
+            inherit.aes = FALSE, size = 2.8, color = "grey30") +
+  scale_fill_manual(
+    values = spruce_colors,
+    name   = "Spruce share",
+    breaks = c("dominant", "codominant", "minor", "absent")
+  ) +
+  scale_x_continuous(breaks = 1:6) +
+  scale_y_continuous(#labels = scales::label_percent(scale = 100),
+                     limits = c(0, 1.08), expand = c(0, 0)) +
+  labs(x = "Time since disturbance (years)", y = "% of plots",
+       title = "Spruce dominance class") +
+  theme_classic(base_size = 10) +
+  theme(legend.position = "right")
+
+# ── Seral area plot ───────────────────────────────────────────────────────────
+p_seral_tsd_area <- ggplot(
+  seral_tsd_bar %>% arrange(tsd_num, seral_class),    # NO as.character()
+  aes(x = tsd_num, y = pct_prop, fill = seral_class)
+) +
+  geom_area(position = "fill", alpha = 0.85) +
+  geom_vline(xintercept = unique(seral_tsd_bar$tsd_num),
+             color = "white", linewidth = 0.3, linetype = "dotted") +
+  geom_text(data = seral_tsd_n,
+            aes(x = tsd_num, y = 1.04, label = n_plots_tsd),
+            inherit.aes = FALSE, size = 2.8, color = "grey30") +
+  scale_fill_manual(
+    values = seral_colors,
+    name   = "Seral composition",
+    breaks = c("Early-dominated", "Mixed", "Late-dominated")
+  ) +
+  scale_x_continuous(breaks = 1:6) +
+  scale_y_continuous(#labels = scales::label_percent(scale = 100),
+                     limits = c(0, 1.08), expand = c(0, 0)) +
+  labs(x = "Time since disturbance (years)", y = "% of plots",
+       title = "Seral stage composition") +
+  theme_classic(base_size = 10) +
+  theme(legend.position = "right")
+
+# ── Combined ──────────────────────────────────────────────────────────────────
+p_tsd_composition <- p_spruce_tsd_area / p_seral_tsd_area +
+  plot_annotation(tag_levels = list(c("[a]", "[b]"))) &
+  theme(plot.tag = element_text(size = 10, face = "plain"))
+
+p_tsd_composition
+
+ggsave("outFigsCZ/p_tsd_composition_area.png",
+       p_tsd_composition, width = 7, height = 6, dpi = 300, bg = "white")
+
+
+
+p_combined_spruce <- 
+  p_spruce_tsd_area /               # chronosequence: where are we heading?
+  (p_spruce_alluvial | p_spruce_planted) +   # change: what happened 2023→2025?
+  plot_annotation(tag_levels = list(c("[a]", "[b]", "[c]"))) &
+  theme(plot.tag = element_text(size = 10, face = "plain"))
+
+ggsave("outFigsCZ/p_spruce_combined.png",
+       p_combined_spruce, width = 10, height = 9, dpi = 300, bg = "white")
+
+
+
+# ── Spruce share change per plot ─────────────────────────────────────────────
+spruce_delta <- dat_overlap_recoded %>%
+  filter(status == "both") %>% #
+  mutate(n = if_else(is.na(n), 0L, n)) %>%   # replace NA with 0 before summarising
   group_by(plot, year) %>%
   summarise(
     total_stems  = sum(n, na.rm = TRUE),
     spruce_stems = sum(n[species == "piab"], na.rm = TRUE),
-    spruce_share = spruce_stems / total_stems,
+    spruce_share = if_else(total_stems == 0, 0, spruce_stems / total_stems),
+    #spruce_share = spruce_stems / total_stems,
     .groups = "drop"
   ) %>%
   pivot_wider(
     names_from  = year,
     values_from = c(total_stems, spruce_stems, spruce_share),
     names_sep   = "_"
+  ) %>%
+  mutate(
+    total_stems_2023  = replace_na(total_stems_2023,  0),
+    spruce_stems_2023 = replace_na(spruce_stems_2023, 0),
+    spruce_share_2023 = replace_na(spruce_share_2023, 0),
+    total_stems_2025  = replace_na(total_stems_2025,  0),
+    spruce_stems_2025 = replace_na(spruce_stems_2025, 0),
+    spruce_share_2025 = replace_na(spruce_share_2025, 0)
   ) %>%
   mutate(
     delta_spruce = spruce_share_2025 - spruce_share_2023
@@ -468,23 +802,62 @@ spruce_delta %>%
   filter(spruce_status %in% c("new_arrival", "absent_both")) %>%
   wilcox.test(planting_intensity ~ spruce_status, data = .)
 
+
+spruce_delta %>%
+  filter(spruce_status %in% c("new_arrival", "absent_both")) %>%
+  ggplot(aes(y = planting_intensity,
+             x = spruce_status)) +
+  geom_boxplot() +
+  geom_jitter()
+
+
+# cjheck where new occurences of spruce orccured: 
+
+spruce_delta %>%
+  filter(spruce_status %in% c("new_arrival", "absent_both")) %>%
+  mutate(planted = planting_intensity > 0) %>%
+  count(spruce_status, planted) %>%
+  pivot_wider(names_from = planted, values_from = n,
+              names_prefix = "planted_")
+
+
+
 # ── Is persistent spruce share increasing on planted plots? ───────────────────
 spruce_delta %>%
   filter(spruce_status == "persistent") %>%
   cor.test(~ delta_spruce + planting_intensity, data = ., method = "spearman")
 
 # ── Linear model: what drives delta spruce share? ─────────────────────────────
-lm_spruce <- lm(
-  delta_spruce ~ planting_intensity + time_snc_full_disturbance + clear_intensity,
-  data = spruce_delta
+spruce_delta_beta <- spruce_delta %>%
+  mutate(
+    spruce_share_2025_adj = case_when(
+      spruce_share_2025 == 0 ~ 0.001,
+      spruce_share_2025 == 1 ~ 0.999,
+      TRUE ~ spruce_share_2025
+    )
+  )
+
+gam_spruce_delta <- gam(
+  delta_spruce ~ planting_intensity +
+    s(factor(time_snc_full_disturbance), k = 4) +
+    s(plot, bs = "re"),
+  data   = spruce_delta,
+  family = gaussian(),   
+  method = "REML"
 )
-summary(lm_spruce)
-plot(lm_spruce)
+summary(gam_spruce_delta)
+gratia::draw(gam_spruce_delta)
+
+
+
+
 
 # ── Plot 1: delta spruce ~ planting intensity, colored by spruce status ───────
 p_spruce_delta <- ggplot(
   spruce_delta %>% filter(spruce_status != "absent_both"),
-  aes(x = planting_intensity, y = delta_spruce, color = spruce_status)
+  aes(x = planting_intensity, 
+      y = delta_spruce, 
+      color = spruce_status)
 ) +
   geom_hline(yintercept = 0, linetype = "dashed", color = "grey50") +
   geom_point(alpha = 0.5, size = 1.8) +
@@ -573,7 +946,7 @@ p_spruce_alluvial <- ggplot(spruce_alluvial,
   geom_alluvium(aes(fill = spruce_class_2023),
                 width = 1/4, alpha = 0.7, knot.pos = 0.4) +
   geom_stratum(aes(fill = after_stat(stratum)),
-               width = 1/4, color = "white", linewidth = 0.5) +
+               width = 1/4, color = "black", linewidth = 0.5) +
   geom_text(stat = "stratum",
             aes(label = after_stat(stratum)),
             size = 3.2) +
@@ -592,7 +965,7 @@ p_spruce_alluvial <- ggplot(spruce_alluvial,
 p_spruce_alluvial
 
 ggsave("outFigsCZ/p_spruce_alluvial.png",
-       p_spruce_alluvial, width = 5, height = 5, dpi = 300, bg = "white")
+       p_spruce_alluvial, width = 7, height = 5, dpi = 300, bg = "white")
 
 
 
@@ -672,14 +1045,42 @@ p_spruce_planted
 ggsave("outFigsCZ/p_spruce_planted_vs_not.png",
        p_spruce_planted,
        width = 7, height = 5, dpi = 300, bg = "white")
-p_spruce_alluvial_pct
+
+
+p_spruce_tsd_area <- p_spruce_tsd_area +
+  theme(
+    legend.position  = "bottom",
+    legend.direction = "vertical",
+    legend.title.position = "top",
+    legend.title      = element_text(hjust = 0.5)
+  ) +
+  guides(
+    fill = guide_legend(nrow = 1)
+  )
+
+p_combined_spruce <- 
+  (p_spruce_tsd_area |                # chronosequence: where are we heading?
+  p_spruce_planted) +   # change: what happened 2023→2025?
+  plot_layout(widths = c(1, 3)) +
+  plot_annotation(tag_levels = list(c("[a]", "[b]"))) #&
+  #theme(plot.tag = element_text(size = 10, face = "plain"))
+
+p_combined_spruce
+
+
+p_combined_spruce2 <- 
+  (p_spruce_tsd_area |                # chronosequence: where are we heading?
+     p_spruce_alluvial ) +   # change: what happened 2023→2025?
+  plot_layout(widths = c(1, 1.5)) +
+  plot_annotation(tag_levels = list(c("[a]", "[b]"))) #&
+#theme(plot.tag = element_text(size = 10, face = "plain"))
+
+p_combined_spruce2
 
 
 
-
-
-
-
+ggsave("outFigsCZ/p_spruce_combined.png",
+       p_combined_spruce, width = 10, height = 9, dpi = 300, bg = "white")
 
 
 
@@ -992,9 +1393,9 @@ p_species_composition <- ggarrange(p_bar, p_occurence,# p_density,
 p_species_composition
 
 # Export to PNG
-# ggsave("outFigs/p_species_composition.png", 
-#        plot = p_species_composition,
-#        width = 7, height = 3, units = "in", dpi = 300)
+ggsave("outFigsCZ/p_species_composition.png",
+       plot = p_species_composition,
+       width = 7, height = 3, units = "in", dpi = 300)
 
 
 
