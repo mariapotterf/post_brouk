@@ -129,6 +129,48 @@ mng_both25 <- dat_overlap_mng %>%
   arrange(plot, subplot) %>%
   mutate(row_id = row_number())
 
+
+# Get management separately: per plot per year — long format ────────────────────────────────
+mng_by_year <- dat_overlap %>%
+  filter(status == "both", year %in% c(2023, 2025)) %>%
+  distinct(plot, subplot, year,
+           clear, grndwrk, logging_trail, planting, anti_browsing) %>%
+  group_by(plot, subplot, year) %>%
+  summarise(across(c(clear, grndwrk, logging_trail, planting, anti_browsing),
+                   ~ max(.x, na.rm = TRUE)),
+            .groups = "drop") %>%
+  # plot-level intensity per year
+  group_by(plot, year) %>%
+  summarise(
+    clear_intensity          = mean(clear,          na.rm = TRUE),
+    grndwrk_intensity        = mean(grndwrk,        na.rm = TRUE),
+    logging_trail_intensity  = mean(logging_trail,  na.rm = TRUE),
+    planting_intensity       = mean(planting,       na.rm = TRUE),
+    anti_browsing_intensity  = mean(anti_browsing,  na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# ── Wide format: one row per plot, columns per year ───────────────────────────
+mng_wide <- mng_by_year %>%
+  pivot_wider(
+    names_from  = year,
+    values_from = c(clear_intensity, grndwrk_intensity, logging_trail_intensity,
+                    planting_intensity, anti_browsing_intensity),
+    names_sep   = "_"
+  ) %>%
+  # delta: did management intensity change?
+  mutate(
+    delta_planting      = planting_intensity_2025       - planting_intensity_2023,
+    delta_browsing      = anti_browsing_intensity_2025  - anti_browsing_intensity_2023,
+    delta_grndwrk       = grndwrk_intensity_2025        - grndwrk_intensity_2023,
+    delta_clear         = clear_intensity_2025          - clear_intensity_2023,
+    delta_logging_trail = logging_trail_intensity_2025  - logging_trail_intensity_2023
+  )
+
+hist(mng_wide$delta_planting)
+
+
+
 ## Combine by row order, take max per management variable
 mng_both25_upd <- bind_rows(mng_both23, mng_both25) %>%
   group_by(plot, row_id) %>%
@@ -789,6 +831,10 @@ data.table::fwrite(plot_df_AEF2,    "outData/plot_df_AEF2_all_countries.csv")
 data.table::fwrite(sub_df_AEF,      "outData/sub_df_AEF_all_countries.csv")
 data.table::fwrite(beta_plotyear,   "outData/beta_plotyear_all_countries.csv")
 data.table::fwrite(dat_overlap_mng_upd2,   "outData/dat_full_species_all_countries.csv")
+
+#mng_wide
+data.table::fwrite(mng_wide,   "outData/mng_intensity_year_CZ.csv")
+
 
 
 # 6. Figures -----------------------------------------------------
