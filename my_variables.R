@@ -285,3 +285,12 @@ species_functional <- tribble(
 
 
 
+seral_colors <- c(
+  "Early-dominated"  = "#4dac26",
+  "Mixed"            = "#b8b8b8",
+  "Late-dominated"   = "#d01c8b",
+  # "Late seral only"  = "#e8c8e8",   # light purple — late but present
+  "No regeneration"  = "#d9d9d9"    # grey — truly empty
+)
+
+
