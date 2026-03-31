@@ -505,16 +505,6 @@ hist(species_traits$drought_tol, breaks = 15,
      main = "Species drought tolerance (Niinemets)",
      xlab = "Drought tolerance (higher = more tolerant)")
 
-# ── Trait space plot ──────────────────────────────────────────────────────────
-ggplot(species_traits, aes(x = drought_tol, y = shade_tol, label = species)) +
-  geom_point(size = 3, color = "steelblue") +
-  ggrepel::geom_text_repel(size = 3) +
-  geom_vline(xintercept = c(2.2, 3.3), linetype = "dashed", color = "grey50") +
-  labs(x = "Drought tolerance (Niinemets)",
-       y = "Shade tolerance (Niinemets)",
-       title = "Species trait space — adjust thresholds after seeing this") +
-  theme_classic()
-
 
 # ── Data-driven functional classification using Niinemets drought tolerance ───
 species_functional_v2 <- species_traits %>%
@@ -548,7 +538,7 @@ drought_labels <- c(
 )
 
 
-drought_class_lab = "Drought tolerance\nclasses"
+drought_class_title = "Drought tolerance\nclasses"
 
 drought_cl_levels <- c("Norway_spruce", "drought_sensitive",
   "intermediate", "drought_tolerant",
@@ -561,6 +551,15 @@ drought_colors <- c(
   "drought_tolerant"  = "#d73027",   # deep red — high drought, matches Abies/rare end
   "no_regeneration"   = "#d9d9d9"    # grey
 )
+
+
+shared_fill <- scale_fill_manual(
+  values = drought_colors,
+  name   =  drought_class_title,# "Drought tolerance\nclass",
+  breaks = drought_cl_levels,
+  labels = drought_labels
+)
+
 ggplot(species_functional_v2,
        aes(x = drought_tol, y = shade_tol,
            color = func_group_drought, label = species)) +
@@ -634,30 +633,56 @@ func_stems_base_v2 <- dat_overlap_recoded2 %>%
               values_fill = 0) %>%
   compute_func_shares_v2()
 
+func_tsd_bar_v2 <- func_stems_base_v2 %>%
+  group_by(plot, time_snc_full_disturbance) %>%
+  summarise(
+    across(starts_with("share_"), ~ mean(.x, na.rm = TRUE)),
+    total_stems = mean(total_stems, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    dom_func = factor(
+      classify_dom_func_v2(share_spruce, share_drought_sens,
+                           share_intermediate, share_drought_tol,
+                           total_stems),
+      levels = drought_cl_levels
+    ),
+    tsd     = factor(time_snc_full_disturbance),
+    tsd_num = time_snc_full_disturbance
+  ) %>%
+  group_by(tsd) %>%
+  mutate(n_plots_tsd = n_distinct(plot)) %>%
+  ungroup() %>%
+  count(tsd, tsd_num, dom_func, n_plots_tsd) %>%
+  mutate(pct = n / n_plots_tsd * 100)
 
+
+
+
+# get text for classes
 func_tsd_n_v2 <- func_tsd_bar_v2 %>% distinct(tsd, tsd_num, n_plots_tsd)
+
+func_tsd_bar_v2 <- func_tsd_bar_v2 %>%
+  mutate(dom_func = factor(dom_func, levels = drought_cl_levels))
 
 
 # Option B: switch back to stacked bar which is more honest
 # for only 6 data points with unequal n
 p_bar_TSD <- ggplot(func_tsd_bar_v2,
-       aes(x = tsd_num, y = pct, fill = dom_func#,
-           #width = scales::rescale(n_plots_tsd, to = c(0.4, 0.95))
-           )) +
-  geom_col() +
-  scale_fill_manual(values = drought_colors,
-                    name = drought_class_lab,
-                    labels = drought_labels  ) +
+                    aes(x = tsd_num, y = pct, fill = dom_func)) +
+  geom_col(color = "black", linewidth = 0.3) +
+  shared_fill +
   scale_x_continuous(breaks = 1:6,
                      expand = expansion(mult = c(0.05, 0.05))) +
-  scale_y_continuous(#labels = scales::label_percent(scale = 1),
-                     limits = c(0, 110)) +
-  geom_text(data = func_tsd_n_v2,
-            aes(x = tsd_num, y = 104, label = n_plots_tsd),
-            inherit.aes = FALSE, size = 2.8, color = "grey50") +
+  scale_y_continuous(limits = c(0, 110),          # bars capped at 100%
+                     expand = expansion(mult = c(0, 0))) +
+geom_text(data = func_tsd_n_v2,
+          aes(x = tsd_num, y = 104, label = n_plots_tsd),
+          inherit.aes = FALSE, size = 2.8, color = "grey50") +
+ coord_cartesian(ylim = c(0, 100), clip = "off") +   # clip="off" here +                        # allow text outside plot area
   labs(x = "Time since disturbance\n(years)", y = "Share of plots [%]") +
-  theme(legend.position = "right")
-
+   theme(legend.position  = "right",
+         plot.margin      = margin(t = 40, r = 5, b = 5, l = 5))  # room for n labels
 p_bar_TSD
 
 
@@ -668,20 +693,6 @@ ggsave("outFigsCZ/p_func_tsd_col_v2.png",
 
 
 # ── Functional group alluvial: drought classification 2023 → 2025 ─────────────
-func_alluvial_v2 <- func_stems_base_v2 %>%
-  mutate(
-    dom_func = classify_dom_func_v2(share_spruce, share_drought_sens,
-                                    share_intermediate, share_drought_tol,
-                                    total_stems)
-  ) %>%
-  select(plot, year, dom_func) %>%
-  pivot_wider(names_from = year, values_from = dom_func, names_prefix = "func_") %>%
-  filter(!is.na(func_2023), !is.na(func_2025)) %>%
-  mutate(
-    func_2023 = factor(func_2023, levels = drought_cl_levels),
-    func_2025 = factor(func_2025, levels =  drought_cl_levels)
-  ) %>%
-  count(func_2023, func_2025, name = "n")
 
 # ── Display labels ────────────────────────────────────────────────────────────
 # drought_labels <- c(
@@ -692,18 +703,27 @@ func_alluvial_v2 <- func_stems_base_v2 %>%
 #   "no_regeneration"   = "No\nregeneration"
 # )
 
-drought_colors_labeled <- setNames(drought_colors, drought_labels)
+#drought_colors_labeled <- setNames(drought_colors, drought_labels)
 
-func_alluvial_v2_plot <- func_alluvial_v2 %>%
-  mutate(
-    func_2023 = factor(recode(func_2023, !!!drought_labels), 
-                       levels = drought_labels),
-    func_2025 = factor(recode(func_2025, !!!drought_labels), 
-                       levels = drought_labels)
-  )
 
 # ── Plot ──────────────────────────────────────────────────────────────────────
-p_func_alluvial_v2 <- ggplot(func_alluvial_v2_plot,
+func_alluvial_v2 <- func_stems_base_v2 %>%
+  mutate(
+    dom_func = classify_dom_func_v2(share_spruce, share_drought_sens,
+                                    share_intermediate, share_drought_tol,
+                                    total_stems)
+  ) %>%
+  select(plot, year, dom_func) %>%
+  pivot_wider(names_from = year, values_from = dom_func, names_prefix = "func_") %>%
+  filter(!is.na(func_2023), !is.na(func_2025)) %>%
+  mutate(
+    func_2023 = factor(func_2023, levels = drought_cl_levels),  # codes only
+    func_2025 = factor(func_2025, levels = drought_cl_levels)   # codes only
+  ) %>%
+  count(func_2023, func_2025, name = "n")
+
+
+p_func_alluvial_v2 <- ggplot(func_alluvial_v2,
                              aes(axis1 = func_2023,
                                  axis2 = func_2025,
                                  y = n)) +
@@ -711,38 +731,49 @@ p_func_alluvial_v2 <- ggplot(func_alluvial_v2_plot,
                 width = 0.4, alpha = 0.7, knot.pos = 0.4) +
   geom_stratum(aes(fill = after_stat(stratum)),
                width = 0.4, color = "black", linewidth = 0.5) +
-  # only percentage, no stratum name
   geom_text(stat = "stratum",
             aes(label = ifelse(after_stat(prop) >= 0.02,
                                paste0(round(after_stat(prop) * 100, 1), "%"),
                                "")),
             size = 3, color = "grey20") +
   scale_x_discrete(limits = c("2023", "2025"),
-                   expand = expansion(mult = c(0.25, 0.25))) +
-  # show legend with proper labels
-  scale_fill_manual(
-    values = drought_colors_labeled,
-    name   = drought_class_lab,
-    breaks = drought_labels,          # use display label order
-    labels = drought_labels #names(drought_labels)    # e.g. "Norway\nspruce" etc.
-  ) +
+                   name = ''
+                   #expand = expansion(mult = c(0.25, 0.25)
+                    #                  )
+                   ) +
+  scale_fill_manual(values = drought_colors, guide = "none") +  # no legend
   labs(x = NULL, y = "Number of plots") +
   theme(
-    axis.text.x      = element_text(face = "bold"),
-    axis.line.x      = element_blank(),
-    axis.ticks.x     = element_blank(),
-    legend.position  = "right",
-    legend.title     = element_text(size = 9),
-    legend.text      = element_text(size = 8)
+    axis.text.x  = element_text(face = "bold"),
+    axis.line.x  = element_blank(),
+    axis.ticks.x = element_blank()
   )
 
-p_func_alluvial_v2
-p_bar_TSD
 
 
-ggsave("outFigsCZ/p_func_alluvial_v2.png",
-       p_func_alluvial_v2, width = 5, 
-       height = 3, dpi = 300, bg = "white")
+# verify levels are codes not display labels
+levels(func_alluvial_v2$func_2023)
+# should show: "Norway_spruce" "drought_sensitive" "intermediate" "drought_tolerant" "no_regeneration"
+
+
+p_combined_func <- (p_func_alluvial_v2 | p_bar_TSD) +
+  plot_layout(widths = c(1, 1), heights = c(1,1)) +
+  plot_annotation(tag_levels = list(c("[a]", "[b]")))# &
+  #theme(
+  #  plot.tag        = element_text(size = 10, face = "plain"),
+  #  legend.position = "right"
+  #)
+
+p_combined_func
+
+
+
+
+
+
+ggsave("outFigsCZ/p_combined_function.png",
+       p_combined_func, width = 7, 
+       height = 3.5, dpi = 300, bg = "white")
 
 
 
