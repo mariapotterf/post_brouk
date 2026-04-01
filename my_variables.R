@@ -57,7 +57,8 @@ calc_iv_plot    <- function(data, size_var) calc_iv_core(data, {{ size_var }}, p
 ## Plotting helpers for model predictions (used in §5-6)
 pp <- function(model, terms, xlab = NULL, ylab = NULL,
                annot = NULL, scale_y = 1,
-               annot_x = 3.5, annot_y = NULL) {
+               annot_x = 3.5, annot_y = NULL,
+               ylim = NULL) {
   pr <- ggpredict(model, terms = terms, exclude = "s(plot_id)") %>%
     as.data.frame() %>%
     mutate(across(c(predicted, conf.low, conf.high), ~ . * scale_y))
@@ -67,18 +68,28 @@ pp <- function(model, terms, xlab = NULL, ylab = NULL,
     geom_line(linewidth = 0.8) +
     labs(x = xlab, y = ylab, colour = "Scale") +
     scale_color_manual(values = c("subplot" = "grey80", "plot" = "grey30")) +
-    scale_fill_manual( values = c("subplot" = "grey80", "plot" = "grey30"), guide = "none") +
+    scale_fill_manual(values = c("subplot" = "grey80", "plot" = "grey30"), guide = "none") +
+    coord_cartesian(ylim = ylim, clip = "off") +   # clip off here, ylim passed in
     theme_classic() +
-    theme(axis.title = element_text(size = 7))
+    theme(axis.title  = element_text(size = 7),
+          plot.margin = margin(t = 25, r = 5, b = 5, l = 5))
   
   if (!is.null(annot))
-    p <- p + annotate("text", x = annot_x, y = annot_y,
-                      label = annot, size = 2.5, hjust = 0.5)
+    p <- p + annotate("text",
+                      x     = annot_x,
+                      y     = Inf,
+                      label = annot,
+                      size  = 2.5,
+                      hjust = 0.5,
+                      vjust = 1.1)
   p
 }
 
+
+# ── pp_inset_model: also add ylim parameter ───────────────────────────────────
 pp_inset_model <- function(model, scale_y = 1, p_lab = NULL,
-                           annot_x = 1.5, annot_y = NULL) {
+                           annot_x = 1.5, annot_y = NULL,
+                           ylim = NULL) {
   pr <- ggpredict(model, terms = "level") %>%
     as.data.frame() %>%
     mutate(across(c(predicted, conf.low, conf.high), ~ . * scale_y))
@@ -86,8 +97,16 @@ pp_inset_model <- function(model, scale_y = 1, p_lab = NULL,
   ggplot(pr, aes(x = x, y = predicted, colour = x)) +
     geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = .08) +
     geom_point(size = 2.4) +
-    annotate("text", x = annot_x, y = annot_y, label = p_lab, size = 2.5) +
-    scale_color_manual(values = c("subplot" = "grey80", "plot" = "grey30"), guide = "none") +
+    annotate("text",
+             x     = annot_x,
+             y     = Inf,
+             label = p_lab,
+             size  = 2.5,
+             hjust = 0.5,
+             vjust = 1.1) +
+    scale_color_manual(values = c("subplot" = "grey80", "plot" = "grey30"),
+                       guide = "none") +
+    coord_cartesian(ylim = ylim, clip = "off") +
     theme_classic(base_size = 8) +
     theme(axis.title      = element_blank(),
           axis.text.y     = element_blank(),
@@ -95,8 +114,9 @@ pp_inset_model <- function(model, scale_y = 1, p_lab = NULL,
           axis.line.y     = element_blank(),
           axis.text.x     = element_text(size = 7),
           legend.position = "none",
-          plot.margin     = margin(5, 5, 5, 0))
+          plot.margin     = margin(t = 25, r = 5, b = 5, l = 5))
 }
+
 
 
 
