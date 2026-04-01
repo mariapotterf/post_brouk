@@ -423,50 +423,9 @@ summary(tree_summary)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TEMPORAL CHANGE ANALYSIS: species composition, spruce, functional groups
+# TEMPORAL CHANGE ANALYSIS: functional groups
 # ══════════════════════════════════════════════════════════════════════════════
 
-# ── 0. Shared helpers ─────────────────────────────────────────────────────────
-
-# Classify spruce share into dominance classes
-classify_spruce <- function(share) {
-  case_when(
-    share == 0   ~ "absent",
-    share < 0.33 ~ "minor",
-    share < 0.66 ~ "codominant",
-    TRUE         ~ "dominant"
-  )
-}
-
-# Classify dominant functional group from share columns
-classify_dom_func <- function(share_legacy, share_spontaneous,
-                              share_economic, share_late_seral,
-                              total_stems) {
-  case_when(
-    total_stems == 0                                                  ~ "no_regeneration",
-    share_legacy      == pmax(share_legacy, share_spontaneous,
-                              share_economic, share_late_seral)       ~ "legacy_conifer",
-    share_spontaneous == pmax(share_legacy, share_spontaneous,
-                              share_economic, share_late_seral)       ~ "spontaneous_pioneer",
-    share_economic    == pmax(share_legacy, share_spontaneous,
-                              share_economic, share_late_seral)       ~ "economic_early",
-    TRUE                                                               ~ "planted_late_seral"
-  )
-}
-
-# Compute functional group shares from stem counts
-compute_func_shares <- function(df) {
-  df %>%
-    mutate(
-      total_stems       = spontaneous_pioneer + economic_early +
-        planted_late_seral + legacy_conifer + other,
-      share_spontaneous = if_else(total_stems == 0, 0, spontaneous_pioneer / total_stems),
-      share_economic    = if_else(total_stems == 0, 0, economic_early / total_stems),
-      share_late_seral  = if_else(total_stems == 0, 0, planted_late_seral / total_stems),
-      share_legacy      = if_else(total_stems == 0, 0, legacy_conifer / total_stems),
-      share_other       = if_else(total_stems == 0, 0, other / total_stems)
-    )
-}
 
 # Recode TSD outliers — applied once, used everywhere
 dat_overlap_recoded <- dat_overlap %>%
@@ -486,6 +445,7 @@ dat_overlap_recoded <- dat_overlap %>%
   )
 
 
+# Get species traits -------------------------
 species_traits <- dat_overlap_recoded %>%
   filter(!is.na(species), species != "",
          !is.na(Drought_tolerance)) %>%
@@ -568,7 +528,7 @@ ggplot(species_functional_v2,
   geom_vline(xintercept = c(2.2, 3.3),
              linetype = "dashed", color = "grey50") +
   scale_color_manual(values = drought_colors, 
-                     name = drought_class_lab,
+                     name = drought_class_title,
                      labels = drought_labels ) +
   labs(x = "Drought tolerance (Niinemets)",
        y = "Shade tolerance (Niinemets)") +
@@ -605,7 +565,7 @@ compute_func_shares_v2 <- function(df) {
     )
 }
 
-# ── Update classify_dom_func for new groups ───────────────────────────────────
+# ── classify_dom_func for new groups ───────────────────────────────────
 classify_dom_func_v2 <- function(share_spruce, share_drought_sens,
                                  share_intermediate, share_drought_tol,
                                  total_stems) {
@@ -757,7 +717,7 @@ levels(func_alluvial_v2$func_2023)
 
 
 p_combined_func <- (p_func_alluvial_v2 | p_bar_TSD) +
-  plot_layout(widths = c(1, 1), heights = c(1,1)) +
+  plot_layout(widths = c(1.2, 1), heights = c(1.2,1)) +
   plot_annotation(tag_levels = list(c("[a]", "[b]")))# &
   #theme(
   #  plot.tag        = element_text(size = 10, face = "plain"),
@@ -776,366 +736,78 @@ ggsave("outFigsCZ/p_combined_function.png",
        height = 3.5, dpi = 300, bg = "white")
 
 
+# ── Climate adaptation score per plot ─────────────────────────────────────────
+# higher = more climate adapted
+# use 2025 composition as the outcome (current state)
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# 1. SERAL STAGE COMPOSITION
-# ══════════════════════════════════════════════════════════════════════════════
-
-# ── 1a. Seral share per plot × year ──────────────────────────────────────────
-seral_share_plot <- dat_overlap %>%
-  filter(status == "both", !is.na(n), n > 0) %>%
-  mutate(seral_stage = if_else(species %in% earlyspecs_cz, "early", "late")) %>%
-  group_by(plot, year) %>%
-  mutate(total_stems = sum(n)) %>%
-  group_by(plot, year, seral_stage) %>%
-  summarise(share = sum(n) / first(total_stems), .groups = "drop")
-
-# ── 1b. Wide format: one row per plot ────────────────────────────────────────
-seral_ratio_both <- seral_share_plot %>%
-  pivot_wider(
-    names_from  = c(seral_stage, year),
-    values_from = share,
-    values_fill = 0
-  ) %>%
+climate_adapt <- func_stems_base_v2 %>%
+  filter(year == 2025) %>%
   mutate(
-    early_share_2023 = early_2023,
-    early_share_2025 = early_2025
-  ) %>%
-  filter(!is.na(early_2023) | late_2023 > 0,
-         !is.na(early_2025) | late_2025 > 0)
-
-# ── 1c. Tests: did early seral share change? ──────────────────────────────────
-wilcox.test(seral_ratio_both$early_share_2023,
-            seral_ratio_both$early_share_2025,
-            paired = TRUE)
-
-seral_ratio_both %>%
-  summarise(
-    median_early_2023 = median(early_share_2023, na.rm = TRUE),
-    median_early_2025 = median(early_share_2025, na.rm = TRUE),
-    mean_early_2023   = mean(early_share_2023,   na.rm = TRUE),
-    mean_early_2025   = mean(early_share_2025,   na.rm = TRUE),
-    early_dom_2023    = sum(early_share_2023 > 0.5, na.rm = TRUE),
-    early_dom_2025    = sum(early_share_2025 > 0.5, na.rm = TRUE)
-  )
-
-# ── 1d. Alluvial: seral trajectory 2023 → 2025 ───────────────────────────────
-classify_seral_traj <- function(share) {
-  case_when(
-    share < 0.2 ~ "Late-dominated",
-    share > 0.8 ~ "Early-dominated",
-    TRUE        ~ "Mixed"
-  )
-}
-
-traj_alluvial <- seral_ratio_both %>%
-  mutate(
-    traj_2023 = factor(classify_seral_traj(early_share_2023),
-                       levels = c("Early-dominated", "Mixed", "Late-dominated")),
-    traj_2025 = factor(classify_seral_traj(early_share_2025),
-                       levels = c("Early-dominated", "Mixed", "Late-dominated"))
-  ) %>%
-  count(traj_2023, traj_2025, name = "n")
-
-seral_traj_colors <- c(
-  "Early-dominated" = "#4dac26",
-  "Mixed"           = "#b8b8b8",
-  "Late-dominated"  = "#d01c8b"
-)
-
-p_alluvial <- ggplot(traj_alluvial,
-                     aes(axis1 = traj_2023, axis2 = traj_2025, y = n)) +
-  geom_alluvium(aes(fill = traj_2023), width = 1/4, alpha = 0.6, knot.pos = 0.4) +
-  geom_stratum(aes(fill = after_stat(stratum)),
-               width = 1/4, color = "white", linewidth = 0.5) +
-  geom_text(stat = "stratum", aes(label = after_stat(stratum)), size = 3.2) +
-  scale_x_discrete(limits = c("2023", "2025"),
-                   expand = expansion(mult = c(0.12, 0.12))) +
-  scale_fill_manual(values = seral_traj_colors, guide = "none") +
-  labs(x = NULL, y = "Number of plots") +
-  theme(axis.text.x  = element_text(face = "bold"),
-        axis.line.x  = element_blank(),
-        axis.ticks.x = element_blank())
-
-# ── 1e. Does management drive seral trajectory change? ───────────────────────
-traj_with_mng <- seral_ratio_both %>%
-  mutate(
-    traj_2023 = classify_seral_traj(early_share_2023),
-    traj_2025 = classify_seral_traj(early_share_2025),
-    stable    = traj_2023 == traj_2025,
-    direction = case_when(
-      traj_2023 == "Early-dominated" & traj_2025 == "Mixed"          ~ "toward_late",
-      traj_2023 == "Mixed"           & traj_2025 == "Late-dominated"  ~ "toward_late",
-      traj_2023 == "Mixed"           & traj_2025 == "Early-dominated" ~ "toward_early",
-      traj_2023 == "Late-dominated"  & traj_2025 == "Mixed"           ~ "toward_early",
-      stable                                                           ~ "stable",
-      TRUE                                                             ~ "other"
-    )
+    # climate adapted = drought tolerant + intermediate
+    # climate maladapted = Norway spruce + drought sensitive
+    share_adapted    = share_drought_tol + share_intermediate,
+    share_maladapted = share_spruce + share_drought_sens
   ) %>%
   left_join(
-    plot_df_cz %>%
-      filter(year == 2023) %>%
-      select(plot, planting_intensity, time_snc_full_disturbance),
-    by = "plot"
+    mng_year_wide_clean %>%
+      select(plot, year, planting_intensity, anti_browsing_intensity),
+    by = c("plot", "year")
+  ) %>%
+  mutate(
+    planted = planting_intensity > 0
   )
 
-kruskal.test(planting_intensity ~ direction, data = traj_with_mng)
-pairwise.wilcox.test(traj_with_mng$planting_intensity,
-                     traj_with_mng$direction, p.adjust.method = "BH")
+# ── Test: is climate adaptation higher on planted plots? ─────────────────────
+wilcox.test(share_adapted ~ planted, data = climate_adapt)
 
-# ── 1f. Continuous: delta early share ~ planting ──────────────────────────────
-delta_df <- seral_ratio_both %>%
-  mutate(delta_early = early_share_2025 - early_share_2023) %>%
-  left_join(
-    plot_df_cz %>%
-      filter(year == 2023) %>%
-      select(plot, planting_intensity, time_snc_full_disturbance),
-    by = "plot"
-  )
-
-cor.test(delta_df$planting_intensity, delta_df$delta_early, method = "spearman")
-
-lm_delta <- lm(delta_early ~ planting_intensity + time_snc_full_disturbance,
-               data = delta_df)
-summary(lm_delta)
-
-ggplot(delta_df, aes(x = planting_intensity, y = delta_early)) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50") +
-  geom_point(alpha = 0.4, size = 1.5) +
-  geom_smooth(method = "lm", color = "#d01c8b", se = TRUE) +
-  labs(x = "Planting intensity (2023)",
-       y = "Change in early-seral share\n(2025 − 2023)")
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# 2. SPRUCE DYNAMICS
-# ══════════════════════════════════════════════════════════════════════════════
-
-# ── 2a. Spruce share per plot × year (delta) ──────────────────────────────────
-spruce_delta <- dat_overlap_recoded %>%
-  filter(status == "both") %>%
-  group_by(plot, year) %>%
-  summarise(
-    total_stems  = sum(n, na.rm = TRUE),
-    spruce_stems = sum(n[species == "piab"], na.rm = TRUE),
-    spruce_share = if_else(total_stems == 0, 0, spruce_stems / total_stems),
-    .groups = "drop"
-  ) %>%
-  pivot_wider(
-    names_from  = year,
-    values_from = c(total_stems, spruce_stems, spruce_share),
-    names_sep   = "_"
-  ) %>%
-  mutate(across(c(total_stems_2023, spruce_stems_2023, spruce_share_2023,
-                  total_stems_2025, spruce_stems_2025, spruce_share_2025),
-                ~ replace_na(.x, 0))) %>%
-  mutate(
-    delta_spruce  = spruce_share_2025 - spruce_share_2023,
-    spruce_2023   = spruce_share_2023 > 0,
-    spruce_2025   = spruce_share_2025 > 0,
-    spruce_status = case_when(
-      spruce_2023 & spruce_2025   ~ "persistent",
-      spruce_2023 & !spruce_2025  ~ "lost",
-      !spruce_2023 & spruce_2025  ~ "new_arrival",
-      !spruce_2023 & !spruce_2025 ~ "absent_both"
-    )
-  ) %>%
-  left_join(
-    plot_df_cz %>%
-      filter(year == 2023) %>%
-      select(plot, planting_intensity, anti_browsing_intensity,
-             time_snc_full_disturbance, clear_intensity),
-    by = "plot"
-  )
-
-# ── 2b. Spruce fate summary ───────────────────────────────────────────────────
-spruce_delta %>% count(spruce_status)
-
-# New arrivals: planted vs unplanted
-spruce_delta %>%
-  filter(spruce_status %in% c("new_arrival", "absent_both")) %>%
-  mutate(planted = planting_intensity > 0) %>%
-  count(spruce_status, planted) %>%
-  pivot_wider(names_from = planted, values_from = n, names_prefix = "planted_")
-
-wilcox.test(planting_intensity ~ spruce_status,
-            data = filter(spruce_delta,
-                          spruce_status %in% c("new_arrival", "absent_both")))
-
-# Persistent: is share growing on planted plots?
-spruce_delta %>%
-  filter(spruce_status == "persistent") %>%
-  cor.test(~ delta_spruce + planting_intensity, data = ., method = "spearman")
-
-# ── 2c. Alluvial: spruce dominance class 2023 → 2025 ─────────────────────────
-spruce_colors <- c(
-  "dominant"   = "#1a7d1a",
-  "codominant" = "#5aac5a",
-  "minor"      = "#a8d9a8",
-  "absent"     = "#d9d9d9"
-)
-
-spruce_alluvial <- spruce_delta %>%
-  filter(!is.na(spruce_status)) %>%
-  mutate(
-    spruce_class_2023 = factor(classify_spruce(spruce_share_2023),
-                               levels = c("dominant","codominant","minor","absent")),
-    spruce_class_2025 = factor(classify_spruce(spruce_share_2025),
-                               levels = c("dominant","codominant","minor","absent"))
-  ) %>%
-  count(spruce_class_2023, spruce_class_2025)
-
-p_spruce_alluvial <- ggplot(spruce_alluvial,
-                            aes(axis1 = spruce_class_2023,
-                                axis2 = spruce_class_2025, y = n)) +
-  geom_alluvium(aes(fill = spruce_class_2023),
-                width = 1/4, alpha = 0.7, knot.pos = 0.4) +
-  geom_stratum(aes(fill = after_stat(stratum)),
-               width = 1/4, color = "black", linewidth = 0.5) +
-  geom_text(stat = "stratum", aes(label = after_stat(stratum)), size = 3.2) +
-  scale_x_discrete(limits = c("2023", "2025"),
-                   expand = expansion(mult = c(0.12, 0.12))) +
-  scale_fill_manual(values = spruce_colors, guide = "none") +
-  labs(x = NULL, y = "Number of plots\nby spruce share") +
-  theme(axis.text.x  = element_text(face = "bold"),
-        axis.line.x  = element_blank(),
-        axis.ticks.x = element_blank())
-
-# ── 2d. Alluvial: spruce by planting (planted vs not) ─────────────────────────
-spruce_alluvial_binary <- spruce_delta %>%
-  filter(!is.na(spruce_status)) %>%
-  mutate(
-    spruce_class_2023 = factor(classify_spruce(spruce_share_2023),
-                               levels = c("dominant","codominant","minor","absent")),
-    spruce_class_2025 = factor(classify_spruce(spruce_share_2025),
-                               levels = c("dominant","codominant","minor","absent")),
-    planted   = if_else(planting_intensity > 0, "Planted", "Not planted"),
-    planted   = factor(planted, levels = c("Not planted", "Planted"))
-  ) %>%
-  count(spruce_class_2023, spruce_class_2025, planted) %>%
+# ── Summary ───────────────────────────────────────────────────────────────────
+climate_adapt %>%
   group_by(planted) %>%
-  mutate(
-    pct       = n / sum(n) * 100,
-    panel_n   = sum(n),
-    panel_lab = paste0(planted, "\n(n=", panel_n, ")")
-  ) %>%
-  ungroup() %>%
-  mutate(panel_lab = factor(panel_lab, levels = unique(panel_lab[order(planted)])))
-
-p_spruce_planted <- ggplot(
-  spruce_alluvial_binary,
-  aes(axis1 = spruce_class_2023, axis2 = spruce_class_2025, y = pct)) +
-  geom_alluvium(aes(fill = spruce_class_2023),
-                width = 1/4, alpha = 0.7, knot.pos = 0.4) +
-  geom_stratum(aes(fill = after_stat(stratum)),
-               width = 1/4, color = "black", linewidth = 0.5) +
-  geom_text(stat = "stratum", aes(label = after_stat(stratum)), size = 3.0) +
-  scale_x_discrete(limits = c("2023", "2025"),
-                   expand = expansion(mult = c(0.22, 0.22))) +
-  scale_y_continuous(limits = c(0, 100),
-                     labels = function(x) paste0(x, "%")) +
-  scale_fill_manual(values = spruce_colors, guide = "none") +
-  facet_wrap(~ panel_lab, nrow = 1) +
-  labs(x = NULL, y = "Share of plots\nby spruce abundance [%]") +
-  theme(axis.text.x    = element_text(face = "bold"),
-        axis.line.x    = element_blank(),
-        axis.ticks.x   = element_blank(),
-        strip.text     = element_text(size = 10),
-        strip.background = element_rect(fill = "grey95", color = "grey70"))
-
-# ── 2e. Spruce TSD area plot ──────────────────────────────────────────────────
-spruce_tsd_bar <- dat_overlap_recoded %>%
-  filter(status == "both", !is.na(n)) %>%
-  group_by(plot, year, time_snc_full_disturbance) %>%
   summarise(
-    total_stems  = sum(n, na.rm = TRUE),
-    spruce_stems = sum(n[species == "piab"], na.rm = TRUE),
+    n                 = n(),
+    mean_adapted      = round(mean(share_adapted,    na.rm = TRUE), 2),
+    mean_maladapted   = round(mean(share_maladapted, na.rm = TRUE), 2),
+    mean_spruce       = round(mean(share_spruce,     na.rm = TRUE), 2),
     .groups = "drop"
-  ) %>%
-  mutate(spruce_share = if_else(total_stems == 0, 0, spruce_stems / total_stems)) %>%
-  group_by(plot, time_snc_full_disturbance) %>%
-  summarise(spruce_share = mean(spruce_share, na.rm = TRUE), .groups = "drop") %>%
-  mutate(
-    spruce_class = factor(classify_spruce(spruce_share),
-                          levels = c("absent", "minor", "codominant", "dominant")),
-    tsd     = factor(time_snc_full_disturbance),
-    tsd_num = time_snc_full_disturbance
-  ) %>%
-  group_by(tsd) %>%
-  mutate(n_plots_tsd = n_distinct(plot)) %>%
-  ungroup() %>%
-  count(tsd, tsd_num, spruce_class, n_plots_tsd) %>%
-  mutate(pct      = n / n_plots_tsd * 100,
-         pct_prop = pct / 100)
+  )
 
-spruce_tsd_bar %>% group_by(tsd) %>% summarise(total_pct = sum(pct))  # verify
+# ── Continuous: planting intensity ~ share adapted ────────────────────────────
+cor.test(~ planting_intensity + share_adapted,
+         data = climate_adapt, method = "spearman")
 
-spruce_tsd_n <- spruce_tsd_bar %>% distinct(tsd, tsd_num, n_plots_tsd)
-
-p_spruce_tsd_area <- ggplot(
-  spruce_tsd_bar %>% arrange(tsd_num, spruce_class),
-  aes(x = tsd_num, y = pct_prop, fill = spruce_class)
-) +
-  geom_area(position = "fill", alpha = 0.85) +
-  geom_vline(xintercept = unique(spruce_tsd_bar$tsd_num),
-             color = "white", linewidth = 0.3, linetype = "dotted") +
-  geom_text(data = spruce_tsd_n,
-            aes(x = tsd_num, y = 1.04, label = n_plots_tsd),
-            inherit.aes = FALSE, size = 2.8, color = "grey30") +
-  scale_fill_manual(values = spruce_colors, name = "Spruce share",
-                    breaks = c("dominant", "codominant", "minor", "absent")) +
-  scale_x_continuous(breaks = 1:6) +
-  scale_y_continuous(labels = scales::label_percent(scale = 100),
-                     limits = c(0, 1.08), expand = c(0, 0)) +
-  labs(x = "Time since disturbance (years)", y = "% of plots") +
-  theme(legend.position  = "bottom",
-        legend.direction = "horizontal") +
-  guides(fill = guide_legend(nrow = 1))
-
-# ── 2f. Combined spruce figure ────────────────────────────────────────────────
-p_combined_spruce <- (p_spruce_tsd_area | p_spruce_planted) +
-  plot_layout(widths = c(1, 3)) +
-  plot_annotation(tag_levels = list(c("[a]", "[b]")))
-
-p_combined_spruce
-
-ggsave("outFigsCZ/p_spruce_combined.png",
-       p_combined_spruce, width = 10, height = 5, dpi = 300, bg = "white")
+# ── Visualize ─────────────────────────────────────────────────────────────────
+ggplot(climate_adapt,
+       aes(x = planting_intensity, y = share_adapted)) +
+  geom_point(alpha = 0.5, size = 1.8) +
+  geom_smooth(method = "lm", se = TRUE, color = "#1a5c1a") +
+  geom_hline(yintercept = 0.5, linetype = "dashed", color = "grey50") +
+  labs(x = "Planting intensity (2025)",
+       y = "Share of climate-adapted stems\n(drought-tolerant + intermediate)") +
+  theme_classic()
 
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# 4. SAVE FIGURES
-# ══════════════════════════════════════════════════════════════════════════════
 
-ggsave("outFigsCZ/p_alluvial_seral.png",     p_alluvial,          width = 6,  height = 5, dpi = 300, bg = "white")
-ggsave("outFigsCZ/p_spruce_alluvial.png",    p_spruce_alluvial,   width = 7,  height = 5, dpi = 300, bg = "white")
-ggsave("outFigsCZ/p_spruce_planted.png",     p_spruce_planted,    width = 7,  height = 5, dpi = 300, bg = "white")
-ggsave("outFigsCZ/p_spruce_combined.png",    p_combined_spruce,   width = 10, height = 5, dpi = 300, bg = "white")
-ggsave("outFigsCZ/p_func_tsd_area.png",      p_func_tsd_area,     width = 8,  height = 4, dpi = 300, bg = "white")
-ggsave("outFigsCZ/p_func_alluvial.png",      p_func_alluvial,     width = 6,  height = 5, dpi = 300, bg = "white")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1399,7 +1071,7 @@ p_management_intensity_plot <- mng_shifted %>%
 p_management_intensity_plot
 
 # # Save as PNG
-ggsave("outFigs/mng_intensity_plot.png", plot = p_management_intensity_plot,
+ggsave("outFigsCZ/mng_intensity_plot.png", plot = p_management_intensity_plot,
        width = 5, height = 2.1, units = "in", dpi = 300)
 
 
@@ -1430,7 +1102,7 @@ p_management_intensity_plot_simpler <-
 p_management_intensity_plot_simpler
 
 # # Save as PNG
-ggsave("outFigs/p_management_intensity_plot_simpler.png", 
+ggsave("outFigsCZ/p_management_intensity_plot_simpler.png", 
        plot = p_management_intensity_plot_simpler,
        width = 5, height = 1.9, units = "in", dpi = 300)
 
@@ -1538,6 +1210,371 @@ p_combined_management_intens <- ggarrange(
 # All GAMs: REML, random effect s(plot_id, bs="re")
 # Families: tw(log) continuous, nb(log) counts, binomial(logit) binary
 
+# make trully cross scale: get management intensity on pot level, 
+#@ management binary on subplto level
+
+# ── Prepare cross-scale data ──────────────────────────────────────────────────
+# subplot level: use subplot binary management
+# plot level: use plot intensity management
+# both in one dataset with level as factor
+
+# ── Step 1: get subplot-level response variables + binary management ──────────
+# both_levels_cz subplot rows already have the response variables (mean_hgt etc.)
+# but we need to add binary management from dat_overlap
+
+# get binary management per subplot
+mng_subplot_binary <- dat_overlap %>%
+  #filter(status == "both") %>%
+  distinct(plot, subplot, year, planting, anti_browsing, grndwrk) %>%
+  rename(
+    plot_id           = plot,
+    planting_bin      = planting,
+    anti_browsing_bin = anti_browsing,
+    grndwrk_bin       = grndwrk
+  ) %>%
+  mutate(plot_id = factor(plot_id))
+
+# ── Step 2: join binary management to subplot rows in both_levels_cz ──────────
+both_levels_crossscale <- both_levels_cz %>%
+  rename(subplot = ID) %>%
+  left_join(mng_subplot_binary,
+            by = c("plot_id", 
+                   "subplot",
+                   "year")) %>%
+  mutate(
+    # subplot level: use binary (0/1) from dat_overlap
+    # plot level: use intensity (0-1) already in both_levels_cz
+    # for plot rows: planting_bin will be NA — use intensity instead
+    planting_pred = case_when(
+      level == "subplot" & !is.na(planting_bin) ~ as.numeric(planting_bin),
+      level == "plot"                            ~ planting_intensity,
+      TRUE                                       ~ planting_intensity  # fallback
+    ),
+    browsing_pred = case_when(
+      level == "subplot" & !is.na(anti_browsing_bin) ~ as.numeric(anti_browsing_bin),
+      level == "plot"                                 ~ anti_browsing_intensity,
+      TRUE                                            ~ anti_browsing_intensity
+    ),
+    grndwrk_pred = case_when(
+      level == "subplot" & !is.na(grndwrk_bin) ~ as.numeric(grndwrk_bin),
+      level == "plot"                           ~ grndwrk_intensity,
+      TRUE                                      ~ grndwrk_intensity
+    )
+  )
+
+# ── Verify ────────────────────────────────────────────────────────────────────
+both_levels_crossscale %>%
+  group_by(level) %>%
+  summarise(
+    n              = n(),
+    range_planting = paste(round(range(planting_pred, na.rm=TRUE), 2), 
+                           collapse = " - "),
+    mean_planting  = round(mean(planting_pred, na.rm=TRUE), 2),
+    n_na           = sum(is.na(planting_pred))
+  )
+# subplot should show 0 - 1 with mean ~0.58
+# plot should show 0 - 1 with mean ~0.59
+# BUT subplot values should be more variable (genuine 0/1 per subplot)
+# not just the same intensity repeated 5 times
+
+# ── Share adapted at plot level — ALL plots ───────────────────────────────────
+# !!!!
+
+
+# Test share adapted
+func_stems_base_all <- dat_overlap_recoded2 %>%
+  mutate(func_group_drought = replace_na(as.character(func_group_drought), "other")) %>%
+  group_by(plot, year, time_snc_full_disturbance, func_group_drought) %>%
+  summarise(stems = sum(n, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(names_from  = func_group_drought,
+              values_from = stems,
+              values_fill = 0) %>%
+  compute_func_shares_v2()
+
+
+
+
+# calculate climate adaptation on plot level (as having 1-2 species per subplot level will be not representative for community level)
+share_adapted_plot <- func_stems_base_all %>%
+  mutate(
+    share_adapted    = share_drought_tol + share_intermediate,
+    share_maladapted = share_spruce + share_drought_sens
+  ) %>%
+  select(plot, year, time_snc_full_disturbance, 
+         share_adapted, share_maladapted, share_spruce) %>%
+  mutate(
+    plot_id = factor(plot),
+    year_f  = factor(year)
+  ) %>%
+  left_join(
+    both_levels_cz %>%
+      filter(level == "plot") %>%
+      select(plot_id, year, planting_intensity, anti_browsing_intensity,
+             grndwrk_intensity) %>%
+      distinct(),
+    by = c("plot_id", "year")
+  )
+
+share_adapted_plot %>% 
+  ggplot(aes(x = time_snc_full_disturbance,
+             y = share_adapted)) + 
+  geom_jitter() + 
+  geom_smooth()
+# ── GAM: share_adapted ~ time + management ────────────────────────────────────
+# beta family — share_adapted is a proportion bounded (0,1)
+# squeeze boundary values
+share_adapted_plot <- share_adapted_plot %>%
+  mutate(
+    share_adapted_adj = case_when(
+      share_adapted == 0 ~ 0.001,
+      share_adapted == 1 ~ 0.999,
+      TRUE               ~ share_adapted
+    )
+  )
+
+gam_adapted <- gam(
+  share_adapted_adj ~
+    planting_intensity + anti_browsing_intensity +
+    s(time_snc_full_disturbance, k = 4) +
+    grndwrk_intensity + year_f +
+    s(plot_id, bs = "re"),
+  data   = share_adapted_plot,
+  family = betar(),          # built into mgcv
+  method = "REML"
+)
+
+summary(gam_adapted)
+
+
+gam_adapted_final <- gam(
+  share_adapted_adj ~
+    planting_intensity +
+    s(time_snc_full_disturbance, k = 4) +
+    grndwrk_intensity + year_f +
+    s(plot_id, bs = "re"),
+  data   = share_adapted_plot,
+  family = betar(),
+  method = "REML"
+)
+
+summary(gam_adapted_final)
+plot(gam_adapted_final, page = 1)
+
+
+
+appraise(gam_adapted_final)
+summary(gam_adapted_final)
+
+
+# multivariate: extract effect size from GAM
+emmeans(gam_adapted, ~ planting_intensity,
+        at   = list(planting_intensity = c(0, 1)),
+        type = "response") %>%
+  summary(infer = TRUE)
+
+# also check: is browsing + planting collinear?
+cor.test(~ planting_intensity + anti_browsing_intensity,
+         data = share_adapted_plot, method = "spearman")
+
+# and visualize marginal effect of planting
+gratia::draw(gam_adapted, select = 1)  # TSD smooth
+
+
+
+# ── Quantify collinearity impact ──────────────────────────────────────────────
+# fit planting-only model to see effect without browsing
+gam_adapted_plant_only <- gam(
+  share_adapted_adj ~
+    planting_intensity +
+    s(time_snc_full_disturbance, k = 4) +
+    grndwrk_intensity + year_f +
+    s(plot_id, bs = "re"),
+  data   = share_adapted_plot,
+  family = betar(),
+  method = "REML"
+)
+summary(gam_adapted_plant_only)
+
+# fit browsing-only model
+gam_adapted_browse_only <- gam(
+  share_adapted_adj ~
+    anti_browsing_intensity +
+    s(time_snc_full_disturbance, k = 4) +
+    grndwrk_intensity + year_f +
+    s(plot_id, bs = "re"),
+  data   = share_adapted_plot,
+  family = betar(),
+  method = "REML"
+)
+summary(gam_adapted_browse_only)
+
+
+
+
+
+
+
+
+
+
+# ── Delta adapted: overlapping plots only ────────────────────────────────────
+delta_adapted <- share_adapted_plot %>%
+  filter(plot %in% plots_with_both) %>%   # overlapping plots only
+  select(plot, year, share_adapted) %>%
+  pivot_wider(names_from  = year,
+              values_from = share_adapted,
+              names_prefix = "adapted_") %>%
+  mutate(
+    delta_adapted = adapted_2025 - adapted_2023
+  ) %>%
+  left_join(
+    plot_df_cz %>%
+      filter(year == 2023) %>%
+      select(plot, planting_intensity, time_snc_full_disturbance),
+    by = "plot"
+  )
+
+# test: did climate adaptation increase between surveys?
+wilcox.test(delta_adapted$adapted_2023,
+            delta_adapted$adapted_2025,
+            paired = TRUE)
+
+# does planting predict increase in adapted share?
+cor.test(~ planting_intensity + delta_adapted,
+         data = delta_adapted, method = "spearman")
+
+
+
+
+
+
+
+
+
+# REFIT GAMS START 
+
+# ── Refit GAMs with cross-scale management predictors ─────────────────────────
+gam_mean_hgt_cross <- gam(
+  mean_hgt ~
+    planting_pred * browsing_pred +
+    s(time_snc_full_disturbance, k = 4) +
+    grndwrk_pred + year_f + level +
+    s(plot_id, bs = "re"),
+  data   = both_levels_crossscale %>% filter(mean_hgt < 6),
+  family = tw(link = "log"),
+  method = "REML"
+)
+
+plot(gam_mean_hgt_cross, page = 1)
+
+gam_cv_hgt_pos_cross <- gam(
+  cv_hgt_pos ~
+    planting_pred * browsing_pred +
+    s(time_snc_full_disturbance, k = 7) +
+    grndwrk_pred + year_f + level +
+    s(plot_id, bs = "re"),
+  data   = both_levels_crossscale,
+  family = tw(link = "log"),
+  method = "REML"
+)
+
+gam_eff_cross <- gam(
+  effective_numbers ~
+    planting_pred + browsing_pred +
+    s(time_snc_full_disturbance, k = 3) +
+    grndwrk_pred + year_f + level +
+    s(plot_id, bs = "re"),
+  data   = both_levels_crossscale,
+  family = tw(link = "log"),
+  method = "REML"
+)
+
+gam_rich_cross <- gam(
+  sp_richness ~
+    planting_pred * browsing_pred +
+    s(time_snc_full_disturbance, k = 7) +
+    grndwrk_pred + year_f + level +
+    s(plot_id, bs = "re"),
+  data   = both_levels_crossscale,
+  family = nb(link = "log"),
+  method = "REML"
+)
+
+fin.models.cross <- list(
+  hgt   = gam_mean_hgt_cross,
+  cvpos = gam_cv_hgt_pos_cross,
+  eff   = gam_eff_cross,
+  rich  = gam_rich_cross
+)
+
+# Model comparison: briowsing include or not? --------------------------------
+# check wheather including browisng protection along with planing is actualy meaningful
+# create models - only planting, only browsing, both effects and and tehir interaction 
+
+
+
+# ── Refit with ML for fair AIC comparison ────────────────────────────────────
+compare_mng_aic <- function(response, data, family, k_tsd = 4) {
+  
+  base_formula <- as.formula(paste0(
+    response, " ~ grndwrk_pred + year_f + level +",
+    "s(time_snc_full_disturbance, k =", k_tsd, ") +",
+    "s(plot_id, bs = 're')"
+  ))
+  
+  m_both <- gam(update(base_formula, . ~ . + planting_pred + browsing_pred),
+                data = data, family = family, method = "ML")
+  m_inter <- gam(update(base_formula, . ~ . + planting_pred * browsing_pred),
+                 data = data, family = family, method = "ML")
+  m_plant <- gam(update(base_formula, . ~ . + planting_pred),
+                 data = data, family = family, method = "ML")
+  m_browse <- gam(update(base_formula, . ~ . + browsing_pred),
+                  data = data, family = family, method = "ML")
+  m_none  <- gam(base_formula,
+                 data = data, family = family, method = "ML")
+  
+  tibble(
+    response = response,
+    model    = c("both", "interaction", "plant_only", 
+                 "browse_only", "none"),
+    AIC      = c(AIC(m_both), AIC(m_inter), AIC(m_plant),
+                 AIC(m_browse), AIC(m_none)),
+  ) %>%
+    mutate(
+      delta_AIC = AIC - min(AIC),
+      best      = delta_AIC < 2
+    ) %>%
+    arrange(AIC)
+}
+
+# ── Run for each response ─────────────────────────────────────────────────────
+aic_results <- bind_rows(
+  compare_mng_aic("mean_hgt",        
+                  both_levels_crossscale %>% filter(mean_hgt < 6),
+                  tw(link = "log"), k_tsd = 4),
+  compare_mng_aic("cv_hgt_pos",      
+                  both_levels_crossscale,
+                  tw(link = "log"), k_tsd = 7),
+  compare_mng_aic("effective_numbers",
+                  both_levels_crossscale,
+                  tw(link = "log"), k_tsd = 3),
+  compare_mng_aic("sp_richness",     
+                  both_levels_crossscale,
+                  nb(link = "log"),  k_tsd = 7)
+)
+
+aic_results %>%
+  select(response, model, AIC, delta_AIC, best) %>%
+  print(n = Inf)
+
+
+
+
+
+
+
+
+
 ## 5a. Mean height
 gam_mean_hgt_both <- gam(
   mean_hgt ~
@@ -1617,6 +1654,24 @@ fin.models <- list(
   rich  = gam_rich_both,
   beta  = m_beta_add
 )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 lapply(fin.models, summary)
 
