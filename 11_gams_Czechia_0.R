@@ -1240,6 +1240,59 @@ both_levels_crossscale <- both_levels_cz %>%
     )
   )
 
+
+
+
+# can i combine management into one?
+
+# ── Option 1: mean of planting and browsing ───────────────────────────────────
+# interpretation: average management intensity across the two key interventions
+both_levels_crossscale <- both_levels_crossscale %>%
+  mutate(
+    mng_composite = (planting_pred + browsing_pred) / 2
+  )
+
+share_adapted_plot <- share_adapted_plot %>%
+  mutate(
+    mng_composite = (planting_intensity + anti_browsing_intensity) / 2
+  )
+
+spruce_share_plot <- spruce_share_plot %>%
+  mutate(
+    mng_composite = (planting_intensity + anti_browsing_intensity) / 2
+  )
+
+plot_df_cz <- plot_df_cz %>% 
+  mutate(
+    mng_composite = (planting_intensity + anti_browsing_intensity) / 2
+  )
+
+
+# ── Option 2: PCA-based composite ────────────────────────────────────────────
+# more rigorous — extracts the shared variance axis
+pca_mng <- prcomp(
+  both_levels_crossscale %>% 
+    filter(level == "plot") %>%
+    select(planting_intensity, anti_browsing_intensity) %>%
+    na.omit(),
+  scale. = TRUE
+)
+summary(pca_mng)  # PC1 should explain ~80% of variance given ρ=0.63
+# PC1 score = composite management intensity
+
+# confirm mean and PC1 are nearly identical
+plot_df_cz %>%
+  mutate(
+    mng_mean = (planting_intensity + anti_browsing_intensity) / 2,
+    mng_pc1  = predict(pca_mng, 
+                       newdata = plot_df_cz %>% 
+                         select(planting_intensity, anti_browsing_intensity))[,1]
+  ) %>%
+  summarise(cor = cor(mng_mean, mng_pc1, use = "complete.obs"))
+
+
+
+
 # ── Verify ────────────────────────────────────────────────────────────────────
 both_levels_crossscale %>%
   group_by(level) %>%
@@ -1317,6 +1370,88 @@ aic_results <- bind_rows(
 aic_results %>%
   select(response, model, AIC, delta_AIC, best) %>%
   print(n = Inf)
+
+
+## Spruce shares at plot level -------------------------
+spruce_share_plot <- both_levels_cz %>%
+  filter(level == "plot") %>%
+  select(plot_id, year, year_f, time_snc_full_disturbance,
+         spruce_share, planting_intensity, anti_browsing_intensity,
+         grndwrk_intensity) %>%
+  distinct() %>%
+  mutate(
+    plot = as.character(plot_id),
+    # squeeze for beta family
+    spruce_share_adj = case_when(
+      spruce_share == 0  ~ 0.001,
+      spruce_share == 1  ~ 0.999,
+      is.na(spruce_share) ~ NA_real_,
+      TRUE               ~ spruce_share
+    )
+  ) %>%
+  filter(!is.na(spruce_share_adj))
+
+nrow(spruce_share_plot)          # should be ~333
+spruce_share_plot %>% count(year)
+
+
+both_levels_cz %>%
+  filter(level == "plot") %>%
+  filter(is.na(spruce_share)) %>%
+  select(plot_id, year, time_snc_full_disturbance) %>%
+  distinct()
+
+# ── AIC comparison ────────────────────────────────────────────────────────────
+compare_mng_aic_plot("spruce_share_adj", 
+                     spruce_share_plot %>% rename(plot_id = plot_id), 
+                     betar(), k_tsd = 4)
+
+# ── Fit final model ───────────────────────────────────────────────────────────
+gam_spruce <- gam(
+  spruce_share_adj ~
+    planting_intensity+anti_browsing_intensity +
+    s(time_snc_full_disturbance, k = 4) +
+    grndwrk_intensity + year_f +
+    s(plot_id, bs = "re"),
+  data   = spruce_share_plot,
+  family = betar(),
+  method = "REML"
+)
+
+summary(gam_spruce)
+gratia::draw(gam_spruce, select = 1)
+
+# ── Effect size: planting 0 vs 1 ─────────────────────────────────────────────
+emmeans(gam_spruce, ~ planting_intensity,
+        at   = list(planting_intensity = c(0, 1)),
+        type = "response") %>%
+  summary(infer = TRUE)
+
+# ── Delta spruce: overlapping plots only ──────────────────────────────────────
+delta_spruce_plot <- spruce_share_plot %>%
+  filter(plot %in% plots_with_both) %>%
+  select(plot, year, spruce_share) %>%
+  pivot_wider(names_from  = year,
+              values_from = spruce_share,
+              names_prefix = "spruce_") %>%
+  mutate(delta_spruce = spruce_2025 - spruce_2023) %>%
+  left_join(
+    plot_df_cz %>%
+      filter(year == 2023) %>%
+      select(plot, planting_intensity, time_snc_full_disturbance),
+    by = "plot"
+  )
+
+# did spruce share change between surveys?
+wilcox.test(delta_spruce_plot$spruce_2023,
+            delta_spruce_plot$spruce_2025,
+            paired = TRUE)
+
+# does planting predict change in spruce share?
+cor.test(~ planting_intensity + delta_spruce,
+         data = delta_spruce_plot, method = "spearman")
+
+
 
 
 
@@ -1407,7 +1542,109 @@ compare_mng_aic_plot <- function(response, data, family, k_tsd = 4) {
 }
 
 # run
-compare_mng_aic_plot("share_adapted_adj", share_adapted_plot, betar(), k_tsd = 4)
+# AIC for all three plot-level responses
+aic_adapted <- compare_mng_aic_plot("share_adapted_adj",  share_adapted_plot, betar(),   k_tsd = 4)
+aic_spruce  <- compare_mng_aic_plot("spruce_share_adj",   spruce_share_plot,  betar(),   k_tsd = 4)
+aic_beta    <- compare_mng_aic_plot("beta_jaccard_mean",  plot_df_cz,         gaussian(), k_tsd = 3)
+
+aic_adapted
+aic_spruce
+aic_beta
+
+
+# collinearity check -----------------------
+# ── Plot level ────────────────────────────────────────────────────────────────
+cor.test(~ planting_intensity + anti_browsing_intensity,
+         data = both_levels_cz %>% filter(level == "plot"),
+         method = "spearman")
+
+# ── Subplot level ─────────────────────────────────────────────────────────────
+cor.test(~ planting_pred + browsing_pred,
+         data = both_levels_crossscale %>% filter(level == "subplot"),
+         method = "spearman")
+
+# ── Full dataset (both levels) ────────────────────────────────────────────────
+cor.test(~ planting_pred + browsing_pred,
+         data = both_levels_crossscale,
+         method = "spearman")
+
+
+
+# refit only with planting
+gam_adapted_final_planting <- gam(
+  share_adapted_adj ~
+    planting_intensity +
+    s(time_snc_full_disturbance, k = 4) +
+    grndwrk_intensity + year_f +
+    s(plot_id, bs = "re"),
+  data   = share_adapted_plot,
+  family = betar(),
+  method = "REML"
+)
+
+gam_spruce_planting <- gam(
+  spruce_share_adj ~
+    planting_intensity +
+    time_snc_full_disturbance +
+    grndwrk_intensity + year_f +
+    s(plot_id, bs = "re"),
+  data   = spruce_share_plot,
+  family = betar(),
+  method = "REML"
+)
+
+m_beta_add_planting <- gam(
+  beta_jaccard_mean ~
+    time_snc_full_disturbance +
+    planting_intensity +
+    grndwrk_intensity + year_f +
+    s(plot_id, bs = "re"),
+  data   = plot_df_cz,
+  method = "REML"
+)
+
+### combined management  ----------------
+# refit only with planting
+gam_adapted_final_composite <- gam(
+  share_adapted_adj ~
+    mng_composite +
+    s(time_snc_full_disturbance, k = 4) +
+    grndwrk_intensity + year_f +
+    s(plot_id, bs = "re"),
+  data   = share_adapted_plot,
+  family = betar(),
+  method = "REML"
+)
+
+gam_spruce_composite <- gam(
+  spruce_share_adj ~
+    mng_composite +
+    time_snc_full_disturbance +
+    grndwrk_intensity + year_f +
+    s(plot_id, bs = "re"),
+  data   = spruce_share_plot,
+  family = betar(),
+  method = "REML"
+)
+
+m_beta_add_composite <- gam(
+  beta_jaccard_mean ~
+    time_snc_full_disturbance +
+    mng_composite +
+    grndwrk_intensity + year_f +
+    s(plot_id, bs = "re"),
+  data   = plot_df_cz,
+  method = "REML"
+)
+
+summary(gam_adapted_final_composite)
+summary(m_beta_add_composite)
+summary(gam_spruce_composite)
+
+
+
+
+
 
 
 # ── Fit winner with REML for final inference ──────────────────────────────────
@@ -1537,19 +1774,57 @@ fin.models.all <- list(
   eff   = gam_eff_cross,
   rich  = gam_rich_cross,
   beta  = m_beta_add,
-  adapt = gam_adapted_final
+  adapt = gam_adapted_final,
+  spruce = gam_spruce
 )
 
 
-# just models with both levels - for plotting
-fin.models.cross <- list(
-  hgt   = gam_mean_hgt_cross,
-  cvpos = gam_cv_hgt_pos_cross,
-  eff   = gam_eff_cross,
-  rich  = gam_rich_cross
+
+# Get estimates from the teh model: campre by % change from  ---------------
+# ── Response labels ───────────────────────────────────────────────────────────
+response_labels <- c(
+  hgt    = "Mean height [m]",
+  cvpos  = "CV [%]",
+  eff    = "Effective species [#]",
+  rich   = "Species richness [#]",
+  beta   = "Turnover [dim.]",
+  adapt  = "Drought-tolerant sp. share [%]",
+  spruce = "Norway spruce share [%]"
 )
 
-# TEST START 
+# ── Term labels ───────────────────────────────────────────────────────────────
+term_labels <- c(
+  planting_intensity      = "Planting",
+  anti_browsing_intensity = "Browsing\nprotection",
+  grndwrk_intensity       = "Soil\npreparation"
+)
+
+
+# ── Rerun pvals_mng ───────────────────────────────────────────────────────────
+pvals_mng <- map_dfr(fin.models.all,
+                     ~ broom::tidy(.x, parametric = TRUE),
+                     .id = "model") %>%
+  filter(term %in% c("planting_intensity", "anti_browsing_intensity",
+                     "grndwrk_intensity",
+                     "planting_pred", "browsing_pred", "grndwrk_pred")) %>%
+  mutate(
+    focal_term = recode(term,
+                        "planting_pred"          = "planting_intensity",
+                        "browsing_pred"          = "anti_browsing_intensity",
+                        "grndwrk_pred"           = "grndwrk_intensity",
+                        "planting_intensity"     = "planting_intensity",
+                        "anti_browsing_intensity"= "anti_browsing_intensity",
+                        "grndwrk_intensity"      = "grndwrk_intensity")
+  ) %>%
+  transmute(model, focal_term, p.value,
+            p_label = case_when(p.value < 0.001 ~ "<0.001",
+                                TRUE ~ formatC(p.value, format = "f", digits = 3)))
+
+
+
+
+
+# management present vs no present
 get_mng_emm <- function(model, model_name, focal_term) {
   
   # ── detect internal term names ──────────────────────────────────────────────
@@ -1571,7 +1846,7 @@ get_mng_emm <- function(model, model_name, focal_term) {
   names(at_list) <- actual_term
   
   # ── models without level term ────────────────────────────────────────────── 
-  no_level <- model_name %in% c("beta", "adapt")
+  no_level <- model_name %in% c("beta", "adapt", "spruce")
   
   emm_out <- if (no_level) {
     emmeans::emmeans(model,
@@ -1644,7 +1919,8 @@ model_intensity_all_df_pct_mng <- emm_mng2 %>%
                                      "Effective species [#]",
                                      "Species richness [#]",
                                      "Turnover [dim.]",
-                                     "Drought-tolerant\nspecies share [%]"))
+                                     "Drought-tolerant sp. share [%]",
+                                     "Norway spruce share [%]"))
   )
 
 # ── Verify ────────────────────────────────────────────────────────────────────
@@ -1652,6 +1928,13 @@ model_intensity_all_df_pct_mng %>%
   select(model, focal_term, estimate_pct, p.value, response) %>%
   filter(!is.na(estimate_pct)) %>%
   print(n = Inf)
+
+model_intensity_all_df_pct_mng <- model_intensity_all_df_pct_mng %>%
+  mutate(
+    plot_only    = model %in% c("beta", "adapt", "spruce"),
+    bar_color    = if_else(!plot_only, "grey20", NA_character_),  # border on cross-scale
+    bar_linewidth = if_else(!plot_only, 0.8, 0)                   # no border on plot-only
+  )
 
 # ── Check no NAs ──────────────────────────────────────────────────────────────
 model_intensity_all_df_pct_mng %>%
@@ -1723,7 +2006,19 @@ p_model_response <- ggplot(
   aes(x = response, y = estimate_pct, fill = response)
 ) +
   geom_hline(yintercept = 0, color = "gray40", linewidth = 0.5) +
-  geom_col(width = 0.7, color = NA) +
+  #geom_col(width = 0.7, color = NA) +
+  geom_col(aes(color = plot_only, linewidth = plot_only),
+           width = 0.7) +
+  scale_color_manual(
+    values = c("TRUE" = "grey20", "FALSE" = NA),
+    name = "Measurement scale",
+    labels = c("TRUE" = "Plot level", "FALSE" = "Cross-scale"),
+    guide = guide_legend(override.aes = list(fill = "grey70"))
+  ) +
+  scale_linewidth_manual(
+    values = c("TRUE" = 0.6, "FALSE" = 0),
+    guide = "none"
+  ) +
   geom_errorbar(aes(ymin = lower_pct, ymax = upper_pct),
                 width = 0.15, linewidth = 0.5, color = "grey30") +
   geom_text(aes(label    = p_label,
@@ -1741,66 +2036,22 @@ p_model_response <- ggplot(
         panel.border       = element_rect(color = "black", fill = NA, linewidth = 0.6),
         panel.grid.major.y = element_line(color = "gray90", linewidth = 0.3))
 
-## 6g. Spruce share by management
-p_spruce_shares_boxplot <- ggarrange(
-  both_levels_cz %>% filter(level == "plot") %>%
-    ggplot(aes(x = factor(planting_intensity), y = spruce_share * 100,
-               fill = factor(planting_intensity))) +
-    geom_boxplot(notch = FALSE, outlier.shape = NA) +
-    geom_jitter(alpha = 0.5, size = 0.5) +
-    stat_compare_means(method = "kruskal.test", label.x = 2,
-                       label.y = 1.05 * max(both_levels_cz$spruce_share * 100, na.rm = TRUE)) +
-    stat_summary(fun = mean, geom = "point", shape = 21, size = 2.5, fill = "red", color = "white") +
-    labs(x = "Planting Intensity\n", y = "Spruce share [%]") +
-    theme_classic2() + theme(legend.position = "none"),
-  
-  both_levels_cz %>% filter(level == "plot") %>%
-    ggplot(aes(x = factor(anti_browsing_intensity), y = spruce_share * 100,
-               fill = factor(anti_browsing_intensity))) +
-    geom_boxplot(notch = FALSE, outlier.shape = NA) +
-    geom_jitter(alpha = 0.5, size = 0.5) +
-    stat_compare_means(method = "kruskal.test", label.x = 2,
-                       label.y = 1.05 * max(both_levels_cz$spruce_share * 100, na.rm = TRUE)) +
-    stat_summary(fun = mean, geom = "point", shape = 21, size = 2.5, fill = "red", color = "white") +
-    labs(x = "Browsing protection\nintensity", y = "Spruce share [%]") +
-    theme_classic2() + theme(legend.position = "none"),
-  
-  labels = c("[a]", "[b]"), ncol = 2, align = "v",
-  font.label = list(face = "plain")
-)
 
-## 6h. Height by seral stage x management (heatmap)
-dat_clean <- df %>%
-  as_tibble() %>%
-  dplyr::filter(!is.na(hgt_est), !is.na(n), n > 0)
+p_model_response
 
-height_species_mng_yr <- dat_clean %>%
-  dplyr::group_by(year, species, planting_intensity, anti_browsing_intensity) %>%
-  dplyr::summarise(total_stems          = sum(n, na.rm = TRUE),
-                   mean_height_weighted = weighted.mean(hgt_est, w = n, na.rm = TRUE),
-                   .groups = "drop") %>%
-  dplyr::mutate(seral_group = dplyr::if_else(species %in% earlyspecs_cz, "early", "late"))
 
-height_seral_mng_year <- height_species_mng_yr %>%
-  dplyr::group_by(year, seral_group, planting_intensity, anti_browsing_intensity) %>%
-  dplyr::summarise(mean_h = weighted.mean(mean_height_weighted, w = total_stems, na.rm = TRUE),
-                   stems  = sum(total_stems, na.rm = TRUE),
-                   .groups = "drop") %>%
-  dplyr::filter(stems >= 3)
+# does browsing protection correlate with lower spruce density
+# or just lower spruce SHARE (because other species increase)?
+both_levels_cz %>%
+  filter(level == "plot") %>%
+  group_by(anti_browsing_intensity > 0) %>%
+  summarise(
+    mean_spruce_share  = mean(spruce_share, na.rm = TRUE),
+    mean_spruce_dens   = mean(spruce_share * dens_ha, na.rm = TRUE),
+    n = n()
+  )
 
-p_height_seral_mng <- ggplot(height_seral_mng_year,
-                             aes(x = planting_intensity, y = anti_browsing_intensity, fill = mean_h)) +
-  geom_tile(color = "grey80") +
-  facet_grid(seral_group ~ year) +
-  scale_fill_viridis_c(limits = c(0, 2.5), option = "E",
-                       direction = -1, end = 0.95, name = "Mean height (m)") +
-  geom_text(aes(label = round(mean_h, 2)), color = "white", size = 2.5, fontface = "bold") +
-  coord_equal() +
-  theme_classic() +
-  labs(x = "Planting intensity", y = "Anti-browsing intensity") +
-  theme(legend.position  = "bottom",
-        strip.background = element_blank(),
-        strip.text       = element_text(face = "bold"))
+
 
 
 # 7. Tables & export ---------------------------------------------
@@ -1813,7 +2064,7 @@ ggsave("outFigsCZ/p_time_scale.png",
        p_final, width = 6, height = 5, dpi = 300, bg = "white")
 
 ggsave("outFigsCZ/p_model_response.png",
-       p_model_response, width = 7, height = 5, dpi = 300)
+       p_model_response, width = 7, height = 3.5, dpi = 300)
 
 ggsave("outFigsCZ/p_management_intensity_plot_simpler.png",# - this one cuts
        p_management_intensity_plot_simpler, width = 5, height = 2.1, dpi = 300)
@@ -1984,3 +2235,40 @@ aic_combined <- bind_rows(aic_cross_table, aic_adapted_table)
 tab_df(aic_combined,
        title   = "AIC comparison of management structures across all response variables",
        file    = "outTable/aic_all_models.doc")
+
+
+
+
+
+## 6h. Height by seral stage x management (heatmap)
+dat_clean <- df %>%
+  as_tibble() %>%
+  dplyr::filter(!is.na(hgt_est), !is.na(n), n > 0)
+
+height_species_mng_yr <- dat_clean %>%
+  dplyr::group_by(year, species, planting_intensity, anti_browsing_intensity) %>%
+  dplyr::summarise(total_stems          = sum(n, na.rm = TRUE),
+                   mean_height_weighted = weighted.mean(hgt_est, w = n, na.rm = TRUE),
+                   .groups = "drop") %>%
+  dplyr::mutate(seral_group = dplyr::if_else(species %in% earlyspecs_cz, "early", "late"))
+
+height_seral_mng_year <- height_species_mng_yr %>%
+  dplyr::group_by(year, seral_group, planting_intensity, anti_browsing_intensity) %>%
+  dplyr::summarise(mean_h = weighted.mean(mean_height_weighted, w = total_stems, na.rm = TRUE),
+                   stems  = sum(total_stems, na.rm = TRUE),
+                   .groups = "drop") %>%
+  dplyr::filter(stems >= 3)
+
+p_height_seral_mng <- ggplot(height_seral_mng_year,
+                             aes(x = planting_intensity, y = anti_browsing_intensity, fill = mean_h)) +
+  geom_tile(color = "grey80") +
+  facet_grid(seral_group ~ year) +
+  scale_fill_viridis_c(limits = c(0, 2.5), option = "E",
+                       direction = -1, end = 0.95, name = "Mean height (m)") +
+  geom_text(aes(label = round(mean_h, 2)), color = "white", size = 2.5, fontface = "bold") +
+  coord_equal() +
+  theme_classic() +
+  labs(x = "Planting intensity", y = "Anti-browsing intensity") +
+  theme(legend.position  = "bottom",
+        strip.background = element_blank(),
+        strip.text       = element_text(face = "bold"))
