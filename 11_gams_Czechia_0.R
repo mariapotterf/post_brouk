@@ -514,19 +514,41 @@ shared_fill <- scale_fill_manual(
   labels = drought_labels
 )
 
+
+
+top11_species <- unique(top10_by_year$species)  # gives your 11 species across both years
+
+species_functional_v2 <- species_functional_v2 %>%
+  mutate(is_top11 = species %in% top11_species)
+
 p_function_drought <- ggplot(species_functional_v2,
-       aes(x = drought_tol, y = shade_tol,
-           color = func_group_drought, label = species)) +
-  geom_point(size = 2) +
-  ggrepel::geom_text_repel(size = 3) +
-  geom_vline(xintercept = c(2.2, 3.3),
-             linetype = "dashed", color = "grey50") +
-  scale_color_manual(values = drought_colors, 
+                             aes(x = drought_tol, y = shade_tol,
+                                 color = func_group_drought, label = species)) +
+  geom_point(aes(size = is_top11, alpha = is_top11)) +
+  ggrepel::geom_text_repel(
+    data = . %>% filter(is_top11),
+    aes(label = species),
+    size = 3.5, fontface = "bold"
+  ) +
+  ggrepel::geom_text_repel(
+    data = . %>% filter(!is_top11),
+    aes(label = species),
+    size = 2.5, color = "grey60", alpha = 0.7
+  ) +
+  scale_size_manual(values = c("FALSE" = 1.5, "TRUE" = 3.5), guide = "none") +
+  scale_alpha_manual(values = c("FALSE" = 0.4, "TRUE" = 1), guide = "none") +
+  geom_vline(xintercept = c(2.2, 3.3), linetype = "dashed", color = "grey50") +
+  scale_color_manual(values = drought_colors,
                      name = drought_class_title,
-                     labels = drought_labels ) +
+                     labels = drought_labels) +
+  guides(color = guide_legend(override.aes = list(label = ""))) +
   labs(x = "Drought tolerance (Niinemets)",
        y = "Shade tolerance (Niinemets)") +
   theme_classic()
+
+
+p_function_drought
+
 
 
 # ── Join new classification ───────────────────────────────────────────────────
@@ -1115,7 +1137,7 @@ intensity_class_summary_final
 
 
 
-## 6c. Disturbance history ---------------------------------------
+## Disturbance history ---------------------------------------
 plot_context_chars <- df %>%
   dplyr::select(plot, year, status, disturbance_year, forest_year,
                 disturbance_length, time_snc_full_disturbance, time_snc_part_disturbance,
@@ -1170,14 +1192,14 @@ p_combined_management_intens <- ggarrange(
 
 
 
-# 1. Models (GAMs) -----------------------------------------------
+#  Models (GAMs) -----------------------------------------------
 # All GAMs: REML, random effect s(plot_id, bs="re")
 # Families: tw(log) continuous, nb(log) counts, binomial(logit) binary
 
 # make trully cross scale: get management intensity on pot level, 
 # management binary on subplot level
 
-# ── Prepare cross-scale data ──────────────────────────────────────────────────
+## ── Prepare cross-scale data  --------------- ─
 # subplot level: use subplot binary management
 # plot level: use plot intensity management
 # both in one dataset with level as factor
@@ -1227,7 +1249,10 @@ both_levels_crossscale <- both_levels_cz %>%
   )
 
 
-##  Share adapted at plot level — -----------
+
+
+
+##  Share adapted at plot level -----------
 
 # Test share adapted
 func_stems_base_all <- dat_overlap_recoded2 %>%
@@ -1259,13 +1284,14 @@ share_adapted_plot <- func_stems_base_all %>%
              grndwrk_intensity) %>%
       distinct(),
     by = c("plot_id", "year")
+  ) %>% 
+  mutate(  # bound between 0-1
+    share_adapted_adj = case_when(
+      share_adapted == 0 ~ 0.001,
+      share_adapted == 1 ~ 0.999,
+      TRUE               ~ share_adapted
+    )
   )
-
-share_adapted_plot %>% 
-  ggplot(aes(x = time_snc_full_disturbance,
-             y = share_adapted)) + 
-  geom_jitter() + 
-  geom_smooth()
 
 
 
@@ -1287,6 +1313,24 @@ spruce_share_plot <- both_levels_cz %>%
     )
   ) %>%
   filter(!is.na(spruce_share_adj))
+
+
+
+## collinearity check -----------------------
+# ── Plot level ────────────────────────────────────────────────────────────────
+cor.test(~ planting_intensity + anti_browsing_intensity,
+         data = both_levels_cz %>% filter(level == "plot"),
+         method = "spearman")
+
+# ── Subplot level ─────────────────────────────────────────────────────────────
+cor.test(~ planting_pred + browsing_pred,
+         data = both_levels_crossscale %>% filter(level == "subplot"),
+         method = "spearman")
+
+# ── Full dataset (both levels) ────────────────────────────────────────────────
+cor.test(~ planting_pred + browsing_pred,
+         data = both_levels_crossscale,
+         method = "spearman")
 
 
 
@@ -1358,7 +1402,7 @@ compare_mng_aic <- function(response, data, family, k_tsd = 4) {
     arrange(AIC)
 }
 
-# ── Run for each response ─────────────────────────────────────────────────────
+### ── Run for each response Plot and subplot level ─────────────────────────────────────────────────────
 aic_results_cross <- bind_rows(
   compare_mng_aic("mean_hgt",        
                   both_levels_crossscale %>% filter(mean_hgt < 6),
@@ -1380,21 +1424,50 @@ aic_results_cross %>%
 
   distinct()
 
-# ── AIC comparison ────────────────────────────────────────────────────────────
-aic_results_spruce <- compare_mng_aic_plot("spruce_share_adj", 
-                     spruce_share_plot %>% rename(plot_id = plot_id), 
-                     betar(), k_tsd = 4)
+#####  AIC comparison - plot level ---------------------
+compare_mng_aic_plot <- function(response, data, family, k_tsd = 4) {
+    base_formula <- as.formula(paste0(
+      response, " ~ year_f +",
+      "s(time_snc_full_disturbance, k =", k_tsd, ") +",
+      "s(plot_id, bs = 're')"
+    ))
+    
+    m_inter  <- gam(update(base_formula, . ~ . + planting_intensity * anti_browsing_intensity + grndwrk_intensity),
+                    data = data, family = family, method = "ML")
+    m_both   <- gam(update(base_formula, . ~ . + planting_intensity + anti_browsing_intensity + grndwrk_intensity),
+                    data = data, family = family, method = "ML")
+    m_plant  <- gam(update(base_formula, . ~ . + planting_intensity + grndwrk_intensity),
+                    data = data, family = family, method = "ML")
+    m_browse <- gam(update(base_formula, . ~ . + anti_browsing_intensity + grndwrk_intensity),
+                    data = data, family = family, method = "ML")
+    m_grndwrk <- gam(update(base_formula, . ~ . + grndwrk_intensity),
+                     data = data, family = family, method = "ML")
+    m_none   <- gam(base_formula, data = data, family = family, method = "ML")
+    
+    tibble(
+      model = c("interaction", "both", "plant_only", 
+                "browse_only", "grndwrk_only", "none"),
+      AIC   = c(AIC(m_inter), AIC(m_both), AIC(m_plant),
+                AIC(m_browse), AIC(m_grndwrk), AIC(m_none))
+    ) %>%
+      mutate(
+        delta_AIC = AIC - min(AIC),
+        best      = delta_AIC < 2
+      ) %>%
+      arrange(AIC)
+  }
+# run
+# AIC for all three plot-level responses
+aic_adapted <- compare_mng_aic_plot("share_adapted_adj",  share_adapted_plot, betar(),   k_tsd = 4)
+aic_spruce  <- compare_mng_aic_plot("spruce_share_adj",   spruce_share_plot,  betar(),   k_tsd = 4)
+aic_beta    <- compare_mng_aic_plot("beta_jaccard_mean",  plot_df_cz,         gaussian(), k_tsd = 3)
+  
+aic_adapted
+aic_spruce
+aic_beta
 
 
-aic_turnover <- compare_mng_aic_plot(
-  "beta_jaccard_mean", plot_df_cz, gaussian(), k_tsd = 3
-)
-
-aic_results_spruce
-aic_turnover
-
-
-# ── Fit final model ───────────────────────────────────────────────────────────
+###  ── Fit final model ───────────────────────────────────────────────────────────
 gam_spruce <- gam(
   spruce_share_adj ~
     planting_intensity+anti_browsing_intensity +
@@ -1406,7 +1479,21 @@ gam_spruce <- gam(
   method = "REML"
 )
 
+
+gam_spruce_fin <- gam(
+  spruce_share_adj ~
+    planting_intensity+ #anti_browsing_intensity +
+    s(time_snc_full_disturbance, k = 4) +
+    grndwrk_intensity + year_f +
+    s(plot_id, bs = "re"),
+  data   = spruce_share_plot,
+  family = betar(),
+  method = "REML"
+)
+
+
 summary(gam_spruce)
+summary(gam_spruce_fin)
 gratia::draw(gam_spruce, select = 1)
 
 # ── Effect size: planting 0 vs 1 ─────────────────────────────────────────────
@@ -1438,84 +1525,6 @@ wilcox.test(delta_spruce_plot$spruce_2023,
 # does planting predict change in spruce share?
 cor.test(~ planting_intensity + delta_spruce,
          data = delta_spruce_plot, method = "spearman")
-
-
-
-
-
-
-
-
-
-### ── GAM: share_adapted ~ time + management---------------------- 
-# beta family — share_adapted is a proportion bounded (0,1)
-# squeeze boundary values
-share_adapted_plot <- share_adapted_plot %>%
-  mutate(
-    share_adapted_adj = case_when(
-      share_adapted == 0 ~ 0.001,
-      share_adapted == 1 ~ 0.999,
-      TRUE               ~ share_adapted
-    )
-  )
-
-
-#####  ── AIC comparison — ML for fair comparison ---------------------
-compare_mng_aic_plot <- function(response, data, family, k_tsd = 4) {
-  base_formula <- as.formula(paste0(
-    response, " ~ grndwrk_intensity + year_f +",
-    "s(time_snc_full_disturbance, k =", k_tsd, ") +",
-    "s(plot_id, bs = 're')"
-  ))
-  
-  m_inter  <- gam(update(base_formula, . ~ . + planting_intensity * anti_browsing_intensity),
-                  data = data, family = family, method = "ML")
-  m_both   <- gam(update(base_formula, . ~ . + planting_intensity + anti_browsing_intensity),
-                  data = data, family = family, method = "ML")
-  m_plant  <- gam(update(base_formula, . ~ . + planting_intensity),
-                  data = data, family = family, method = "ML")
-  m_browse <- gam(update(base_formula, . ~ . + anti_browsing_intensity),
-                  data = data, family = family, method = "ML")
-  m_none   <- gam(base_formula, data = data, family = family, method = "ML")
-  
-  tibble(
-    model     = c("interaction", "both", "plant_only", "browse_only", "none"),
-    AIC       = c(AIC(m_inter), AIC(m_both), AIC(m_plant),
-                  AIC(m_browse), AIC(m_none))
-  ) %>%
-    mutate(
-      delta_AIC = AIC - min(AIC),
-      best      = delta_AIC < 2
-    ) %>%
-    arrange(AIC)
-}
-
-# run
-# AIC for all three plot-level responses
-aic_adapted <- compare_mng_aic_plot("share_adapted_adj",  share_adapted_plot, betar(),   k_tsd = 4)
-aic_spruce  <- compare_mng_aic_plot("spruce_share_adj",   spruce_share_plot,  betar(),   k_tsd = 4)
-aic_beta    <- compare_mng_aic_plot("beta_jaccard_mean",  plot_df_cz,         gaussian(), k_tsd = 3)
-
-aic_adapted
-aic_spruce
-aic_beta
-
-
-# collinearity check -----------------------
-# ── Plot level ────────────────────────────────────────────────────────────────
-cor.test(~ planting_intensity + anti_browsing_intensity,
-         data = both_levels_cz %>% filter(level == "plot"),
-         method = "spearman")
-
-# ── Subplot level ─────────────────────────────────────────────────────────────
-cor.test(~ planting_pred + browsing_pred,
-         data = both_levels_crossscale %>% filter(level == "subplot"),
-         method = "spearman")
-
-# ── Full dataset (both levels) ────────────────────────────────────────────────
-cor.test(~ planting_pred + browsing_pred,
-         data = both_levels_crossscale,
-         method = "spearman")
 
 
 
@@ -1551,45 +1560,6 @@ m_beta_add_planting <- gam(
   data   = plot_df_cz,
   method = "REML"
 )
-
-### combined management  ----------------
-# refit only with planting
-gam_adapted_final_composite <- gam(
-  share_adapted_adj ~
-    mng_composite +
-    s(time_snc_full_disturbance, k = 4) +
-    grndwrk_intensity + year_f +
-    s(plot_id, bs = "re"),
-  data   = share_adapted_plot,
-  family = betar(),
-  method = "REML"
-)
-
-gam_spruce_composite <- gam(
-  spruce_share_adj ~
-    mng_composite +
-    time_snc_full_disturbance +
-    grndwrk_intensity + year_f +
-    s(plot_id, bs = "re"),
-  data   = spruce_share_plot,
-  family = betar(),
-  method = "REML"
-)
-
-m_beta_add_composite <- gam(
-  beta_jaccard_mean ~
-    time_snc_full_disturbance +
-    mng_composite +
-    grndwrk_intensity + year_f +
-    s(plot_id, bs = "re"),
-  data   = plot_df_cz,
-  method = "REML"
-)
-
-summary(gam_adapted_final_composite)
-summary(m_beta_add_composite)
-summary(gam_spruce_composite)
-
 
 
 
@@ -1657,7 +1627,7 @@ cor.test(~ planting_intensity + delta_adapted,
 
 
 
-# ── Refit GAMs with cross-scale management predictors ─────────────────────────
+### Refit GAMs with cross-scale management predictors  ---------------------------
 gam_mean_hgt_cross <- gam(
   mean_hgt ~
     planting_pred * browsing_pred +
@@ -2003,9 +1973,14 @@ both_levels_cz %>%
 
 
 
-# 7. Tables & export ---------------------------------------------
+# Tables & export ---------------------------------------------
 
-## 7a. Save figures
+
+ggsave("outFigsCZ/p_function_drought.png",
+       p_function_drought, width = 6, height = 4, dpi = 300)
+
+
+## Save figures
 ggsave("outFigsCZ/p_species_composition.png",
        p_species_composition, width = 7, height = 3, dpi = 300)
 
