@@ -249,7 +249,7 @@ df_stem_dens_species <-
 
 
 
-# make a barplot of stem occurence ---------------------------
+## make a barplot of stem occurence ---------------------------
 
 #Make sure every species appears in both years (missing gets 0)
 top10_by_year_clean <- top10_by_year %>%
@@ -417,9 +417,8 @@ tree_summary <- dat_overlap %>%
 summary(tree_summary)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# TEMPORAL CHANGE ANALYSIS: functional groups
-# ══════════════════════════════════════════════════════════════════════════════
+
+## TEMPORAL CHANGE ANALYSIS: functional groups ------------------------------
 
 
 # Recode TSD outliers — applied once, used everywhere
@@ -515,7 +514,7 @@ shared_fill <- scale_fill_manual(
   labels = drought_labels
 )
 
-ggplot(species_functional_v2,
+p_function_drought <- ggplot(species_functional_v2,
        aes(x = drought_tol, y = shade_tol,
            color = func_group_drought, label = species)) +
   geom_point(size = 2) +
@@ -642,7 +641,7 @@ p_bar_TSD
 
 
 
-# ── Functional group alluvial: drought classification 2023 → 2025 ─────────────
+## ── Functional group alluvial: drought classification 2023 → 2025 --------------
 
 # ── Display labels ────────────────────────────────────────────────────────────
 # drought_labels <- c(
@@ -656,7 +655,7 @@ p_bar_TSD
 #drought_colors_labeled <- setNames(drought_colors, drought_labels)
 
 
-# ── Plot ──────────────────────────────────────────────────────────────────────
+# 
 func_alluvial_v2 <- func_stems_base_v2 %>%
   mutate(
     dom_func = classify_dom_func_v2(share_spruce, share_drought_sens,
@@ -683,7 +682,7 @@ p_func_alluvial_v2 <- ggplot(func_alluvial_v2,
                width = 0.4, color = "black", linewidth = 0.5) +
   geom_text(stat = "stratum",
             aes(label = ifelse(after_stat(prop) >= 0.02,
-                               paste0(round(after_stat(prop) * 100, 1), "%"),
+                               paste0(round(after_stat(prop) * 100, 1)), # , "%"
                                "")),
             size = 3, color = "grey20") +
   scale_x_discrete(limits = c("2023", "2025"),
@@ -716,13 +715,27 @@ p_combined_func <- (p_func_alluvial_v2 | p_bar_TSD) +
 
 p_combined_func
 
-# check if cairo is available
-capabilities("cairo")
+
+# export again
+
+cairo_pdf("outFigsCZ/p_combined_func.pdf", width = 7, height = 3.5)
+print(p_combined_func)
+dev.off()
+
+
+svg("outFigsCZ/p_combined_func.svg", width = 7, height = 3.5)
+print(p_combined_func)
+dev.off()
 
 
 
+pdf("outFigsCZ/p_combined_func2.pdf", width = 7, height = 3.5)
+print(p_combined_func)
+dev.off()
 
-# ── Climate adaptation score per plot ─────────────────────────────────────────
+
+
+### ── Climate adaptation score per plot -----------------
 # higher = more climate adapted
 # use 2025 composition as the outcome (current state)
 
@@ -767,36 +780,9 @@ ggplot(climate_adapt,
   geom_point(alpha = 0.5, size = 1.8) +
   geom_smooth(method = "lm", se = TRUE, color = "#1a5c1a") +
   geom_hline(yintercept = 0.5, linetype = "dashed", color = "grey50") +
-  labs(x = "Planting intensity (2025)",
+  labs(x = "Planting intensity ",
        y = "Share of climate-adapted stems\n(drought-tolerant + intermediate)") +
   theme_classic()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -1129,7 +1115,7 @@ intensity_class_summary_final
 
 
 
-## 6c. Disturbance history
+## 6c. Disturbance history ---------------------------------------
 plot_context_chars <- df %>%
   dplyr::select(plot, year, status, disturbance_year, forest_year,
                 disturbance_length, time_snc_full_disturbance, time_snc_part_disturbance,
@@ -1189,7 +1175,7 @@ p_combined_management_intens <- ggarrange(
 # Families: tw(log) continuous, nb(log) counts, binomial(logit) binary
 
 # make trully cross scale: get management intensity on pot level, 
-#@ management binary on subplto level
+# management binary on subplot level
 
 # ── Prepare cross-scale data ──────────────────────────────────────────────────
 # subplot level: use subplot binary management
@@ -1241,11 +1227,74 @@ both_levels_crossscale <- both_levels_cz %>%
   )
 
 
+##  Share adapted at plot level — -----------
+
+# Test share adapted
+func_stems_base_all <- dat_overlap_recoded2 %>%
+  mutate(func_group_drought = replace_na(as.character(func_group_drought), "other")) %>%
+  group_by(plot, year, time_snc_full_disturbance, func_group_drought) %>%
+  summarise(stems = sum(n, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(names_from  = func_group_drought,
+              values_from = stems,
+              values_fill = 0) %>%
+  compute_func_shares_v2()
 
 
-# can i combine management into one?
+# calculate climate adaptation on plot level (as having 1-2 species per subplot level will be not representative for community level)
+share_adapted_plot <- func_stems_base_all %>%
+  mutate(
+    share_adapted    = share_drought_tol + share_intermediate,
+    share_maladapted = share_spruce + share_drought_sens
+  ) %>%
+  select(plot, year, time_snc_full_disturbance, 
+         share_adapted, share_maladapted, share_spruce) %>%
+  mutate(
+    plot_id = factor(plot),
+    year_f  = factor(year)
+  ) %>%
+  left_join(
+    both_levels_cz %>%
+      filter(level == "plot") %>%
+      select(plot_id, year, planting_intensity, anti_browsing_intensity,
+             grndwrk_intensity) %>%
+      distinct(),
+    by = c("plot_id", "year")
+  )
 
-# ── Option 1: mean of planting and browsing ───────────────────────────────────
+share_adapted_plot %>% 
+  ggplot(aes(x = time_snc_full_disturbance,
+             y = share_adapted)) + 
+  geom_jitter() + 
+  geom_smooth()
+
+
+
+## Spruce shares at plot level -------------------------
+spruce_share_plot <- both_levels_cz %>%
+  filter(level == "plot") %>%
+  select(plot_id, year, year_f, time_snc_full_disturbance,
+         spruce_share, planting_intensity, anti_browsing_intensity,
+         grndwrk_intensity) %>%
+  distinct() %>%
+  mutate(
+    plot = as.character(plot_id),
+    # squeeze for beta family
+    spruce_share_adj = case_when(
+      spruce_share == 0  ~ 0.001,
+      spruce_share == 1  ~ 0.999,
+      is.na(spruce_share) ~ NA_real_,
+      TRUE               ~ spruce_share
+    )
+  ) %>%
+  filter(!is.na(spruce_share_adj))
+
+
+
+
+
+### Management combination composite?  -------------------
+
+# ── Option 1: mean of planting and browsing 
 # interpretation: average management intensity across the two key interventions
 both_levels_crossscale <- both_levels_crossscale %>%
   mutate(
@@ -1268,48 +1317,6 @@ plot_df_cz <- plot_df_cz %>%
   )
 
 
-# ── Option 2: PCA-based composite ────────────────────────────────────────────
-# more rigorous — extracts the shared variance axis
-pca_mng <- prcomp(
-  both_levels_crossscale %>% 
-    filter(level == "plot") %>%
-    select(planting_intensity, anti_browsing_intensity) %>%
-    na.omit(),
-  scale. = TRUE
-)
-summary(pca_mng)  # PC1 should explain ~80% of variance given ρ=0.63
-# PC1 score = composite management intensity
-
-# confirm mean and PC1 are nearly identical
-plot_df_cz %>%
-  mutate(
-    mng_mean = (planting_intensity + anti_browsing_intensity) / 2,
-    mng_pc1  = predict(pca_mng, 
-                       newdata = plot_df_cz %>% 
-                         select(planting_intensity, anti_browsing_intensity))[,1]
-  ) %>%
-  summarise(cor = cor(mng_mean, mng_pc1, use = "complete.obs"))
-
-
-
-
-# ── Verify ────────────────────────────────────────────────────────────────────
-both_levels_crossscale %>%
-  group_by(level) %>%
-  summarise(
-    n              = n(),
-    range_planting = paste(round(range(planting_pred, na.rm=TRUE), 2), 
-                           collapse = " - "),
-    mean_planting  = round(mean(planting_pred, na.rm=TRUE), 2),
-    n_na           = sum(is.na(planting_pred))
-  )
-# subplot should show 0 - 1 with mean ~0.58
-# plot should show 0 - 1 with mean ~0.59
-# BUT subplot values should be more variable (genuine 0/1 per subplot)
-# not just the same intensity repeated 5 times
-
-
-# test across all models: should i inc;lede plant9ing, brosing, both, or their interaction? check via AIC!
 
 # Model comparison: browsing include or not? --------------------------------
 # check wheather including browisng protection along with planing is actualy meaningful
@@ -1352,7 +1359,7 @@ compare_mng_aic <- function(response, data, family, k_tsd = 4) {
 }
 
 # ── Run for each response ─────────────────────────────────────────────────────
-aic_results <- bind_rows(
+aic_results_cross <- bind_rows(
   compare_mng_aic("mean_hgt",        
                   both_levels_crossscale %>% filter(mean_hgt < 6),
                   tw(link = "log"), k_tsd = 4),
@@ -1367,44 +1374,25 @@ aic_results <- bind_rows(
                   nb(link = "log"),  k_tsd = 7)
 )
 
-aic_results %>%
+aic_results_cross %>%
   select(response, model, AIC, delta_AIC, best) %>%
   print(n = Inf)
 
-
-## Spruce shares at plot level -------------------------
-spruce_share_plot <- both_levels_cz %>%
-  filter(level == "plot") %>%
-  select(plot_id, year, year_f, time_snc_full_disturbance,
-         spruce_share, planting_intensity, anti_browsing_intensity,
-         grndwrk_intensity) %>%
-  distinct() %>%
-  mutate(
-    plot = as.character(plot_id),
-    # squeeze for beta family
-    spruce_share_adj = case_when(
-      spruce_share == 0  ~ 0.001,
-      spruce_share == 1  ~ 0.999,
-      is.na(spruce_share) ~ NA_real_,
-      TRUE               ~ spruce_share
-    )
-  ) %>%
-  filter(!is.na(spruce_share_adj))
-
-nrow(spruce_share_plot)          # should be ~333
-spruce_share_plot %>% count(year)
-
-
-both_levels_cz %>%
-  filter(level == "plot") %>%
-  filter(is.na(spruce_share)) %>%
-  select(plot_id, year, time_snc_full_disturbance) %>%
   distinct()
 
 # ── AIC comparison ────────────────────────────────────────────────────────────
-compare_mng_aic_plot("spruce_share_adj", 
+aic_results_spruce <- compare_mng_aic_plot("spruce_share_adj", 
                      spruce_share_plot %>% rename(plot_id = plot_id), 
                      betar(), k_tsd = 4)
+
+
+aic_turnover <- compare_mng_aic_plot(
+  "beta_jaccard_mean", plot_df_cz, gaussian(), k_tsd = 3
+)
+
+aic_results_spruce
+aic_turnover
+
 
 # ── Fit final model ───────────────────────────────────────────────────────────
 gam_spruce <- gam(
@@ -1456,45 +1444,6 @@ cor.test(~ planting_intensity + delta_spruce,
 
 
 
-##  Share adapted at plot level — -----------
-
-# Test share adapted
-func_stems_base_all <- dat_overlap_recoded2 %>%
-  mutate(func_group_drought = replace_na(as.character(func_group_drought), "other")) %>%
-  group_by(plot, year, time_snc_full_disturbance, func_group_drought) %>%
-  summarise(stems = sum(n, na.rm = TRUE), .groups = "drop") %>%
-  pivot_wider(names_from  = func_group_drought,
-              values_from = stems,
-              values_fill = 0) %>%
-  compute_func_shares_v2()
-
-
-# calculate climate adaptation on plot level (as having 1-2 species per subplot level will be not representative for community level)
-share_adapted_plot <- func_stems_base_all %>%
-  mutate(
-    share_adapted    = share_drought_tol + share_intermediate,
-    share_maladapted = share_spruce + share_drought_sens
-  ) %>%
-  select(plot, year, time_snc_full_disturbance, 
-         share_adapted, share_maladapted, share_spruce) %>%
-  mutate(
-    plot_id = factor(plot),
-    year_f  = factor(year)
-  ) %>%
-  left_join(
-    both_levels_cz %>%
-      filter(level == "plot") %>%
-      select(plot_id, year, planting_intensity, anti_browsing_intensity,
-             grndwrk_intensity) %>%
-      distinct(),
-    by = c("plot_id", "year")
-  )
-
-share_adapted_plot %>% 
-  ggplot(aes(x = time_snc_full_disturbance,
-             y = share_adapted)) + 
-  geom_jitter() + 
-  geom_smooth()
 
 
 
