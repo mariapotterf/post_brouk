@@ -67,6 +67,13 @@ dat_overlap <- fread("outData/dat_full_species_all_countries.csv") %>%
     plot      = factor(plot)
   )
 
+# get plots with overlapping years
+plots_with_both <- dat_overlap %>%
+  filter(status == "both") %>%
+  distinct(plot) %>%
+  pull(plot)
+
+
 # get management values by year - planting is teh most important
 mng_year <-  fread("outData/mng_intensity_year_CZ.csv") 
 
@@ -663,21 +670,7 @@ p_bar_TSD
 
 
 
-## ── Functional group alluvial: drought classification 2023 → 2025 --------------
-
-# ── Display labels ────────────────────────────────────────────────────────────
-# drought_labels <- c(
-#   "Norway_spruce"     = "Norway\nspruce",
-#   "drought_sensitive" = "Drought-\nsensitive",
-#   "intermediate"      = "Intermediate",
-#   "drought_tolerant"  = "Drought-\ntolerant",
-#   "no_regeneration"   = "No\nregeneration"
-# )
-
-#drought_colors_labeled <- setNames(drought_colors, drought_labels)
-
-
-# 
+##  Functional group alluvial: drought classification 2023 → 2025 --------------
 func_alluvial_v2 <- func_stems_base_v2 %>%
   mutate(
     dom_func = classify_dom_func_v2(share_spruce, share_drought_sens,
@@ -1467,7 +1460,7 @@ aic_spruce
 aic_beta
 
 
-###  ── Fit final model ───────────────────────────────────────────────────────────
+###  spruce
 gam_spruce <- gam(
   spruce_share_adj ~
     planting_intensity+anti_browsing_intensity +
@@ -1479,21 +1472,27 @@ gam_spruce <- gam(
   method = "REML"
 )
 
-
-gam_spruce_fin <- gam(
-  spruce_share_adj ~
-    planting_intensity+ #anti_browsing_intensity +
-    s(time_snc_full_disturbance, k = 4) +
+# 
+# update this based on AIC result — likely plant_only
+gam_adapted_final <- gam(
+  share_adapted_adj ~
+    planting_intensity + anti_browsing_intensity +
+    s(time_snc_full_disturbance, k = 6) +
     grndwrk_intensity + year_f +
     s(plot_id, bs = "re"),
-  data   = spruce_share_plot,
+  data   = share_adapted_plot,
   family = betar(),
   method = "REML"
 )
 
+summary(gam_adapted_final)
+gratia::draw(gam_adapted_final, select = 1)
+
+
+
+
 
 summary(gam_spruce)
-summary(gam_spruce_fin)
 gratia::draw(gam_spruce, select = 1)
 
 # ── Effect size: planting 0 vs 1 ─────────────────────────────────────────────
@@ -1528,60 +1527,6 @@ cor.test(~ planting_intensity + delta_spruce,
 
 
 
-# refit only with planting
-gam_adapted_final_planting <- gam(
-  share_adapted_adj ~
-    planting_intensity +
-    s(time_snc_full_disturbance, k = 4) +
-    grndwrk_intensity + year_f +
-    s(plot_id, bs = "re"),
-  data   = share_adapted_plot,
-  family = betar(),
-  method = "REML"
-)
-
-gam_spruce_planting <- gam(
-  spruce_share_adj ~
-    planting_intensity +
-    time_snc_full_disturbance +
-    grndwrk_intensity + year_f +
-    s(plot_id, bs = "re"),
-  data   = spruce_share_plot,
-  family = betar(),
-  method = "REML"
-)
-
-m_beta_add_planting <- gam(
-  beta_jaccard_mean ~
-    time_snc_full_disturbance +
-    planting_intensity +
-    grndwrk_intensity + year_f +
-    s(plot_id, bs = "re"),
-  data   = plot_df_cz,
-  method = "REML"
-)
-
-
-
-
-
-
-# ── Fit winner with REML for final inference ──────────────────────────────────
-# update this based on AIC result — likely plant_only
-gam_adapted_final <- gam(
-  share_adapted_adj ~
-    planting_intensity + anti_browsing_intensity +
-    s(time_snc_full_disturbance, k = 6) +
-    grndwrk_intensity + year_f +
-    s(plot_id, bs = "re"),
-  data   = share_adapted_plot,
-  family = betar(),
-  method = "REML"
-)
-
-summary(gam_adapted_final)
-gratia::draw(gam_adapted_final, select = 1)
-
 # ── Collinearity check ────────────────────────────────────────────────────────
 cor.test(~ planting_intensity + anti_browsing_intensity,
          data = share_adapted_plot, method = "spearman")
@@ -1595,10 +1540,6 @@ emmeans(gam_adapted_final, ~ planting_intensity,
 
 
 # ── Delta adapted: overlapping plots only ────────────────────────────────────
-plots_with_both <- dat_overlap %>%
-  filter(status == "both") %>%
-  distinct(plot) %>%
-  pull(plot)
 
 delta_adapted <- share_adapted_plot %>%
   filter(plot %in% plots_with_both) %>%   # overlapping plots only
@@ -1707,7 +1648,7 @@ response_labels <- c(
   eff    = "Effective species [#]",
   rich   = "Species richness [#]",
   beta   = "Turnover [dim.]",
-  adapt  = "Drought-tolerant sp. share [%]",
+  adapt  = "Climate-adapted share [%] ",
   spruce = "Norway spruce share [%]"
 )
 
@@ -1838,7 +1779,7 @@ model_intensity_all_df_pct_mng <- emm_mng2 %>%
                                      "Effective species [#]",
                                      "Species richness [#]",
                                      "Turnover [dim.]",
-                                     "Drought-tolerant sp. share [%]",
+                                     "Climate-adapted share [%] ",
                                      "Norway spruce share [%]"))
   )
 
@@ -1988,7 +1929,7 @@ ggsave("outFigsCZ/p_time_scale.png",
        p_final, width = 6, height = 5, dpi = 300, bg = "white")
 
 ggsave("outFigsCZ/p_model_response.png",
-       p_model_response, width = 7, height = 3.5, dpi = 300)
+       p_model_response, width = 7, height = 4, dpi = 300)
 
 ggsave("outFigsCZ/p_management_intensity_plot_simpler.png",# - this one cuts
        p_management_intensity_plot_simpler, width = 5, height = 2.1, dpi = 300)
