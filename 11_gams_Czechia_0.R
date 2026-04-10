@@ -640,6 +640,29 @@ func_tsd_bar_v2 <- func_stems_base_v2 %>%
   mutate(pct = n / n_plots_tsd * 100)
 
 
+# is tehre any trend over time?
+
+# already has share_spruce, share_drought_sens, 
+# share_intermediate, share_drought_tol per plot × year
+
+func_stems_base_v2 %>%
+  group_by(plot) %>%
+  summarise(
+    time_snc = mean(time_snc_full_disturbance),
+    share_spruce      = mean(share_spruce),
+    share_drought_tol = mean(share_drought_tol),
+    share_intermediate = mean(share_intermediate),
+    share_drought_sens = mean(share_drought_sens)
+  ) %>%
+  summarise(
+    rho_spruce = cor.test(~ share_spruce + time_snc, method = "spearman")$estimate,
+    p_spruce   = cor.test(~ share_spruce + time_snc, method = "spearman")$p.value,
+    rho_tol    = cor.test(~ share_drought_tol + time_snc, method = "spearman")$estimate,
+    p_tol      = cor.test(~ share_drought_tol + time_snc, method = "spearman")$p.value
+  )
+
+
+
 
 
 # get text for classes
@@ -1595,7 +1618,7 @@ gam_cv_hgt_pos_cross <- gam(
 
 gam_eff_cross <- gam(
   effective_numbers ~
-    planting_pred + browsing_pred +
+    planting_pred * browsing_pred +
     s(time_snc_full_disturbance, k = 3) +
     grndwrk_pred + year_f + level +
     s(plot_id, bs = "re"),
@@ -1641,6 +1664,57 @@ fin.models.all <- list(
 
 
 # Get estimates from the teh model: campre by % change from  ---------------
+
+# Here's the R code to build and export the table:
+# ── Build the summary table ───────────────────────────────────────────────────
+
+emm_table <- emm_mng2 %>%
+  select(model, focal_term, term, response_lab,
+         intensity, response_plot, lower.CL, upper.CL) %>%
+  rename(response = response_plot) %>%
+  # scale proportions to % for readable output
+  mutate(
+    response  = case_when(model %in% c("adapt", "spruce") ~ response * 100, TRUE ~ response),
+    lower.CL  = case_when(model %in% c("adapt", "spruce") ~ lower.CL * 100, TRUE ~ lower.CL),
+    upper.CL  = case_when(model %in% c("adapt", "spruce") ~ upper.CL * 100, TRUE ~ upper.CL),
+    response  = round(response, 2),
+    lower.CL  = round(lower.CL, 2),
+    upper.CL  = round(upper.CL, 2)
+  ) %>%
+  pivot_wider(
+    names_from  = intensity,
+    values_from = c(response, lower.CL, upper.CL),
+    names_sep   = "_"
+  ) %>%
+  mutate(
+    estimate_pct = round(100 * (response_1 - response_0) / response_0, 1),
+    lower_pct    = round(100 * (lower.CL_1 - upper.CL_0) / response_0, 1),
+    upper_pct    = round(100 * (upper.CL_1 - lower.CL_0) / response_0, 1),
+    CI_95        = paste0("[", lower_pct, "%, ", upper_pct, "%]"),
+    change_pct   = paste0(ifelse(estimate_pct > 0, "+", ""), estimate_pct, "%")
+  ) %>%
+  left_join(pvals_mng, by = c("model", "focal_term")) %>%
+  select(
+    Management    = term,
+    Response      = response_lab,
+    `Intensity 0` = response_0,
+    `Intensity 1` = response_1,
+    `Change (%)`  = change_pct,
+    `95% CI`      = CI_95,
+    `p-value`     = p_label
+  ) %>%
+  arrange(Management, Response)
+
+# ── Export to Word ────────────────────────────────────────────────────────────
+sjPlot::tab_df(
+  emm_table,
+  title  = "Predicted marginal means at management intensity 0 vs 1",
+  footnote = "Predicted marginal means from GAMs, all other variables held at their means. Proportions (climate-adapted share, Norway spruce share) scaled to %. 95% CI on the difference computed as lower.CL_1 − upper.CL_0 and upper.CL_1 − lower.CL_0.",
+  file   = "outTable/management_effects_emmeans.doc"
+)
+
+
+
 # ── Response labels ───────────────────────────────────────────────────────────
 response_labels <- c(
   hgt    = "Mean height [m]",
@@ -1760,6 +1834,14 @@ emm_mng2 <- emm_mng %>%
     term          = recode(focal_term, !!!term_labels)
   )
 
+
+emm_mng2 %>%
+  select(model, focal_term, intensity, response_plot, lower.CL, upper.CL) %>%
+  filter(focal_term %in% c("planting_intensity", "anti_browsing_intensity")) %>%
+  mutate(across(where(is.numeric), ~round(.x, 3))) %>%
+  arrange(model, focal_term, intensity) #%>%
+  print(n = Inf)
+
 # ── Step 3: build pct change table ───────────────────────────────────────────
 model_intensity_all_df_pct_mng <- emm_mng2 %>%
   select(model, focal_term, term, response_lab,
@@ -1771,8 +1853,8 @@ model_intensity_all_df_pct_mng <- emm_mng2 %>%
   left_join(pvals_mng, by = c("model", "focal_term")) %>%
   mutate(
     estimate_pct = 100 * (response_1 - response_0) / response_0,
-    lower_pct    = 100 * (lower.CL_1 - upper.CL_0) / upper.CL_0,
-    upper_pct    = 100 * (upper.CL_1 - lower.CL_0) / lower.CL_0,
+    lower_pct    = 100 * (lower.CL_1  - upper.CL_0) / response_0,  # <-- lower of diff
+    upper_pct    = 100 * (upper.CL_1  - lower.CL_0) / response_0,  # <-- upper of diff
     sig_col      = ifelse(p.value < 0.05, "sig", "n.s."),
     response     = factor(response_lab,
                           levels = c("Mean height [m]", "CV [%]",
@@ -1785,7 +1867,7 @@ model_intensity_all_df_pct_mng <- emm_mng2 %>%
 
 # ── Verify ────────────────────────────────────────────────────────────────────
 model_intensity_all_df_pct_mng %>%
-  select(model, focal_term, estimate_pct, p.value, response) %>%
+  select(model, focal_term, estimate_pct, p_label , response) %>%
   filter(!is.na(estimate_pct)) %>%
   print(n = Inf)
 
@@ -1800,6 +1882,7 @@ model_intensity_all_df_pct_mng <- model_intensity_all_df_pct_mng %>%
 model_intensity_all_df_pct_mng %>%
   filter(is.na(estimate_pct) | is.na(p.value) | is.na(response)) %>%
   select(model, focal_term, response_lab)
+
 
 
 ## 6e. Time since disturbance x scale (panel)
@@ -1830,7 +1913,7 @@ p_eff <- pp(fin.models.all$eff,
             terms   = c("time_snc_full_disturbance[0:7]", "level"),
             xlab    = "Time since disturbance\n(years)",
             ylab    = "Effective species [#]",
-            annot   = "Time:\np = 0.597",
+            annot   = "Time:\np = 0.571",
             ylim    = ylim_eff)
 
 p_rich <- pp(fin.models.all$rich,
@@ -1860,7 +1943,11 @@ p_final <- (pair_hgt | pair_cv) / (pair_eff | pair_rich) +
 
 p_final
 
-## 6f. Management effect (% change 0 -> 1)
+
+
+
+
+## Management effect (% change 0 -> 1) ----------------------------------
 p_model_response <- ggplot(
   model_intensity_all_df_pct_mng,
   aes(x = response, y = estimate_pct, fill = response)
@@ -1881,10 +1968,19 @@ p_model_response <- ggplot(
   ) +
   geom_errorbar(aes(ymin = lower_pct, ymax = upper_pct),
                 width = 0.15, linewidth = 0.5, color = "grey30") +
+  # geom_text(aes(label    = p_label,
+  #               y        = upper_pct + 12,
+  #               fontface = ifelse(p.value < 0.05, "bold", "plain")),
+  #           size = 2.5) +
+  
   geom_text(aes(label    = p_label,
-                y        = upper_pct + 12,
-                fontface = ifelse(p.value < 0.05, "bold", "plain")),
-            size = 2.5) +
+                y        = ifelse(estimate_pct >= 0, 
+                                  upper_pct + 15, 
+                                  lower_pct - 22),
+                fontface = ifelse(p.value < 0.05, "bold", "plain"),
+                vjust    = ifelse(estimate_pct >= 0, 0, 1)),
+            size = 2.5)+
+  
   facet_wrap(~ term, ncol = 3) +
   scale_fill_brewer(palette = "Dark2") +
   labs(x = "", y = "Effect on response [%]") +
@@ -1927,6 +2023,10 @@ ggsave("outFigsCZ/p_species_composition.png",
 
 ggsave("outFigsCZ/p_time_scale.png",
        p_final, width = 6, height = 5, dpi = 300, bg = "white")
+
+ggsave("outFigsCZ/p_time_scale.svg",
+       p_final, width = 6, height = 5, dpi = 300, bg = "white")
+
 
 ggsave("outFigsCZ/p_model_response.png",
        p_model_response, width = 7, height = 4, dpi = 300)
@@ -2094,7 +2194,7 @@ tab_df(aic_adapted_table,
        title   = "AIC comparison of management structures — plot-level climate adaptation model",
        file    = "outTable/aic_adapted_model.doc")
 
-# ── Combined into one table ───────────────────────────────────────────────────
+# combine aic into one table
 aic_combined <- bind_rows(aic_cross_table, aic_adapted_table)
 
 tab_df(aic_combined,
@@ -2105,7 +2205,7 @@ tab_df(aic_combined,
 
 
 
-## 6h. Height by seral stage x management (heatmap)
+### 6h. Height by seral stage x management (heatmap) -------------------------------
 dat_clean <- df %>%
   as_tibble() %>%
   dplyr::filter(!is.na(hgt_est), !is.na(n), n > 0)
