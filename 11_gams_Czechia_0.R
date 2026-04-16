@@ -69,29 +69,49 @@ dat_full <- fread("outData/dat_full_species_all_countries.csv") %>%
     plot      = factor(plot)
   )
 
-# select only overlapping plots
-dat_overlap <- dat_full %>%
-  filter(status == "both")
-
-# get plots with overlapping years  -------------------------
-plots_with_both <- dat_full %>%
-  filter(status == "both") %>%
-  distinct(plot) %>%
-  pull(plot)
-
-n_overlap_plots <- length(plots_with_both)  # should be 126
-
 
 
 # get management values by year - planting is teh most important
 mng_year <-  fread("outData/mng_intensity_year_CZ.csv") 
 
-# ── Sanity check ───────────────────────────────────────────────
-cat("Plots CZ:   ", n_distinct(both_levels_cz$plot_id), "\n")
-cat("Years:      ", sort(unique(both_levels_cz$year)), "\n")
-cat("Levels:     ", levels(both_levels_cz$level), "\n")
-cat("plot_df rows:", nrow(plot_df_cz), "\n")
-cat("sub_df rows: ", nrow(sub_df_cz), "\n")
+# Clean up input data -----------------------
+
+# add a unique plot and subplot id per year - so i can easily calculate how many unique plots i have
+dat_full <- dat_full %>% 
+  mutate(plot_year = paste0(plot, year, '_'),
+         subplot_year = paste0(subplot, year, '_'))
+
+# select only overlapping plots
+dat_overlap <- dat_full %>%
+  filter(status == "both")
+
+plots_per_year <- dat_overlap %>%
+  distinct(plot, year) %>%
+  count(plot) %>%
+  count(n, name = "n_plots") %>%
+  rename(n_years = n)
+
+plots_per_year
+
+
+# get plots with overlapping years  
+plots_with_both <- dat_overlap %>%
+  filter(status == "both") %>%
+  distinct(plot, year) %>%
+  count(plot) %>%
+  filter(n == 2) %>%
+  pull(plot)
+
+
+dat_overlap <- dat_overlap %>% 
+  filter(plot %in% plots_with_both)
+
+
+n_overlap_plots    <- length(plots_with_both)  #  125
+n_overlap_subplots <- length(unique(dat_overlap$subplot))  #  1250
+
+n_total_plots   <- length(unique(dat_full$plot_year))  #  333
+n_subplots_total <-length(unique(dat_full$subplot_year))  # 1665
 
 
 # convert management by year into long format
@@ -113,12 +133,8 @@ mng_year_wide_clean <- mng_year_long_all %>%
   )
 
 
-
-# Species composition -------------------------------------------------------------------
-
-
-# Summary --------------------------------------
-## Analyze data: ALL plots ----------------------
+# Data overview: landscape ------------------
+## ALL plots ----------------------
 # get master table, having all unique plots and subplots - even teh empty ones
 dat_master_subplot <- dat_full %>% 
   dplyr::select(plot, subplot, year, status) %>% 
@@ -127,20 +143,24 @@ dat_master_subplot <- dat_full %>%
 table(dat_master_subplot$year)  
 table(dat_master_subplot$status)  
 
-n_plots_total <- length(unique(dat_master_subplot$plot))     # 208, 333
-n_plots_total # 208,. 333 over 2 years, 126 recoccurs
 
-n_subplots_total <-length(unique(dat_master_subplot$subplot))  # 1665
-n_subplots_total # 1665
+## ── Total stems and plots: overall and per year ───────────────────────────
+n_trees_total <- sum(dat_full$n, na.rm = T)
+n_trees_overlap <- sum(dat_overlap$n, na.rm = T)
+
+n_trees_total
+n_trees_overlap
+
+# per year
+trees_per_year <- dat_full %>%
+  group_by(year) %>%
+  summarise(
+    total_stems    = sum(n, na.rm = T),
+    .groups = "drop"
+  )
 
 
-# filter only data with stem values 
-dat_full_populated <- dat_full %>% 
-  dplyr::filter(n>0)
 
-# make a dataset where if n is NA, replace by 0
-dat_full_n0 <- dat_full %>% 
-  mutate(n = ifelse(is.na(n), 0, n))  
 
 
 ## Overlapping plots  -------------------------
@@ -164,7 +184,7 @@ year_totals <- df %>%
     .groups = "drop"
   )
 
-# 2) Species x year summary + year-specific share
+# Species x year summary + year-specific share
 species_stem_share_year <- df %>%
   dplyr::group_by(year, species) %>%
   dplyr::summarise(
@@ -229,38 +249,11 @@ species_per_single_species_plot <- df %>%
 summary_species <- species_per_single_species_plot %>%
   count(species, name = "single_plots") %>%
   arrange(desc(single_plots)) %>% 
-  mutate(share = single_plots/333)
+  mutate(share = single_plots/n_overlap_plots )
 
 # Print result
 print(summary_species)
 
-
-#### Stem density per species per top X species --------------------------------
-df_stem_dens_species <- df %>% 
-  group_by(plot, year, species, n_subplots ) %>%
-  summarize(sum_n = sum(n, na.rm =T)) %>% 
-  mutate(scaling_factor = 10000/(n_subplots * 4),
-         stem_dens = sum_n*scaling_factor) #%>% 
-# mutate(log_sum_stem_density = log10(stem_dens + 1)) #%>%  # Adding 1 to avoid log(0)
-#ungroup()
-
-# get total sum and calculate as average value over all sites 
-df_stem_dens_species_sum <- 
-  df_stem_dens_species %>% 
-  group_by(species, year) %>% #, year
-  summarise(stem_dens = sum(stem_dens, na.rm = T)) %>% #,
-  mutate(stem_dens_avg = stem_dens/n_plots_total) #,
-
-
-df_stem_dens_species <- 
-  df_stem_dens_species %>% 
-  ungroup(.) %>% 
-  filter(sum_n >0) %>% 
-  filter(species %in% v_top_species) %>% 
-  dplyr::group_by(species, year) %>%
-  dplyr::mutate(median_stem_density = median(stem_dens, na.rm = TRUE)) %>% 
-  dplyr::ungroup(.) %>%
-  mutate(species = factor(species, levels = rev(v_top_species))) # Set custom order
 
 
 
@@ -313,15 +306,16 @@ p_bar
 
 ####  Get species occurence from total number of plots -------------
 
-# Share of plots per species (where species are present = non-zero stems)
+
 species_occurence <- 
-  df_stem_dens_species %>%
+  df %>%
   ungroup(.) %>% 
-  dplyr::filter(sum_n > 0) %>%                 # Only where species occurred
+  dplyr::filter(n > 0) %>%                 # Only where species occurred
   distinct(species, year, plot) %>%    #year,       # Unique species × plot combos
   count(species, year, name = "n_plots")  %>% #year, %>%  # Count number of plots per species
   mutate(share_of_plots = n_plots / n_overlap_plots  *100) %>% 
   arrange()
+
 
 species_occurence
 
