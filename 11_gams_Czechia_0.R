@@ -414,96 +414,69 @@ p_species_composition
 
 
 ### Summary table  -----------------------
-
-# ── species_occurence: recompute with correct denominator ─────────────────
-species_occurence <- df %>%
-  filter(n > 0, species %in% v_top_species) %>%
-  distinct(species, year, plot) %>%
-  count(species, year, name = "n_plots") %>%
-  mutate(share_of_plots = n_plots / n_overlap_plots * 100)
-
-# ── Other species: plots with ANY non-top species ─────────────────────────
-other_plots <- df %>%                        # df is already status == 'both'
-  filter(!species %in% v_top_species, n > 0) %>%
-  group_by(year) %>%
-  summarise(
-    plots_present  = n_distinct(plot),
-    share_of_plots = n_distinct(plot) / n_overlap_plots * 100,
-    .groups = "drop"
-  )
-
-# ── other_rows: stems/share from species_stem_share_year (already on 125) ─
-other_rows <- species_stem_share_year %>%
-  filter(!species %in% v_top_species) %>%
-  group_by(year) %>%
-  summarise(
-    species = "other",
-    stems   = sum(stems, na.rm = TRUE),
-    share   = sum(share, na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
-  left_join(other_plots, by = "year")
-
 # ── bind top species + other ───────────────────────────────────────────────
-species_table <- species_stem_share_year %>%
-  filter(species %in% v_top_species) %>%
+species_table <- 
+  species_stem_share_year_other %>%
+  filter(species_other %in% v_top_species_other) %>%
+  select(!plots_present) %>% # can be removed and teh number of plots is calculated in plot occurence
   left_join(
-    species_occurence %>% select(species, year, n_plots, share_of_plots),
-    by = c("species", "year")
-  ) %>%
-  rename(plots_present = n_plots) %>%
-  select(species, year, stems, share, plots_present, share_of_plots) %>%
-  bind_rows(other_rows) %>%
-  mutate(species = factor(species, levels = c(rev(species_levels), "other")))
+    species_occurence,
+    by = c("species_other", "year")
+  )%>%
+  #head()
+  rename(share_stems = share ) %>%
+  mutate(species = factor(species_other, levels = rev(v_top_species_other)))
 
 # ── wide format, order by stems_2025, other last ──────────────────────────
-species_table_wide <- species_table %>%
+species_table_wide <- 
+  species_table %>%
+    select(-total_trees) %>% 
   pivot_wider(
     names_from  = year,
-    values_from = c(stems, share, plots_present, share_of_plots),
+    values_from = c(stems, share_stems, n_plots, share_of_plots),
     names_glue  = "{.value}_{year}"
   ) %>%
-  mutate(is_other = species == "other") %>%
+  mutate(is_other = species_other == "other") %>%
   arrange(is_other, desc(stems_2025)) %>%
   select(-is_other)
 
+
 # ── format and export ─────────────────────────────────────────────────────
-library(flextable)
 
 species_table_wide %>%
-  mutate(species = recode(as.character(species),
-                          "piab"  = "Picea abies",
-                          "besp"  = "Betula sp.",
-                          "pisy"  = "Pinus sylvestris",
-                          "qusp"  = "Quercus sp.",
-                          "fasy"  = "Fagus sylvatica",
-                          "potr"  = "Populus tremula",
-                          "absp"  = "Abies sp.",
-                          "acps"  = "Acer pseudoplatanus",
-                          "lade"  = "Larix decidua",
-                          "saca"  = "Salix caprea",
-                          "soau"  = "Sorbus aucuparia",
-                          "other" = "Other species"
+  mutate(species_other = recode(as.character(species_other),
+                                "piab"  = "Picea abies",
+                                "besp"  = "Betula sp.",
+                                "pisy"  = "Pinus sylvestris",
+                                "qusp"  = "Quercus sp.",
+                                "fasy"  = "Fagus sylvatica",
+                                "potr"  = "Populus tremula",
+                                "absp"  = "Abies sp.",
+                                "acps"  = "Acer pseudoplatanus",
+                                "lade"  = "Larix decidua",
+                                "saca"  = "Salix caprea",
+                                "soau"  = "Sorbus aucuparia",
+                                "other" = "Other species"
   )) %>%
   mutate(
-    stems_2023_lab = paste0(stems_2023, " (", round(share_2023, 1), "%)"),
-    stems_2025_lab = paste0(stems_2025, " (", round(share_2025, 1), "%)"),
-    plots_2023_lab = paste0(plots_present_2023, " (", round(share_of_plots_2023, 1), "%)"),
-    plots_2025_lab = paste0(plots_present_2025, " (", round(share_of_plots_2025, 1), "%)"),
+    stems_2023_lab = paste0(stems_2023, " (", round(share_stems_2023, 1), "%)"),
+    stems_2025_lab = paste0(stems_2025, " (", round(share_stems_2025, 1), "%)"),
+    plots_2023_lab = paste0(n_plots_2023, " (", round(share_of_plots_2023, 1), "%)"),
+    plots_2025_lab = paste0(n_plots_2025, " (", round(share_of_plots_2025, 1), "%)"),
     delta_stems = paste0(ifelse(stems_2025 - stems_2023 > 0, "+", ""),
                          stems_2025 - stems_2023),
-    delta_share = paste0(ifelse(share_2025 - share_2023 > 0, "+", ""),
-                         round(share_2025 - share_2023, 1), "%"),
-    delta_plots = paste0(ifelse(plots_present_2025 - plots_present_2023 > 0, "+", ""),
-                         plots_present_2025 - plots_present_2023)
+    delta_share = paste0(ifelse(share_stems_2025 - share_stems_2023 > 0, "+", ""),
+                         round(share_stems_2025 - share_stems_2023, 1), "%"),
+    delta_plots = paste0(ifelse(n_plots_2025 - n_plots_2023 > 0, "+", ""),
+                         n_plots_2025 - n_plots_2023)
   ) %>%
-  select(species,
+  select(species_other,
          stems_2023_lab, plots_2023_lab,
          stems_2025_lab, plots_2025_lab,
          delta_stems, delta_share, delta_plots) %>%
   flextable() %>%
   set_header_labels(
-    species        = "Species",
+    species_other  = "Species",
     stems_2023_lab = "Stems n (%)",
     plots_2023_lab = "Plots n (%)",
     stems_2025_lab = "Stems n (%)",
@@ -522,9 +495,6 @@ species_table_wide %>%
   hline(i = 11) %>%
   autofit() %>%
   save_as_docx(path = "outTable/species_table.docx")
-
-
-
 
 
 
@@ -1194,11 +1164,14 @@ p_management_intensity_plot
 p_management_intensity_plot_simpler <- 
   mng_shifted %>% 
   filter(activity != "logging_trail_intensity") %>% 
-  droplevels(.) %>% 
+  droplevels(.) %>%
+  mutate(intensity_class_plot = factor(intensity_class, 
+                                       levels = rev(intensity_levels))) %>%  # ← fix here
   ggplot(aes(x = proportion , 
              y = activity,
              fill = intensity_class_plot)) +
-  geom_col(width = 0.4, color = "black") +
+  geom_vline(xintercept = c(25,50,75), color = "grey80", linewidth = 0.5, lty = "dashed")+ # ← add
+   geom_col(width = 0.4, color = "black") +
   scale_fill_manual(values = fill_colors, 
                     name = "Management intensity\nclass",
                     breaks = intensity_levels) +
@@ -2139,7 +2112,7 @@ ggsave("outFigsCZ/p_model_response.png",
        p_model_response, width = 7, height = 4, dpi = 300)
 
 ggsave("outFigsCZ/p_management_intensity_plot_simpler.png",# - this one cuts
-       p_management_intensity_plot_simpler, width = 5, height = 2.1, dpi = 300)
+       p_management_intensity_plot_simpler, width = 5, height = 2.8, dpi = 300)
 
 ggsave("outFigsCZ/p_combined_disturb_fig.png",
        p_combined_disturb_fig, width = 5, height = 2.5, dpi = 300)
