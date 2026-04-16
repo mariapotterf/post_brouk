@@ -218,12 +218,26 @@ species_levels <- top10_by_year %>%
   pull(species)
 
 # v_top_species follows the same order (not alphabetical)
-v_top_species <- species_levels
+v_top_species <- species_levels # c('other', species_levels)
+v_top_species_other <- c('other', species_levels)
 
-species_levels
+# add 'other' to rename spacies and keep them there
+species_stem_share_year_other <- 
+  species_stem_share_year %>%
+  mutate(species_other = ifelse(species %in% v_top_species, species, "other")) %>%
+  group_by(year, species_other) %>%
+  #  View()
+  summarise(
+    stems         = sum(stems, na.rm = TRUE),
+    plots_present = sum(plots_present),  
+    total_trees   = first(total_trees),
+    .groups = "drop"
+  ) %>%
+  mutate(share = round(100 * stems / total_trees, 2))
 
 
-#### Single species plots chars 
+
+#### Single species plots chars  -----------
 
 # Summarize number of species per plot, only for n > 1 trees - why is that??
 plots_with_species_counts <- df %>%
@@ -255,16 +269,12 @@ summary_species <- species_per_single_species_plot %>%
 print(summary_species)
 
 
-
-
-#### Stem occurence: barplot  ---------------------------
-
 #Make sure every species appears in both years (missing gets 0)
-top10_by_year_clean <- top10_by_year %>%
-  dplyr::select(year, species, share) %>%
-  tidyr::complete(year, species = species_levels, fill = list(share = 0)) %>%
+top10_by_year_clean <- species_stem_share_year_other %>%
+  dplyr::select(year, species_other, share) %>%
+  tidyr::complete(year, species_other = v_top_species_other, fill = list(share = 0)) %>%
   mutate(
-    species = factor(species, levels = species_levels),
+    species = factor(species_other, levels = v_top_species_other),
     year = factor(year)  # for alpha legend control
   )
 
@@ -534,142 +544,6 @@ species_table_wide %>%
   save_as_docx(path = "outTable/species_table.docx")
 
 
-# Get alluvial plots for change in composition
-# START 
-library(ggalluvial)
-library(dplyr)
-library(tidyr)
-library(ggplot2)
-
-# --- prepare long format for overlapping plots only 
-alluvial_df <- species_stem_share_year %>%
-  filter(species %in% c(v_top_species, "other")) %>%
-  mutate(species = recode(species,
-                          "piab"  = "Picea abies",
-                          "besp"  = "Betula sp.",
-                          "pisy"  = "Pinus sylvestris",
-                          "qusp"  = "Quercus sp.",
-                          "fasy"  = "Fagus sylvatica",
-                          "potr"  = "Populus tremula",
-                          "absp"  = "Abies sp.",
-                          "acps"  = "Acer pseudoplatanus",
-                          "lade"  = "Larix decidua",
-                          "saca"  = "Salix caprea",
-                          "soau"  = "Sorbus aucuparia"
-  )) %>%
-  mutate(year = factor(year))
-
-# add "Other" as aggregated row
-other_alluvial <- species_stem_share_year %>%
-  filter(!species %in% v_top_species) %>%
-  group_by(year) %>%
-  summarise(
-    species       = "Other species",
-    stems         = sum(stems, na.rm = TRUE),
-    share         = sum(share, na.rm = TRUE),
-    plots_present = NA_integer_,
-    .groups = "drop"
-  ) %>%
-  mutate(year = factor(year))
-
-# plots occurrence for Other
-other_plots_alluvial <- dat_overlap %>%
-  filter(!species %in% v_top_species, n > 0) %>%
-  group_by(year) %>%
-  summarise(
-    species       = "Other species",
-    plots_present = n_distinct(plot),
-    share_of_plots = n_distinct(plot) / n_overlap_plots * 100,
-    .groups = "drop"
-  ) %>%
-  mutate(year = factor(year))
-
-alluvial_long <- alluvial_df %>%
-  bind_rows(
-    other_alluvial %>%
-      left_join(other_plots_alluvial %>% select(year, share_of_plots),
-                by = "year")
-  ) %>%
-  mutate(
-    species = factor(species,
-                     levels = c("Picea abies", "Betula sp.",
-                                "Pinus sylvestris", "Quercus sp.",
-                                "Fagus sylvatica", "Sorbus aucuparia",
-                                "Larix decidua", "Salix caprea",
-                                "Acer pseudoplatanus", "Populus tremula",
-                                "Abies sp.", "Other species"))
-  )
-
-# species color palette — adjust to match your existing species_colors
-sp_colors <- c(
-  "Picea abies"         = "#1b7837",
-  "Betula sp."          = "#d9f0a3",
-  "Pinus sylvestris"    = "#74c476",
-  "Quercus sp."         = "#c7e9c0",
-  "Fagus sylvatica"     = "#f7fcb9",
-  "Sorbus aucuparia"    = "#fd8d3c",
-  "Larix decidua"       = "#fdae6b",
-  "Salix caprea"        = "#fdd0a2",
-  "Acer pseudoplatanus" = "#9ecae1",
-  "Populus tremula"     = "#c6dbef",
-  "Abies sp."           = "#bcbddc",
-  "Other species"       = "#d9d9d9"
-)
-
-# --- plot 1: stem share 
-p_alluvial_stems <- alluvial_long %>%
-  ggplot(aes(x = year,
-             y = share,
-             alluvium = species,
-             stratum  = species,
-             fill     = species,
-             label    = species)) +
-  geom_flow(aes(fill = species), alpha = 0.6, width = 0.3) +
-  geom_stratum(width = 0.3, color = "white", size = 0.3) +
-  scale_fill_manual(values = sp_colors, name = NULL) +
-  scale_x_discrete(expand = expansion(mult = 0.1)) +
-  labs(x = NULL, y = "Stem share [%]",
-       title = "[a] Stem share") +
-  theme_classic(base_size = 10) +
-  theme(legend.position = "none")
-
-# --- plot 2: plot occurrence 
-p_alluvial_plots <- alluvial_long %>%
-  filter(!is.na(share_of_plots)) %>%
-  ggplot(aes(x = year,
-             y = share_of_plots,
-             alluvium = species,
-             stratum  = species,
-             fill     = species,
-             label    = species)) +
-  geom_flow(aes(fill = species), alpha = 0.6, width = 0.3) +
-  geom_stratum(width = 0.3, color = "white", size = 0.3) +
-  scale_fill_manual(values = sp_colors, name = NULL) +
-  scale_x_discrete(expand = expansion(mult = 0.1)) +
-  labs(x = NULL, y = "Plot occurrence [%]",
-       title = "[b] Plot occurrence") +
-  theme_classic(base_size = 10) +
-  theme(
-    legend.position  = "right",
-    legend.text      = element_text(size = 8, face = "italic"),
-    legend.key.size  = unit(0.4, "cm")
-  )
-
-p_alluvial_combined <- ggarrange(
-  p_alluvial_stems,
-  p_alluvial_plots,
-  ncol   = 2,
-  common.legend = TRUE,
-  legend = "right"
-)
-
-p_alluvial_combined
-
-# ggsave("outFigsCZ/p_alluvial_species.png",
-#        p_alluvial_combined,
-#        width = 18, height = 10, units = "cm", dpi = 300)
-
-# END ALLUVIAL
 
 
 
