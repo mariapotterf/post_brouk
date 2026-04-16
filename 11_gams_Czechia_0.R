@@ -24,13 +24,14 @@ library(tibble)
 library(spdep)
 library(sjPlot)
 library(patchwork)
+library(flextable)
 
 ## Project variables (palettes, labels, species lists, species_class, earlyspecs_cz)
 source('my_variables.R')
 
 
 
-# Filter data from both level: plot and subplot from EU  ----------------------
+# Filter data from both level: plot and subplot from EU  
 # these are summarized on plot and subplot level 
 both_levels_cz <- fread("outData/both_levels_re2_all_countries.csv") %>%
   filter(country_name == "Czechia") %>%
@@ -60,18 +61,26 @@ sub_df_cz <- fread("outData/sub_df_AEF_all_countries.csv") %>%
     region       = factor(region)
   )
 
-# data with individual species per subplot and plots each species
-dat_overlap <- fread("outData/dat_full_species_all_countries.csv") %>%
+# data with individual species per subplot and plots each species,
+# contains ALL plots: overlapping and no overlapping ones
+dat_full <- fread("outData/dat_full_species_all_countries.csv") %>%
   filter(country_name == "Czechia") %>%
   mutate(
     plot      = factor(plot)
   )
 
-# get plots with overlapping years
-plots_with_both <- dat_overlap %>%
+# select only overlapping plots
+dat_overlap <- dat_full %>%
+  filter(status == "both")
+
+# get plots with overlapping years  -------------------------
+plots_with_both <- dat_full %>%
   filter(status == "both") %>%
   distinct(plot) %>%
   pull(plot)
+
+n_overlap_plots <- length(plots_with_both)  # should be 126
+
 
 
 # get management values by year - planting is teh most important
@@ -109,9 +118,9 @@ mng_year_wide_clean <- mng_year_long_all %>%
 
 
 # Summary --------------------------------------
-## Analyze data: first check up ----------------------
+## Analyze data: ALL plots ----------------------
 # get master table, having all unique plots and subplots - even teh empty ones
-dat_master_subplot <- dat_overlap %>% 
+dat_master_subplot <- dat_full %>% 
   dplyr::select(plot, subplot, year, status) %>% 
   distinct()
 
@@ -119,28 +128,27 @@ table(dat_master_subplot$year)
 table(dat_master_subplot$status)  
 
 n_plots_total <- length(unique(dat_master_subplot$plot))     # 208, 333
-n_plots_total # 208,. 333 over 2 years, 125 recoccurs
+n_plots_total # 208,. 333 over 2 years, 126 recoccurs
 
 n_subplots_total <-length(unique(dat_master_subplot$subplot))  # 1665
 n_subplots_total # 1665
 
 
 # filter only data with stem values 
-dat_overlap_populated <- dat_overlap %>% 
+dat_full_populated <- dat_full %>% 
   dplyr::filter(n>0)
 
 # make a dataset where if n is NA, replace by 0
-dat_overlap_n0 <- dat_overlap %>% 
+dat_full_n0 <- dat_full %>% 
   mutate(n = ifelse(is.na(n), 0, n))  
 
 
-## Species composition --------------------------------------------------
+## Overlapping plots  -------------------------
+### Species composition --------------------------------------------------
 
-
-### Overlapping plots: Get summary across all stems and study sites  --------------------------
+### Get summary across all stems and study sites  
 # 0) Safe counts (treat NA counts as 0)
 df <- dat_overlap %>%
-  filter(status == 'both') %>% 
   mutate(n = coalesce(n, 0L)) %>%
   filter(!is.na(species) & species != "")
 
@@ -195,7 +203,7 @@ v_top_species <- species_levels
 species_levels
 
 
-#### Single species plots chars ----------------------
+#### Single species plots chars 
 
 # Summarize number of species per plot, only for n > 1 trees - why is that??
 plots_with_species_counts <- df %>%
@@ -256,7 +264,7 @@ df_stem_dens_species <-
 
 
 
-## make a barplot of stem occurence ---------------------------
+#### Stem occurence: barplot  ---------------------------
 
 #Make sure every species appears in both years (missing gets 0)
 top10_by_year_clean <- top10_by_year %>%
@@ -304,12 +312,6 @@ p_bar <- top10_by_year_clean %>%
 p_bar
 
 ####  Get species occurence from total number of plots -------------
-# Total number of unique plots
-total_plots <- dat_overlap %>%
-  pull(plot, year) %>%
-  n_distinct()
-
-n_overlap_plots <- length(plots_with_both)  # should be 126
 
 # Share of plots per species (where species are present = non-zero stems)
 species_occurence <- 
@@ -405,7 +407,7 @@ p_species_composition
 
 
 
-### Total trees per year --------------------------------------------------------
+#### Total trees per year --------------------------------------------------------
 total_trees_per_year <- dat_overlap %>%
   group_by(year) %>%
   summarise(
@@ -425,7 +427,7 @@ tree_summary <- dat_overlap %>%
 
 summary(tree_summary)
 
-# Get a table -----------------------
+### Summary table  -----------------------
 # ── correct denominator: 125 overlapping plots ────────────────────────────
 n_overlap_plots <- length(plots_with_both)  # should be 125
 
@@ -545,7 +547,7 @@ library(dplyr)
 library(tidyr)
 library(ggplot2)
 
-# --- prepare long format for overlapping plots only -------------------------
+# --- prepare long format for overlapping plots only 
 alluvial_df <- species_stem_share_year %>%
   filter(species %in% c(v_top_species, "other")) %>%
   mutate(species = recode(species,
@@ -620,7 +622,7 @@ sp_colors <- c(
   "Other species"       = "#d9d9d9"
 )
 
-# --- plot 1: stem share -----------------------------------------------------
+# --- plot 1: stem share 
 p_alluvial_stems <- alluvial_long %>%
   ggplot(aes(x = year,
              y = share,
@@ -637,7 +639,7 @@ p_alluvial_stems <- alluvial_long %>%
   theme_classic(base_size = 10) +
   theme(legend.position = "none")
 
-# --- plot 2: plot occurrence -------------------------------------------------
+# --- plot 2: plot occurrence 
 p_alluvial_plots <- alluvial_long %>%
   filter(!is.na(share_of_plots)) %>%
   ggplot(aes(x = year,
@@ -659,7 +661,6 @@ p_alluvial_plots <- alluvial_long %>%
     legend.key.size  = unit(0.4, "cm")
   )
 
-# --- combine ----------------------------------------------------------------
 p_alluvial_combined <- ggarrange(
   p_alluvial_stems,
   p_alluvial_plots,
@@ -670,9 +671,9 @@ p_alluvial_combined <- ggarrange(
 
 p_alluvial_combined
 
-ggsave("outFigsCZ/p_alluvial_species.png",
-       p_alluvial_combined,
-       width = 18, height = 10, units = "cm", dpi = 300)
+# ggsave("outFigsCZ/p_alluvial_species.png",
+#        p_alluvial_combined,
+#        width = 18, height = 10, units = "cm", dpi = 300)
 
 # END ALLUVIAL
 
@@ -683,7 +684,7 @@ ggsave("outFigsCZ/p_alluvial_species.png",
 
 
 
-## TEMPORAL CHANGE ANALYSIS: functional groups ------------------------------
+### Drought tolerance classes ------------------------------
 
 
 # Recode TSD outliers — applied once, used everywhere
