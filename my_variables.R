@@ -187,6 +187,8 @@ earlyspecs_cz <- c(
 # [34] "soto" "ulsp"
 
 
+
+
 # update species labels
 species_labels <- c(
   piab = "Picea abies",
@@ -201,6 +203,17 @@ species_labels <- c(
   potr = "Populus tremula",
   absp = "Abies sp."#,
   #sasp = "Salix sp."
+)
+
+species_labels_other <- c(
+  species_labels,          # your existing lookup from my_variables.R
+  "other" = "Other species"
+)
+
+# add other to species_colors
+species_colors_other <- c(
+  species_colors,
+  "other" = "#d9d9d9"
 )
 
 #species_levels <- rev(names(species_labels))  # Custom order, matching color palette and labels
@@ -224,7 +237,11 @@ species_colors <- c(
   sasp = "#A50026"
 )
 
-
+# add other to species_colors
+species_colors_other <- c(
+  species_colors,
+  "other" = "#d9d9d9"
+)
 
 # divid species on coniferous vs deciduousl
 
