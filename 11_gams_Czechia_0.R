@@ -279,16 +279,17 @@ top10_by_year_clean <- species_stem_share_year_other %>%
   )
 
 # 3) Plot: same hue per species, lighter/darker by year
-p_bar <- top10_by_year_clean %>%
-  ggplot(aes(x = share, y = species, fill = species, alpha = year)) +
+p_bar <- 
+  top10_by_year_clean %>%
+  ggplot(aes(x = share, y = species, fill = species_other, alpha = year)) +
   geom_col(position = position_dodge(width = 0.7), 
            width = 0.6, 
            aes(colour = factor(year))) + # "grey50"
   scale_x_continuous(labels = label_number(accuracy = 1, suffix = ""),
                      expand = expansion(mult = c(0.02, 0.05))) +
   scale_y_discrete(
-    limits = species_levels,
-    labels = species_labels,   # keep your mapping
+    limits = v_top_species_other,
+    labels = species_labels_other,   # keep your mapping
     drop = FALSE
   ) +
   scale_colour_manual(
@@ -296,7 +297,7 @@ p_bar <- top10_by_year_clean %>%
                "2025" = "black"),
     guide = "none"   # prevents second legend
   )+
-  scale_fill_manual(values = species_colors, guide = "none") +
+  scale_fill_manual(values = species_colors_other, guide = "none") +
   scale_alpha_manual(
     name = "Survey year",
     values = c("2023" = 0.45, "2025" = 1.00),  # lighter vs darker
@@ -316,15 +317,16 @@ p_bar
 
 ####  Get species occurence from total number of plots -------------
 
-
 species_occurence <- 
   df %>%
+  mutate(species_other = ifelse(species %in% v_top_species, species, "other")) %>%
   ungroup(.) %>% 
   dplyr::filter(n > 0) %>%                 # Only where species occurred
-  distinct(species, year, plot) %>%    #year,       # Unique species × plot combos
-  count(species, year, name = "n_plots")  %>% #year, %>%  # Count number of plots per species
-  mutate(share_of_plots = n_plots / n_overlap_plots  *100) %>% 
-  arrange()
+  distinct(species_other, year, plot) %>%    #year,       # Unique species × plot combos
+  count(species_other, year, name = "n_plots")  %>% #year, %>%  # Count number of plots per species
+  mutate(share_of_plots = n_plots / n_overlap_plots  *100,
+         species_other  = factor(species_other, levels = v_top_species_other)) %>% 
+  arrange(species_other)
 
 
 species_occurence
@@ -332,18 +334,18 @@ species_occurence
 # Plot
 p_occurence <- 
   species_occurence %>% 
-  filter(species %in% v_top_species ) %>% 
-  mutate(species = factor(species, levels = species_levels)) %>% 
+  filter(species_other %in% v_top_species_other ) %>% 
+  mutate(species = factor(species_other  , levels = v_top_species_other)) %>% 
   ggplot(aes(x = share_of_plots, 
-             y = species, 
-             fill = species,
+             y = species_other, 
+             fill = species_other,
              alpha = factor(year))) +
   geom_col(position = position_dodge(width = 0.7), 
            width = 0.6,
            aes(colour = factor(year))) +
   scale_x_continuous(labels = scales::label_number(accuracy = 1), 
                      expand = expansion(mult = c(0.05, 0.05))) +
-  scale_fill_manual(values = species_colors, 
+  scale_fill_manual(values = species_colors_other, 
                     guide = "none") +
   scale_alpha_manual(
     name = "Survey year",
@@ -351,13 +353,12 @@ p_occurence <-
                "2023" = 0.45),
     breaks = c("2025", "2023")
   ) +
-  
   scale_colour_manual(
     name = "Survey year",
     values = c("2025" = "black",
                "2023" = "grey50"),
     breaks = c("2025", "2023")
-  )+
+  ) +
   labs(
     x = "Species occurence [%]",
     y = NULL#,
@@ -411,29 +412,8 @@ p_species_composition
 
 
 
-#### Total trees per year --------------------------------------------------------
-total_trees_per_year <- dat_overlap %>%
-  group_by(year) %>%
-  summarise(
-    total_trees = sum(n, na.rm = TRUE),
-    .groups = "drop"
-  )
-
-tree_summary <- dat_overlap %>%
-  group_by(year, seral_stage ) %>%
-  summarise(
-    n_trees_recovery = sum(n, na.rm = TRUE),
-    .groups = "drop"
-  ) %>% 
-  left_join(total_trees_per_year) %>% 
-  mutate(share = n_trees_recovery /total_trees * 100)
-
-
-summary(tree_summary)
 
 ### Summary table  -----------------------
-# ── correct denominator: 125 overlapping plots ────────────────────────────
-n_overlap_plots <- length(plots_with_both)  # should be 125
 
 # ── species_occurence: recompute with correct denominator ─────────────────
 species_occurence <- df %>%
