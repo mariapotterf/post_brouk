@@ -833,18 +833,8 @@ p_combined_func
 
 # export again
 
-cairo_pdf("outFigsCZ/p_combined_func.pdf", width = 7, height = 3.5)
-print(p_combined_func)
-dev.off()
 
-
-svg("outFigsCZ/p_combined_func.svg", width = 7, height = 3.5)
-print(p_combined_func)
-dev.off()
-
-
-
-pdf("outFigsCZ/p_combined_func2.pdf", width = 7, height = 3.5)
+pdf("outFigsCZ/p_combined_func_laura.pdf", width = 7, height = 3.5)
 print(p_combined_func)
 dev.off()
 
