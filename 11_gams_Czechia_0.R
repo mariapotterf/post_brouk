@@ -299,7 +299,7 @@ p_bar <-
   )+
   scale_fill_manual(values = species_colors_other, guide = "none") +
   scale_alpha_manual(
-    name = "Survey year",
+    name = "Year of inventory",
     values = c("2023" = 0.45, "2025" = 1.00),  # lighter vs darker
     guide = "none",                              # set to "legend" if you want it
     breaks = c("2025", "2023")  # controls legend order
@@ -348,19 +348,19 @@ p_occurence <-
   scale_fill_manual(values = species_colors_other, 
                     guide = "none") +
   scale_alpha_manual(
-    name = "Survey year",
+    name = "Year of inventory",
     values = c("2025" = 1,
                "2023" = 0.45),
     breaks = c("2025", "2023")
   ) +
   scale_colour_manual(
-    name = "Survey year",
+    name = "Year of inventory",
     values = c("2025" = "black",
                "2023" = "grey50"),
     breaks = c("2025", "2023")
   ) +
   labs(
-    x = "Species occurence [%]",
+    x = "Plot share [%]",
     y = NULL#,
     # fill = "Year"
   ) +
@@ -801,18 +801,18 @@ p_func_alluvial_v2 <- ggplot(func_alluvial_v2,
                                "")),
             size = 3, color = "grey20") +
   scale_x_discrete(limits = c("2023", "2025"),
-                   name = ''
+                   name = 'Year of inventory'
                    #expand = expansion(mult = c(0.25, 0.25)
                    #                  )
   ) +
   scale_fill_manual(values = drought_colors, guide = "none") +  # no legend
   labs(x = NULL, y = "Number of plots") +
   theme(
-    axis.text.x  = element_text(face = "bold"),
+    axis.text.x  = element_text(),
     axis.line.x  = element_blank(),
     axis.ticks.x = element_blank()
   )
-
+p_func_alluvial_v2
 
 
 # verify levels are codes not display labels
@@ -839,6 +839,193 @@ print(p_combined_func)
 dev.off()
 
 
+
+
+# # ── Data ──────────────────────────────────────────────────────────────────────
+func_bar_data <- func_stems_base_v2 %>%
+  filter(!is.na(year)) %>%
+  group_by(year) %>%
+  summarise(
+    Norway_spruce     = sum(Norway_spruce,     na.rm = TRUE),
+    drought_sensitive = sum(drought_sensitive, na.rm = TRUE),
+    intermediate      = sum(intermediate,      na.rm = TRUE),
+    drought_tolerant  = sum(drought_tolerant,  na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(total = rowSums(across(c(Norway_spruce, drought_sensitive,
+                                  intermediate, drought_tolerant))),
+         across(c(Norway_spruce, drought_sensitive,
+                  intermediate, drought_tolerant),
+                ~ .x / total * 100)) %>%
+  select(-total) %>%
+  pivot_longer(cols      = -year,
+               names_to  = "group",
+               values_to = "share") %>%
+  mutate(
+    group = factor(group, levels = rev(drought_cl_levels)),  # rev for y-axis order
+    year  = factor(year)
+  )
+
+# ── Plot ──────────────────────────────────────────────────────────────────────
+
+# get order from 2025 stem shares
+drought_group_order <- func_bar_data %>%
+  filter(year == "2025") %>%
+  arrange(share) %>%          # ascending so top of y-axis = highest
+  pull(group) %>%
+  as.character()
+
+func_bar_data <- func_bar_data %>%
+  mutate(group = factor(group, levels = drought_group_order))
+
+
+p_bar_drought <- ggplot(func_bar_data,
+                        aes(x = share, y = group,
+                            fill = group, alpha = year)) +
+  geom_col(position = position_dodge(width = 0.7),
+           width = 0.6,
+           aes(colour = factor(year))) +
+  scale_fill_manual(values = drought_colors, guide = "none") +
+  scale_alpha_manual(
+    name   = "Year of inventory",
+    values = c("2023" = 0.45, "2025" = 1.00),
+    breaks = c("2025", "2023")
+  ) +
+  scale_colour_manual(
+    name   = "Year of inventory",
+    values = c("2023" = "grey50", "2025" = "black"),
+    breaks = c("2025", "2023")
+  ) +
+  scale_x_continuous(
+    labels = scales::label_number(accuracy = 1),
+    expand = expansion(mult = c(0.02, 0.05))
+  ) +
+  scale_y_discrete(
+    labels = drought_labels
+  ) +
+  labs(x = "Stem share [%]", y = NULL) +
+  theme_classic(base_size = 10) +
+  theme(
+    axis.text.y      = element_text(size = 9),
+    legend.position = "none"
+    #     legend.position  = c(0.98, 0.02),
+    # legend.justification = c(1, 0),
+    # legend.key       = element_rect(fill = NA),
+    # legend.title     = element_text(size = 9),
+    # legend.text      = element_text(size = 8),
+    # legend.key.width  = unit(1,   "lines"),
+    # legend.key.height = unit(0.4, "lines")
+  )
+
+p_bar_drought
+
+# p occurence drought
+func_occurence_data <- func_stems_base_v2 %>%
+  filter(!is.na(year)) %>%
+  mutate(
+    Norway_spruce_occ     = Norway_spruce     > 0,
+    drought_sensitive_occ = drought_sensitive > 0,
+    intermediate_occ      = intermediate      > 0,
+    drought_tolerant_occ  = drought_tolerant  > 0
+  ) %>%
+  group_by(year) %>%
+  summarise(
+    Norway_spruce     = sum(Norway_spruce_occ,     na.rm = TRUE),
+    drought_sensitive = sum(drought_sensitive_occ, na.rm = TRUE),
+    intermediate      = sum(intermediate_occ,      na.rm = TRUE),
+    drought_tolerant  = sum(drought_tolerant_occ,  na.rm = TRUE),
+    n_plots           = n(),
+    .groups = "drop"
+  ) %>%
+  mutate(across(c(Norway_spruce, drought_sensitive,
+                  intermediate, drought_tolerant),
+                ~ .x / n_plots * 100)) %>%
+  select(-n_plots) %>%
+  pivot_longer(cols     = -year,
+               names_to  = "group",
+               values_to = "share_plots") %>%
+  mutate(
+    group = factor(group, levels = rev(drought_cl_levels)),
+    year  = factor(year)
+  )
+
+# ── Plot ──────────────────────────────────────────────────────────────────────
+
+
+# apply to both plots
+
+func_occurence_data <- func_occurence_data %>%
+  mutate(group = factor(group, levels = drought_group_order))
+
+
+p_occurence_drought <- ggplot(func_occurence_data,
+                              aes(x = share_plots, y = group,
+                                  fill = group, alpha = year)) +
+  geom_col(position = position_dodge(width = 0.35),
+           width = 0.3,
+           aes(colour = factor(year))) +
+  scale_fill_manual(values = drought_colors, guide = "none") +
+  scale_alpha_manual(
+    name   = "Year of inventory",
+    values = c("2023" = 0.45, "2025" = 1.00),
+    breaks = c("2025", "2023")
+  ) +
+  scale_colour_manual(
+    name   = "Year of inventory",
+    values = c("2023" = "grey50", "2025" = "black"),
+    breaks = c("2025", "2023")
+  ) +
+  scale_x_continuous(
+    labels = scales::label_number(accuracy = 1),
+    expand = expansion(mult = c(0.02, 0.05))
+  ) +
+  scale_y_discrete(labels = drought_labels) +
+  labs(x = "Plot share [%]", y = NULL) +
+  theme_classic(base_size = 10) +
+  theme(
+    legend.position = 'none'#,
+  #   axis.text.y          = element_blank(),
+  #   legend.position      = c(0.98, 0.02),
+  #   legend.justification = c(1, 0),
+  #   legend.key           = element_rect(fill = NA),
+  #   legend.title         = element_text(size = 9),
+  #   legend.text          = element_text(size = 8),
+  #   legend.key.width     = unit(1,   "lines"),
+  #   legend.key.height    = unit(0.4, "lines")
+   )
+
+p_occurence_drought
+
+
+
+
+
+p_combined_drought <- ggarrange(
+  #p_bar, p_occurence,
+  p_bar_drought, p_occurence_drought,
+  p_func_alluvial_v2,
+  ncol = 3, common.legend = FALSE,
+  align = "h",
+  widths = c(1.5, 0.8, 1.5),
+  labels = c("[c]", "[d]", "[e]"),
+  font.label = list(size = 10, face = "plain"),
+  label.x = 0.02,
+  label.y = 1.01
+)
+
+p_combined_drought
+
+p_species_composition
+
+p_fig1_combined <- ggarrange(p_species_composition,
+          p_combined_drought,
+          widths = c(0.8, 1),
+          nrow = 2)
+
+
+pdf("outFigsCZ/p_fig1_combined_laura.pdf", width = 7, height = 3.5)
+print(p_fig1_combined)
+dev.off()
 
 ### ── Climate adaptation score per plot -----------------
 # higher = more climate adapted
