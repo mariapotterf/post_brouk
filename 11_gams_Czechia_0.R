@@ -1924,7 +1924,7 @@ gam_rich_cross <- gam(
 )
 
 
-## 5f. Beta diversity (Jaccard)
+## Plot level: Beta diversity (Jaccard)
 m_beta_add <- mgcv::gam(
   beta_jaccard_mean ~
     time_snc_full_disturbance +
@@ -1948,56 +1948,6 @@ fin.models.all <- list(
 
 
 
-# Get estimates from the teh model: campre by % change from  ---------------
-
-# Here's the R code to build and export the table:
-# ── Build the summary table ───────────────────────────────────────────────────
-
-emm_table <- emm_mng2 %>%
-  select(model, focal_term, term, response_lab,
-         intensity, response_plot, lower.CL, upper.CL) %>%
-  rename(response = response_plot) %>%
-  # scale proportions to % for readable output
-  mutate(
-    response  = case_when(model %in% c("adapt", "spruce") ~ response * 100, TRUE ~ response),
-    lower.CL  = case_when(model %in% c("adapt", "spruce") ~ lower.CL * 100, TRUE ~ lower.CL),
-    upper.CL  = case_when(model %in% c("adapt", "spruce") ~ upper.CL * 100, TRUE ~ upper.CL),
-    response  = round(response, 2),
-    lower.CL  = round(lower.CL, 2),
-    upper.CL  = round(upper.CL, 2)
-  ) %>%
-  pivot_wider(
-    names_from  = intensity,
-    values_from = c(response, lower.CL, upper.CL),
-    names_sep   = "_"
-  ) %>%
-  mutate(
-    estimate_pct = round(100 * (response_1 - response_0) / response_0, 1),
-    lower_pct    = round(100 * (lower.CL_1 - upper.CL_0) / response_0, 1),
-    upper_pct    = round(100 * (upper.CL_1 - lower.CL_0) / response_0, 1),
-    CI_95        = paste0("[", lower_pct, "%, ", upper_pct, "%]"),
-    change_pct   = paste0(ifelse(estimate_pct > 0, "+", ""), estimate_pct, "%")
-  ) %>%
-  left_join(pvals_mng, by = c("model", "focal_term")) %>%
-  select(
-    Management    = term,
-    Response      = response_lab,
-    `Intensity 0` = response_0,
-    `Intensity 1` = response_1,
-    `Change (%)`  = change_pct,
-    `95% CI`      = CI_95,
-    `p-value`     = p_label
-  ) %>%
-  arrange(Management, Response)
-
-# ── Export to Word ────────────────────────────────────────────────────────────
-sjPlot::tab_df(
-  emm_table,
-  title  = "Predicted marginal means at management intensity 0 vs 1",
-  footnote = "Predicted marginal means from GAMs, all other variables held at their means. Proportions (climate-adapted share, Norway spruce share) scaled to %. 95% CI on the difference computed as lower.CL_1 − upper.CL_0 and upper.CL_1 − lower.CL_0.",
-  file   = "outTable/management_effects_emmeans.doc"
-)
-
 
 
 # ── Response labels ───────────────────────────────────────────────────────────
@@ -2006,7 +1956,7 @@ response_labels <- c(
   cvpos  = "CV [%]",
   eff    = "Effective species [#]",
   rich   = "Species richness [#]",
-  beta   = "Turnover [dim.]",
+  beta   = "Dissimilarity [dim.]",
   adapt  = "Climate-adapted share [%] ",
   spruce = "Norway spruce share [%]"
 )
@@ -2125,7 +2075,60 @@ emm_mng2 %>%
   filter(focal_term %in% c("planting_intensity", "anti_browsing_intensity")) %>%
   mutate(across(where(is.numeric), ~round(.x, 3))) %>%
   arrange(model, focal_term, intensity) #%>%
-  print(n = Inf)
+#  print(n = Inf)
+  
+
+
+# Get estimates from the teh model: campre by % change from  ---------------
+
+# ── Build the summary table ───────────────────────────────────────────────────
+
+emm_table <- emm_mng2 %>%
+  select(model, focal_term, term, response_lab,
+         intensity, response_plot, lower.CL, upper.CL) %>%
+  rename(response = response_plot) %>%
+  # scale proportions to % for readable output
+  mutate(
+    response  = case_when(model %in% c("adapt", "spruce") ~ response * 100, TRUE ~ response),
+    lower.CL  = case_when(model %in% c("adapt", "spruce") ~ lower.CL * 100, TRUE ~ lower.CL),
+    upper.CL  = case_when(model %in% c("adapt", "spruce") ~ upper.CL * 100, TRUE ~ upper.CL),
+    response  = round(response, 2),
+    lower.CL  = round(lower.CL, 2),
+    upper.CL  = round(upper.CL, 2)
+  ) %>%
+  pivot_wider(
+    names_from  = intensity,
+    values_from = c(response, lower.CL, upper.CL),
+    names_sep   = "_"
+  ) %>%
+  mutate(
+    estimate_pct = round(100 * (response_1 - response_0) / response_0, 1),
+    lower_pct    = round(100 * (lower.CL_1 - upper.CL_0) / response_0, 1),
+    upper_pct    = round(100 * (upper.CL_1 - lower.CL_0) / response_0, 1),
+    CI_95        = paste0("[", lower_pct, "%, ", upper_pct, "%]"),
+    change_pct   = paste0(ifelse(estimate_pct > 0, "+", ""), estimate_pct, "%")
+  ) %>%
+  left_join(pvals_mng, by = c("model", "focal_term")) %>%
+  select(
+    Management    = term,
+    Response      = response_lab,
+    `Intensity 0` = response_0,
+    `Intensity 1` = response_1,
+    `Change (%)`  = change_pct,
+    `95% CI`      = CI_95,
+    `p-value`     = p_label
+  ) %>%
+  arrange(Management, Response)
+
+# ── Export to Word ────────────────────────────────────────────────────────────
+sjPlot::tab_df(
+  emm_table,
+  title  = "Predicted marginal means at management intensity 0 vs 1",
+  footnote = "Predicted marginal means from GAMs, all other variables held at their means. Proportions (climate-adapted share, Norway spruce share) scaled to %. 95% CI on the difference computed as lower.CL_1 − upper.CL_0 and upper.CL_1 − lower.CL_0.",
+  file   = "outTable/management_effects_emmeans.doc"
+)
+
+
 
 # ── Step 3: build pct change table ───────────────────────────────────────────
 model_intensity_all_df_pct_mng <- emm_mng2 %>%
@@ -2145,7 +2148,7 @@ model_intensity_all_df_pct_mng <- emm_mng2 %>%
                           levels = c("Mean height [m]", "CV [%]",
                                      "Effective species [#]",
                                      "Species richness [#]",
-                                     "Turnover [dim.]",
+                                     "Dissimilarity [dim.]",
                                      "Climate-adapted share [%] ",
                                      "Norway spruce share [%]"))
   )
@@ -2490,35 +2493,3 @@ tab_df(aic_combined,
 
 
 
-### 6h. Height by seral stage x management (heatmap) -------------------------------
-dat_clean <- df %>%
-  as_tibble() %>%
-  dplyr::filter(!is.na(hgt_est), !is.na(n), n > 0)
-
-height_species_mng_yr <- dat_clean %>%
-  dplyr::group_by(year, species, planting_intensity, anti_browsing_intensity) %>%
-  dplyr::summarise(total_stems          = sum(n, na.rm = TRUE),
-                   mean_height_weighted = weighted.mean(hgt_est, w = n, na.rm = TRUE),
-                   .groups = "drop") %>%
-  dplyr::mutate(seral_group = dplyr::if_else(species %in% earlyspecs_cz, "early", "late"))
-
-height_seral_mng_year <- height_species_mng_yr %>%
-  dplyr::group_by(year, seral_group, planting_intensity, anti_browsing_intensity) %>%
-  dplyr::summarise(mean_h = weighted.mean(mean_height_weighted, w = total_stems, na.rm = TRUE),
-                   stems  = sum(total_stems, na.rm = TRUE),
-                   .groups = "drop") %>%
-  dplyr::filter(stems >= 3)
-
-p_height_seral_mng <- ggplot(height_seral_mng_year,
-                             aes(x = planting_intensity, y = anti_browsing_intensity, fill = mean_h)) +
-  geom_tile(color = "grey80") +
-  facet_grid(seral_group ~ year) +
-  scale_fill_viridis_c(limits = c(0, 2.5), option = "E",
-                       direction = -1, end = 0.95, name = "Mean height (m)") +
-  geom_text(aes(label = round(mean_h, 2)), color = "white", size = 2.5, fontface = "bold") +
-  coord_equal() +
-  theme_classic() +
-  labs(x = "Planting intensity", y = "Anti-browsing intensity") +
-  theme(legend.position  = "bottom",
-        strip.background = element_blank(),
-        strip.text       = element_text(face = "bold"))
