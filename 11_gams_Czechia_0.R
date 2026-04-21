@@ -717,6 +717,7 @@ dat_full_func <- dat_full %>%
 
 
 
+# get only for overlapping sites -> for alluvial
 func_stems_base_v2 <- dat_overlap_recoded2 %>%
  # filter(status == "both") %>%
   mutate(func_group_drought = replace_na(as.character(func_group_drought), 
@@ -728,7 +729,7 @@ func_stems_base_v2 <- dat_overlap_recoded2 %>%
               values_fill = 0) %>%
   compute_func_shares_v2()
 
-
+# from all sites -> for time plots
 func_stems_base_full <- dat_full_func %>%
   # filter(status == "both") %>%
   mutate(func_group_drought = replace_na(as.character(func_group_drought), 
@@ -765,10 +766,6 @@ func_tsd_bar_v2 <- func_stems_base_full %>%
   count(tsd, tsd_num, dom_func, n_plots_tsd) %>%
   mutate(pct = n / n_plots_tsd * 100)
 
-
-
-
-
 # get text for classes
 func_tsd_n_v2 <- func_tsd_bar_v2 %>% distinct(tsd, tsd_num, n_plots_tsd)
 
@@ -795,41 +792,21 @@ p_bar_TSD <- ggplot(func_tsd_bar_v2,
 p_bar_TSD
 
 
-# update plot from teh all stems: shares of stems by drought tolerance class 
-# ── 1. Join drought classification to dat_full ────────────────────────────────
-
-
-
-dat_full_func <- dat_full %>%
-   left_join(
-    species_functional_v2 %>% select(species, func_group_drought),
-    by = "species"
-   ) %>%
-  mutate(
-    func_group_drought = replace_na(as.character(func_group_drought), "other"),
-    func_group_drought = factor(func_group_drought, levels = drought_cl_levels)
-  )
-
 # ── 2. Aggregate stems per plot × TSD × drought group ────────────────────────
 func_tsd_stems <- dat_full_func %>%
   filter(!is.na(n), n > 0) %>%
   group_by(plot, time_since_cap, func_group_drought) %>%
   summarise(stems = sum(n, na.rm = TRUE), .groups = "drop") %>%
-  # complete so every group appears for every plot×TSD
-  complete(plot, time_since_cap, func_group_drought,
-           fill = list(stems = 0)) %>%
-  # now pool across plots per TSD
   group_by(time_since_cap, func_group_drought) %>%
   summarise(stems   = sum(stems),
             n_plots = n_distinct(plot),
             .groups = "drop") %>%
   group_by(time_since_cap) %>%
   mutate(share = stems / sum(stems) * 100) %>%
-  ungroup()
+  ungroup() %>% 
+  mutate(func_group_drought = factor(func_group_drought, 
+                                     levels = drought_cl_levels)) 
 
-# n labels data
-func_tsd_stems_n <- func_tsd_stems %>%
-  distinct(time_since_cap, n_plots)
 
 # ── 3. Plot ───────────────────────────────────────────────────────────────────
 p_bar_TSD_stems_share <- ggplot(func_tsd_stems,
@@ -841,9 +818,9 @@ p_bar_TSD_stems_share <- ggplot(func_tsd_stems,
   scale_x_continuous(breaks = 1:6,
                      expand = expansion(mult = c(0.05, 0.05))) +
   scale_y_continuous(expand = expansion(mult = c(0, 0))) +
-  geom_text(data = func_tsd_stems_n,
-            aes(x = time_since_cap, y = 104, label = n_plots),
-            inherit.aes = FALSE, size = 2.8, color = "grey50") +
+  # geom_text(data = func_tsd_stems_n,
+  #           aes(x = time_since_cap, y = 104, label = n_plots),
+  #           inherit.aes = FALSE, size = 2.8, color = "grey50") +
   coord_cartesian(ylim = c(0, 100), clip = "off") +
   labs(x = "Time since disturbance\n(years)", 
        y = "Stem share [%]") +
@@ -853,10 +830,20 @@ p_bar_TSD_stems_share <- ggplot(func_tsd_stems,
 
 p_bar_TSD_stems_share
 
-p_tsd_merged <- ggarrange( p_bar_TSD,
-                           p_bar_TSD_stems_share, 
-                           common.legend = T)
+p_tsd_merged <- ggarrange( p_bar_TSD_stems_share, 
+                           p_bar_TSD,
+                           common.legend = T,
+                           labels = c("[a]", "[b]"),
+                           legend = 'right',
+                           font.label = list(size = 10, face = "plain"))
 p_tsd_merged
+
+
+pdf("outFigsCZ/p_tsd_merged_corel.pdf", width = 7, height = 4)
+print(p_tsd_merged)
+dev.off()
+
+
 
 
 
@@ -913,11 +900,6 @@ levels(func_alluvial_v2$func_2023)
 p_combined_func <- (p_func_alluvial_v2 | p_bar_TSD) +
   plot_layout(widths = c(1.2, 1), heights = c(1.2,1)) +
   plot_annotation(tag_levels = list(c("[a]", "[b]")))# &
-#theme(
-#  plot.tag        = element_text(size = 10, face = "plain"),
-#  legend.position = "right"
-#)
-
 p_combined_func
 
 
@@ -998,13 +980,6 @@ p_bar_drought <- ggplot(func_bar_data,
   theme(
     axis.text.y      = element_text(size = 9),
     legend.position = "none"
-    #     legend.position  = c(0.98, 0.02),
-    # legend.justification = c(1, 0),
-    # legend.key       = element_rect(fill = NA),
-    # legend.title     = element_text(size = 9),
-    # legend.text      = element_text(size = 8),
-    # legend.key.width  = unit(1,   "lines"),
-    # legend.key.height = unit(0.4, "lines")
   )
 
 p_bar_drought
@@ -1122,12 +1097,12 @@ p_fig1_combined <- ggarrange(
 
 p_fig1_combined
 
-pdf("outFigsCZ/p_fig1_combined_corr.pdf", width = 7, height = 6)
+pdf("outFigsCZ/p_fig1_combined_corel.pdf", width = 7, height = 6)
 print(p_fig1_combined)
 dev.off()
 
 
-pdf("outFigsCZ/p_fig1_alluvial_corr.pdf", width = 4, height = 3)
+pdf("outFigsCZ/p_fig1_alluvial_corel.pdf", width = 4, height = 3)
 print(p_func_alluvial_v2)
 dev.off()
 
@@ -1586,7 +1561,7 @@ p_combined_management_intens <- ggarrange(
 # but we need to add binary management from dat_overlap
 
 # get binary management per subplot
-mng_subplot_binary <- dat_overlap %>%
+mng_subplot_binary <- dat_full %>% # from full data, not only overlaps
   #filter(status == "both") %>%
   distinct(plot, subplot, year, planting, anti_browsing, grndwrk) %>%
   rename(
@@ -1632,8 +1607,9 @@ both_levels_crossscale <- both_levels_cz %>%
 ##  Share adapted at plot level -----------
 
 # Test share adapted
-func_stems_base_all <- dat_overlap_recoded2 %>%
-  mutate(func_group_drought = replace_na(as.character(func_group_drought), "other")) %>%
+func_stems_base_all <- dat_full_func %>%
+  mutate(func_group_drought = replace_na(as.character(func_group_drought), 
+                                         "other")) %>%
   group_by(plot, year, time_snc_full_disturbance, func_group_drought) %>%
   summarise(stems = sum(n, na.rm = TRUE), .groups = "drop") %>%
   pivot_wider(names_from  = func_group_drought,
@@ -1884,30 +1860,6 @@ emmeans(gam_spruce, ~ planting_intensity,
         at   = list(planting_intensity = c(0, 1)),
         type = "response") %>%
   summary(infer = TRUE)
-
-# ── Delta spruce: overlapping plots only ──────────────────────────────────────
-delta_spruce_plot <- spruce_share_plot %>%
-  filter(plot %in% plots_with_both) %>%
-  select(plot, year, spruce_share) %>%
-  pivot_wider(names_from  = year,
-              values_from = spruce_share,
-              names_prefix = "spruce_") %>%
-  mutate(delta_spruce = spruce_2025 - spruce_2023) %>%
-  left_join(
-    plot_df_cz %>%
-      filter(year == 2023) %>%
-      select(plot, planting_intensity, time_snc_full_disturbance),
-    by = "plot"
-  )
-
-# did spruce share change between surveys?
-wilcox.test(delta_spruce_plot$spruce_2023,
-            delta_spruce_plot$spruce_2025,
-            paired = TRUE)
-
-# does planting predict change in spruce share?
-cor.test(~ planting_intensity + delta_spruce,
-         data = delta_spruce_plot, method = "spearman")
 
 
 
