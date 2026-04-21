@@ -1875,34 +1875,6 @@ emmeans(gam_adapted_final, ~ planting_intensity,
 
 
 
-# ── Delta adapted: overlapping plots only ────────────────────────────────────
-
-delta_adapted <- share_adapted_plot %>%
-  filter(plot %in% plots_with_both) %>%   # overlapping plots only
-  select(plot, year, share_adapted) %>%
-  pivot_wider(names_from  = year,
-              values_from = share_adapted,
-              names_prefix = "adapted_") %>%
-  mutate(
-    delta_adapted = adapted_2025 - adapted_2023
-  ) %>%
-  left_join(
-    plot_df_cz %>%
-      filter(year == 2023) %>%
-      select(plot, planting_intensity, time_snc_full_disturbance),
-    by = c("plot")
-  )
-
-# test: did climate adaptation increase between surveys?
-wilcox.test(delta_adapted$adapted_2023,
-            delta_adapted$adapted_2025,
-            paired = TRUE)
-
-# does planting predict increase in adapted share?
-cor.test(~ planting_intensity + delta_adapted,
-         data = delta_adapted, method = "spearman")
-
-
 
 ### Refit GAMs with cross-scale management predictors  ---------------------------
 gam_mean_hgt_cross <- gam(
