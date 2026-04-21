@@ -961,8 +961,8 @@ func_occurence_data <- func_occurence_data %>%
 p_occurence_drought <- ggplot(func_occurence_data,
                               aes(x = share_plots, y = group,
                                   fill = group, alpha = year)) +
-  geom_col(position = position_dodge(width = 0.35),
-           width = 0.3,
+  geom_col(position = position_dodge(width = 0.7),
+           width = 0.6,
            aes(colour = factor(year))) +
   scale_fill_manual(values = drought_colors, guide = "none") +
   scale_alpha_manual(
@@ -983,7 +983,9 @@ p_occurence_drought <- ggplot(func_occurence_data,
   labs(x = "Plot share [%]", y = NULL) +
   theme_classic(base_size = 10) +
   theme(
-    legend.position = 'none'#,
+    legend.position = 'none',
+    axis.text.y     = element_blank(),
+    axis.ticks.y    = element_blank()
   #   axis.text.y          = element_blank(),
   #   legend.position      = c(0.98, 0.02),
   #   legend.justification = c(1, 0),
@@ -1003,11 +1005,11 @@ p_occurence_drought
 p_combined_drought <- ggarrange(
   #p_bar, p_occurence,
   p_bar_drought, p_occurence_drought,
-  p_func_alluvial_v2,
-  ncol = 3, common.legend = FALSE,
+  #p_func_alluvial_v2,
+  ncol = 2, common.legend = FALSE,
   align = "h",
-  widths = c(1.5, 0.8, 1.5),
-  labels = c("[c]", "[d]", "[e]"),
+  widths = c(1.5, 1),
+  labels = c("[c]", "[d]"),
   font.label = list(size = 10, face = "plain"),
   label.x = 0.02,
   label.y = 1.01
@@ -1017,14 +1019,26 @@ p_combined_drought
 
 p_species_composition
 
-p_fig1_combined <- ggarrange(p_species_composition,
-          p_combined_drought,
-          widths = c(0.8, 1),
-          nrow = 2)
 
 
-pdf("outFigsCZ/p_fig1_combined_laura.pdf", width = 7, height = 3.5)
+p_fig1_combined <- ggarrange(
+  p_species_composition,
+         
+          p_func_alluvial_v2,
+  p_combined_drought,
+  align = "hv",
+          widths = c(3, 1)
+  )
+
+p_fig1_combined
+
+pdf("outFigsCZ/p_fig1_combined_corr.pdf", width = 7, height = 6)
 print(p_fig1_combined)
+dev.off()
+
+
+pdf("outFigsCZ/p_fig1_alluvial_corr.pdf", width = 4, height = 3)
+print(p_func_alluvial_v2)
 dev.off()
 
 ### ── Climate adaptation score per plot -----------------
