@@ -1946,7 +1946,7 @@ fin.models.all <- list(
   spruce = gam_spruce
 )
 
-
+lapply(fin.models.all, summary)
 
 
 
@@ -2271,7 +2271,8 @@ p_model_response <- ggplot(
   
   facet_wrap(~ term, ncol = 3) +
   scale_fill_brewer(palette = "Dark2") +
-  labs(x = "", y = "Effect on response [%]") +
+  labs(x = "", y = "Effect on response\n
+       [% change relative to unmanaged baseline]") +
   theme_classic(base_size = 8) +
   theme(legend.position    = "none",
         strip.text         = element_text(size = 8),
@@ -2282,6 +2283,115 @@ p_model_response <- ggplot(
 
 
 p_model_response
+
+# plot effect sizes as betas 
+
+# START
+library(tidyverse)
+library(broom)
+
+# ── 1. Extract coefficients with CI ──────────────────────────────────────────
+focal_terms_map <- c(
+  "planting_pred"          = "planting_intensity",
+  "browsing_pred"          = "anti_browsing_intensity",
+  "grndwrk_pred"           = "grndwrk_intensity",
+  "planting_intensity"     = "planting_intensity",
+  "anti_browsing_intensity"= "anti_browsing_intensity",
+  "grndwrk_intensity"      = "grndwrk_intensity"
+)
+
+# Model families for transformation decision
+log_link_models  <- c("hgt", "cvpos", "eff", "rich")   # exp(β) → IRR / multiplier
+identity_models  <- c("beta")                            # β on response scale
+logit_models     <- c("adapt", "spruce")                 # exp(β) → OR, or marginal Δp
+
+coef_df <- map_dfr(names(fin.models.all), function(nm) {
+  broom::tidy(fin.models.all[[nm]], parametric = TRUE, conf.int = TRUE) %>%
+    filter(term %in% names(focal_terms_map)) %>%
+    mutate(
+      model      = nm,
+      focal_term = recode(term, !!!focal_terms_map)
+    )
+})
+
+# ── 2. Transform to interpretable effect size ─────────────────────────────────
+coef_df2 <- coef_df %>%
+  mutate(
+    link = case_when(
+      model %in% log_link_models  ~ "log",
+      model %in% identity_models  ~ "identity",
+      model %in% logit_models     ~ "logit"
+    ),
+    # For log-link: exponentiate → "response multiplier" (IRR/rate ratio)
+    # For identity: keep as-is (Jaccard units)
+    # For logit: exponentiate → odds ratio (or convert to Δp below)
+    effect     = case_when(link == "identity" ~ estimate,
+                           TRUE               ~ exp(estimate)),
+    effect_lo  = case_when(link == "identity" ~ conf.low,
+                           TRUE               ~ exp(conf.low)),
+    effect_hi  = case_when(link == "identity" ~ conf.high,
+                           TRUE               ~ exp(conf.high)),
+    # Human-readable: for log-link, subtract 1 → % change from baseline
+    # (now baseline-independent, because exp(β)-1 is pure multiplicative effect)
+    effect_pct      = case_when(link == "log"      ~ (effect - 1) * 100,
+                                link == "identity"  ~ effect * 100,   # Jaccard is 0-1, ×100 for readability
+                                link == "logit"     ~ (effect - 1) * 100),  # OR expressed as % change in odds
+    effect_pct_lo   = case_when(link == "log"      ~ (effect_lo - 1) * 100,
+                                link == "identity"  ~ effect_lo * 100,
+                                link == "logit"     ~ (effect_lo - 1) * 100),
+    effect_pct_hi   = case_when(link == "log"      ~ (effect_hi - 1) * 100,
+                                link == "identity"  ~ effect_hi * 100,
+                                link == "logit"     ~ (effect_hi - 1) * 100),
+    sig_col    = ifelse(p.value < 0.05, "sig", "n.s."),
+    response   = factor(recode(model, !!!response_labels),
+                        levels = c("Mean height [m]", "CV [%]",
+                                   "Effective species [#]", "Species richness [#]",
+                                   "Dissimilarity [dim.]",
+                                   "Climate-adapted share [%] ",
+                                   "Norway spruce share [%]")),
+    term_lab   = recode(focal_term, !!!term_labels),
+    p_label    = case_when(p.value < 0.001 ~ "<0.001",
+                           TRUE ~ formatC(p.value, format = "f", digits = 3)),
+    plot_only  = model %in% c("beta", "adapt", "spruce")
+  )
+
+# ── 3. Plot ───────────────────────────────────────────────────────────────────
+p_coef <- ggplot(coef_df2,
+                 aes(x = response, y = effect_pct, fill = response)) +
+  geom_hline(yintercept = 0, color = "gray40", linewidth = 0.5) +
+  geom_col(aes(color = plot_only, linewidth = plot_only), width = 0.7) +
+  scale_color_manual(values = c("TRUE" = "grey20", "FALSE" = NA),
+                     name   = "Measurement scale",
+                     labels = c("TRUE" = "Plot level", "FALSE" = "Cross-scale"),
+                     guide  = guide_legend(override.aes = list(fill = "grey70"))) +
+  scale_linewidth_manual(values = c("TRUE" = 0.6, "FALSE" = 0), guide = "none") +
+  geom_errorbar(aes(ymin = effect_pct_lo, ymax = effect_pct_hi),
+                width = 0.15, linewidth = 0.5, color = "grey30") +
+  geom_text(aes(label    = p_label,
+                y        = ifelse(effect_pct >= 0, effect_pct_hi + 5, effect_pct_lo - 5),
+                fontface = ifelse(p.value < 0.05, "bold", "plain"),
+                vjust    = ifelse(effect_pct >= 0, 0, 1)),
+            size = 2.5) +
+  facet_wrap(~ term_lab, ncol = 3) +
+  scale_fill_brewer(palette = "Dark2") +
+  labs(x = "", y = "Effect size [% change in response or % change in odds]") +
+  theme_classic(base_size = 8) +
+  theme(legend.position    = "none",
+        strip.text         = element_text(size = 8),
+        strip.background   = element_rect(fill = "white", color = "black", linewidth = 0.6),
+        axis.text.x        = element_text(angle = 30, hjust = 1),
+        panel.border       = element_rect(color = "black", fill = NA, linewidth = 0.6),
+        panel.grid.major.y = element_line(color = "gray90", linewidth = 0.3))
+
+p_coef
+
+# END
+
+
+
+
+
+
 
 
 # does browsing protection correlate with lower spruce density
