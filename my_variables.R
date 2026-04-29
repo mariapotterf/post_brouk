@@ -331,3 +331,26 @@ seral_colors <- c(
 )
 
 
+
+# ── Shared theme ──────────────────────────────────────────────────────────────
+theme_paper <- function(...) {
+  theme_classic(base_size = 10) +
+    theme(
+      # axis
+      axis.text        = element_text(size = 8),
+      axis.title       = element_text(size = 8),
+      # legend
+      legend.title     = element_text(size = 9),
+      legend.text      = element_text(size = 8),
+      legend.key.width  = unit(1, "lines"),
+      legend.key.height = unit(0.4, "lines"),
+      # panel
+      panel.grid.major.y = element_line(color = "gray90", linewidth = 0.3),
+      panel.border       = element_rect(color = "black", fill = NA, linewidth = 0.6),
+      # default margin
+      plot.margin      = margin(t = 5, r = 5, b = 5, l = 5),
+      # pass any overrides
+      ...
+    )
+}
+
