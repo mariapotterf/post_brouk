@@ -205,16 +205,6 @@ species_labels <- c(
   #sasp = "Salix sp."
 )
 
-species_labels_other <- c(
-  species_labels,          # your existing lookup from my_variables.R
-  "other" = "Other species"
-)
-
-# add other to species_colors
-species_colors_other <- c(
-  species_colors,
-  "other" = "#d9d9d9"
-)
 
 #species_levels <- rev(names(species_labels))  # Custom order, matching color palette and labels
 
@@ -236,6 +226,13 @@ species_colors <- c(
   absp = "#D22B26",
   sasp = "#A50026"
 )
+
+
+species_labels_other <- c(
+  species_labels,          # your existing lookup from my_variables.R
+  "other" = "Other species"
+)
+
 
 # add other to species_colors
 species_colors_other <- c(
@@ -345,10 +342,10 @@ theme_paper <- function(...) {
       legend.key.width  = unit(1, "lines"),
       legend.key.height = unit(0.4, "lines"),
       # panel
-      panel.grid.major.y = element_line(color = "gray90", linewidth = 0.3),
-      panel.border       = element_rect(color = "black", fill = NA, linewidth = 0.6),
+     # panel.grid.major.y = element_line(color = "gray90", linewidth = 0.3),
+     # panel.border       = element_rect(color = "black", fill = NA, linewidth = 0.6),
       # default margin
-      plot.margin      = margin(t = 5, r = 5, b = 5, l = 5),
+     # plot.margin      = margin(t = 5, r = 5, b = 5, l = 5),
       # pass any overrides
       ...
     )
