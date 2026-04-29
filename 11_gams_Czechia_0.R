@@ -329,11 +329,11 @@ p_bar <-
   ) +
   
   labs(x = "Stems share [%]", y = "") +
-  theme_classic2(base_size = 10) +
+ theme_paper() +
   theme(
     axis.text.y = element_text(
-      face = "italic",
-      size = 8
+      face = "italic"#,
+      #size = 8
     )
   )
 p_bar
@@ -387,12 +387,12 @@ p_occurence <-
     y = NULL#,
     # fill = "Year"
   ) +
-  theme_classic(base_size = 10) +
+ theme_paper() +
   theme(
     axis.text.y = element_blank(),
     
     # legend inside bottom-right
-    legend.position = c(0.98, 0.02),
+    legend.position = c(0.85, 0.15),
     legend.justification = c(1, 0),
     
     # make legend box readable inside plot
@@ -787,6 +787,7 @@ p_bar_TSD <- ggplot(func_tsd_bar_v2,
             inherit.aes = FALSE, size = 2.8, color = "grey50") +
   coord_cartesian(ylim = c(0, 100), clip = "off") +   # clip="off" here +                        # allow text outside plot area
   labs(x = "Time since disturbance\n(years)", y = "Share of plots [%]") +
+  theme_paper() + 
   theme(legend.position  = "right",
         plot.margin      = margin(t = 40, r = 5, b = 5, l = 5))  # room for n labels
 p_bar_TSD
@@ -824,7 +825,7 @@ p_bar_TSD_stems_share <- ggplot(func_tsd_stems,
   coord_cartesian(ylim = c(0, 100), clip = "off") +
   labs(x = "Time since disturbance\n(years)", 
        y = "Stem share [%]") +
-  theme_classic(base_size = 10) +
+  theme_paper() +
   theme(legend.position = "right",
         plot.margin     = margin(t = 40, r = 5, b = 5, l = 5))
 
@@ -839,7 +840,12 @@ p_tsd_merged <- ggarrange( p_bar_TSD_stems_share,
 p_tsd_merged
 
 
-pdf("outFigsCZ/p_tsd_merged_corel.pdf", width = 7, height = 4)
+pdf("outFigsCZ/p_tsd_merged_corel.pdf", width = 7, height = 3)
+print(p_tsd_merged)
+dev.off()
+
+png("outFigsCZ/p_tsd_merged_corel.png", width = 7, height = 3.5, 
+    units = "in", res = 300)
 print(p_tsd_merged)
 dev.off()
 
@@ -884,6 +890,7 @@ p_func_alluvial_v2 <- ggplot(func_alluvial_v2,
   ) +
   scale_fill_manual(values = drought_colors, guide = "none") +  # no legend
   labs(x = NULL, y = "Number of plots") +
+  theme_paper() +
   theme(
     axis.text.x  = element_text(),
     axis.line.x  = element_blank(),
@@ -976,7 +983,7 @@ p_bar_drought <- ggplot(func_bar_data,
     labels = drought_labels
   ) +
   labs(x = "Stem share [%]", y = NULL) +
-  theme_classic(base_size = 10) +
+  theme_paper() +
   theme(
     axis.text.y      = element_text(size = 9),
     legend.position = "none"
@@ -1046,20 +1053,12 @@ p_occurence_drought <- ggplot(func_occurence_data,
   ) +
   scale_y_discrete(labels = drought_labels) +
   labs(x = "Plot share [%]", y = NULL) +
-  theme_classic(base_size = 10) +
+  theme_paper() +
   theme(
     legend.position = 'none',
     axis.text.y     = element_blank(),
     axis.ticks.y    = element_blank()
-  #   axis.text.y          = element_blank(),
-  #   legend.position      = c(0.98, 0.02),
-  #   legend.justification = c(1, 0),
-  #   legend.key           = element_rect(fill = NA),
-  #   legend.title         = element_text(size = 9),
-  #   legend.text          = element_text(size = 8),
-  #   legend.key.width     = unit(1,   "lines"),
-  #   legend.key.height    = unit(0.4, "lines")
-   )
+     )
 
 p_occurence_drought
 
@@ -1086,14 +1085,29 @@ p_species_composition
 
 
 
-p_fig1_combined <- ggarrange(
+p_fig1_combined6 <- ggarrange(
   p_species_composition,
          
           p_func_alluvial_v2,
   p_combined_drought,
+  p_management_intensity_plot_simpler,
   align = "hv",
-          widths = c(3, 1)
+          widths = c(2, 1)
   )
+
+p_fig1_combined6
+
+
+p_fig1_combined <- ggarrange(
+  p_species_composition,
+  
+  p_func_alluvial_v2,
+  p_combined_drought,
+  align = "hv",
+  widths = c(3, 1)
+)
+
+
 
 p_fig1_combined
 
@@ -1101,6 +1115,12 @@ pdf("outFigsCZ/p_fig1_combined_corel.pdf", width = 7, height = 6)
 print(p_fig1_combined)
 dev.off()
 
+
+
+png("outFigsCZ/p_fig1_combined6_corel.png", width = 7, height = 6,
+    units = 'in', res = 300)
+print(p_fig1_combined6)
+dev.off()
 
 pdf("outFigsCZ/p_fig1_alluvial_corel.pdf", width = 4, height = 3)
 print(p_func_alluvial_v2)
@@ -1435,10 +1455,16 @@ p_management_intensity_plot_simpler <-
   scale_y_discrete(labels = activity_intens_labels) +   # 👈 this does the relabeling
   scale_x_continuous(labels = abs, 
                      name = "Plots share [%]") +
-  theme_classic2() +
+  theme_classic2(base_size = 10) +
   theme(
-    legend.position = "right",
-    axis.text.y = element_text(size = 10),
+    legend.position    = "right",
+    legend.title       = element_text(size = 9),   # matches p_occurence
+    legend.text        = element_text(size = 8),   # matches p_occurence
+    legend.key.width   = unit(1, "lines"),          # matches p_occurence
+    legend.key.height  = unit(0.4, "lines"),        # matches p_occurence
+    axis.text.y        = element_text(size = 8),   # matches p_bar axis.text
+    axis.text.x        = element_text(size = 8),
+    axis.title.x       = element_text(size = 8),   # matches p_bar axis.title
     panel.grid.major.y = element_blank()
   )
 
@@ -2236,9 +2262,24 @@ p_final
 
 
 ## Management effect (% change 0 -> 1) ----------------------------------
+response_colors <- c(
+  "Mean height [m]"             = "#4393c3",  # steel blue — height/structure
+  "CV [%]"                      = "#92c5de",  # light blue — structural variation
+  "Effective species [#]"       = "#b2abd2",  # soft purple — diversity
+  "Species richness [#]"        = "#8073ac",  # deeper purple — diversity
+  "Dissimilarity [dim.]"        = "#d9d9d9",  # neutral grey — turnover/composition
+  "Climate-adapted share [%] "  = "#d73027",  # deep red — fixed
+  "Norway spruce share [%]"     = "#1a5c1a"   # dark green — fixed
+)
+
+
+
+
+
 p_model_response <- ggplot(
   model_intensity_all_df_pct_mng,
-  aes(x = response, y = estimate_pct, fill = response)
+  aes(x = response, y = estimate_pct, 
+      fill = response)
 ) +
   geom_hline(yintercept = 0, color = "gray40", linewidth = 0.5) +
   #geom_col(width = 0.7, color = NA) +
@@ -2270,8 +2311,9 @@ p_model_response <- ggplot(
             size = 2.5)+
   
   facet_wrap(~ term, ncol = 3) +
-  scale_fill_brewer(palette = "Dark2") +
-  labs(x = "", y = "Effect on response\n
+  #scale_fill_brewer(palette = "Dark2") +
+  scale_fill_manual(values = response_colors) +
+  labs(x = "", y = "Effect on response
        [% change relative to unmanaged baseline]") +
   theme_classic(base_size = 8) +
   theme(legend.position    = "none",
