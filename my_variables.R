@@ -233,6 +233,10 @@ species_labels_other <- c(
   "other" = "Other species"
 )
 
+species_labels_alluvial <- c(
+  species_labels_other,
+  "no_regeneration" = "No regeneration"
+)
 
 # add other to species_colors
 species_colors_other <- c(
