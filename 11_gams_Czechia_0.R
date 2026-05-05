@@ -81,7 +81,7 @@ dat_full <- dat_full %>%
     )
   ) 
 
-
+# cap the time since disturbnace values
 dat_overlap <- dat_overlap %>% 
   mutate(
     time_since_cap = case_when(
@@ -124,6 +124,13 @@ plots_with_both <- dat_overlap %>%
   count(plot) %>%
   filter(n == 2) %>%
   pull(plot)
+
+
+# Master list of overlapping plots × both years
+plot_year_master <- tibble(
+  plot = rep(plots_with_both, each = 2),
+  year = rep(c(2023, 2025), times = length(plots_with_both))
+)
 
 
 dat_overlap <- dat_overlap %>% 
@@ -332,13 +339,15 @@ p_bar <-
  theme_paper() +
   theme(
     axis.text.y = element_text(
-      face = "italic"#,
-      #size = 8
+      face = "italic",
+    size = 8,
+    hjust = 1),
+    plot.margin = margin(5, 5, 5, 5)
     )
-  )
+  
 p_bar
 
-####  Get species occurence from total number of plots -------------
+####  Get species occurence from overlapping plots -------------
 
 species_occurence <- 
   df %>%
@@ -399,7 +408,8 @@ p_occurence <-
     #legend.background = element_rect(fill = "white", colour = "grey70"),
     legend.key = element_rect(fill = NA),
     legend.title = element_text(size = 9),
-    legend.text = element_text(size = 8)
+    legend.text = element_text(size = 8),
+    plot.margin = margin(5, 5, 5, 0)
   ) +
   theme(
     legend.key.width  = unit(1, "lines"),   # wider
@@ -434,6 +444,90 @@ p_species_composition <- ggarrange(p_bar, p_occurence,# p_density,
 p_species_composition
 
 
+#### Species alluvial plot --------------------
+# find the max stems per species/plot and clasify plots accordingly -> make alluvial plot
+top_species_alluvial <- tail(v_top_species, 7)#c("piab", "besp", "qusp", "fasy", "pisy")
+
+
+# For each plot × year, find dominant species
+dom_species_alluvial_plot <- 
+  dat_overlap %>%
+  mutate(species_other = ifelse(species %in% top_species_alluvial, species, "other")) %>%
+  group_by(plot, year, species_other) %>%
+  summarise(stems = sum(n, na.rm = TRUE), .groups = "drop") %>%
+  group_by(plot, year) %>%
+  slice_max(stems, n = 1, with_ties = FALSE) %>%
+  ungroup() %>% 
+  mutate(dom_species = case_when(
+    stems == 0                           ~ "no_regeneration",
+    species_other %in% top_species_alluvial   ~ species_other,
+    TRUE                                 ~ "other"
+  ))
+
+# Pivot to wide and count transitions
+species_alluvial <- dom_species_alluvial_plot %>%
+  select(plot, year, dom_species     ) %>%
+  pivot_wider(names_from = year, values_from = dom_species     , 
+              names_prefix = "sp_") %>%
+  filter(!is.na(sp_2023), !is.na(sp_2025)) %>%
+  count(sp_2023, sp_2025, name = "n")
+
+
+
+sp_levels <- rev(c("no_regeneration","other", v_top_species))
+sp_levels
+species_colors_alluvial <- c(
+  species_colors,
+  "other"           = "#d9d9d9",
+  "no_regeneration" = "#f0f0f0"
+)
+
+species_alluvial_fct <- species_alluvial %>%
+  mutate(
+    sp_2023 = factor(sp_2023, levels = sp_levels),
+    sp_2025 = factor(sp_2025, levels = sp_levels)
+  )
+
+
+p_species_alluvial <- 
+  ggplot(species_alluvial_fct,
+                             aes(axis1 = sp_2023,
+                                 axis2 = sp_2025,
+                                 y = n)) +
+  geom_alluvium(aes(fill = sp_2023),
+                width = 0.4, alpha = 0.7, knot.pos = 0.4) +
+#  geom_stratum(width = 0.45, color = "white", linewidth = 1) +
+  geom_stratum(width = 0.4, color = "black", 
+               linewidth = 0.5,
+             
+               aes(fill = after_stat(stratum))) +
+  geom_text(stat = "stratum",
+            aes(label = ifelse(after_stat(prop) >= 0.02,
+                               paste0(round(after_stat(prop) * 100, 1)),
+                               "")),
+            size = 3, color = "grey20") +
+  scale_x_discrete(limits = c("2023", "2025")) +
+  scale_fill_manual(
+    values = species_colors_alluvial,
+    labels = species_labels_alluvial,
+    breaks = sp_levels,          # controls legend order
+    na.value = "#d9d9d9",
+    guide  = guide_legend(title = "Dominant\nspecies",
+                          override.aes = list(alpha = 1))
+  ) +
+  labs(x = "Year of inventory", y = "Number of plots") +
+  theme_paper() +
+  theme(
+    axis.line.x     = element_blank(),
+    axis.ticks.x    = element_blank(),
+    legend.position = "right",
+    legend.text     = element_text(face = "italic"),
+    legend.margin   = margin(0, 0, 0, -10),  # pull legend left
+    plot.margin     = margin(5, 0, 5, 5)     # reduce right margin
+  )
+  
+
+p_species_alluvial
 
 
 ### Summary table  -----------------------
@@ -609,16 +703,16 @@ drought_colors <- c(
   "Norway_spruce"     = "#1a5c1a",   # dark forest green — matches piab in species fig
   "drought_sensitive" = "#a8d9a8",   # light green — low drought, shade-tolerant
   "intermediate"      = "#f4a736",   # warm orange — matches mid species colors
-  "drought_tolerant"  = "#d73027",   # deep red — high drought, matches Abies/rare end
-  "no_regeneration"   = "#d9d9d9"    # grey
+  "drought_tolerant"  = "#d73027"#,   # deep red — high drought, matches Abies/rare end
+ # "no_regeneration"   = "#d9d9d9"    # grey
 )
 
-
-shared_fill <- scale_fill_manual(
-  values = drought_colors,
-  name   =  drought_class_title,# "Drought tolerance\nclass",
-  breaks = drought_cl_levels,
-  labels = drought_labels
+drought_colors_grey <- c(
+  "Norway_spruce"     = "#1a5c1a",   # dark forest green — matches piab in species fig
+  "drought_sensitive" = "#a8d9a8",   # light green — low drought, shade-tolerant
+  "intermediate"      = "#f4a736",   # warm orange — matches mid species colors
+  "drought_tolerant"  = "#d73027",   # deep red — high drought, matches Abies/rare end
+  "no_regeneration"   = "#d9d9d9"    # grey
 )
 
 
@@ -654,7 +748,7 @@ p_function_drought <- ggplot(species_functional_v2,
   theme_classic()
 
 
-p_function_drought
+# p_function_drought
 
 
 
@@ -777,7 +871,13 @@ func_tsd_bar_v2 <- func_tsd_bar_v2 %>%
 p_bar_TSD <- ggplot(func_tsd_bar_v2,
                     aes(x = tsd_num, y = pct, fill = dom_func)) +
   geom_col(color = "black", linewidth = 0.3) +
-  shared_fill +
+  scale_fill_manual(
+    values = drought_colors_grey,
+    name   =  drought_class_title,# "Drought tolerance\nclass",
+    breaks = drought_cl_levels,
+    labels = drought_labels
+  ) +
+  
   scale_x_continuous(breaks = 1:6,
                      expand = expansion(mult = c(0.05, 0.05))) +
   scale_y_continuous(limits = c(0, 110),          # bars capped at 100%
@@ -815,7 +915,12 @@ p_bar_TSD_stems_share <- ggplot(func_tsd_stems,
                               y = share,
                               fill = func_group_drought)) +
   geom_col(color = "black", linewidth = 0.3) +
-  shared_fill +
+  scale_fill_manual(
+    values = drought_colors_grey,
+    name   =  drought_class_title,# "Drought tolerance\nclass",
+    breaks = drought_cl_levels,
+    labels = drought_labels
+  ) +
   scale_x_continuous(breaks = 1:6,
                      expand = expansion(mult = c(0.05, 0.05))) +
   scale_y_continuous(expand = expansion(mult = c(0, 0))) +
@@ -844,7 +949,7 @@ pdf("outFigsCZ/p_tsd_merged_corel.pdf", width = 7, height = 3)
 print(p_tsd_merged)
 dev.off()
 
-png("outFigsCZ/p_tsd_merged_corel.png", width = 7, height = 3.5, 
+png("outFigsCZ/p_tsd_merged_corel.png", width = 7, height = 3, 
     units = "in", res = 300)
 print(p_tsd_merged)
 dev.off()
@@ -876,8 +981,10 @@ p_func_alluvial_v2 <- ggplot(func_alluvial_v2,
                                  y = n)) +
   geom_alluvium(aes(fill = func_2023),
                 width = 0.4, alpha = 0.7, knot.pos = 0.4) +
-  geom_stratum(aes(fill = after_stat(stratum)),
-               width = 0.4, color = "black", linewidth = 0.5) +
+  
+  #geom_stratum(width = 0.45, color = "white", linewidth = 1) +
+   geom_stratum(aes(fill = after_stat(stratum)),
+                width = 0.4, color = "black", linewidth = 0.5) +
   geom_text(stat = "stratum",
             aes(label = ifelse(after_stat(prop) >= 0.02,
                                paste0(round(after_stat(prop) * 100, 1)), # , "%"
@@ -888,15 +995,41 @@ p_func_alluvial_v2 <- ggplot(func_alluvial_v2,
                    #expand = expansion(mult = c(0.25, 0.25)
                    #                  )
   ) +
-  scale_fill_manual(values = drought_colors, guide = "none") +  # no legend
+  scale_fill_manual(
+    values = drought_colors_grey,
+    labels = drought_labels,
+    breaks = names(drought_labels),
+    guide  = guide_legend(title = "Drought\ntolerance",
+                          override.aes = list(alpha = 1))
+  ) +
   labs(x = NULL, y = "Number of plots") +
   theme_paper() +
   theme(
-    axis.text.x  = element_text(),
-    axis.line.x  = element_blank(),
-    axis.ticks.x = element_blank()
+    axis.line.x     = element_blank(),
+    axis.ticks.x    = element_blank(),
+    legend.position = "right",
+    legend.text     = element_text(face = "italic"),
+    legend.margin   = margin(0, 0, 0, -10),  # pull legend left
+    plot.margin     = margin(5, 0, 5, 5)     # reduce right margin
   )
 p_func_alluvial_v2
+
+
+# Combine
+p_alluvial_species_drought <- ggarrange(p_species_alluvial, 
+                                 p_func_alluvial_v2,
+                                 ncol = 2, nrow = 1,
+                                 labels = c("[a]", "[b]"),
+                                 font.label = list(size = 10, 
+                                                   face = "plain"))
+
+
+# png("outFigsCZ/p_alluvial_species_drought_corel.png", 
+#     width = 7, height = 2.7,
+#     units = "in", res = 300)
+# print(p_alluvial_species_drought)
+# dev.off()
+
 
 
 # verify levels are codes not display labels
@@ -911,11 +1044,11 @@ p_combined_func
 
 
 # export again
-
-
-pdf("outFigsCZ/p_combined_func_laura.pdf", width = 7, height = 3.5)
-print(p_combined_func)
-dev.off()
+# 
+# 
+# pdf("outFigsCZ/p_combined_func_corel.pdf", width = 7, height = 3.5)
+# print(p_combined_func)
+# dev.off()
 
 
 
@@ -949,7 +1082,7 @@ func_bar_data <- func_stems_base_v2 %>%
 
 # get order from 2025 stem shares
 drought_group_order <- func_bar_data %>%
-  filter(year == "2025") %>%
+  filter(year == "2023") %>%
   arrange(share) %>%          # ascending so top of y-axis = highest
   pull(group) %>%
   as.character()
@@ -964,7 +1097,8 @@ p_bar_drought <- ggplot(func_bar_data,
   geom_col(position = position_dodge(width = 0.7),
            width = 0.6,
            aes(colour = factor(year))) +
-  scale_fill_manual(values = drought_colors, guide = "none") +
+  scale_fill_manual(values = drought_colors, 
+                    guide = "none") +
   scale_alpha_manual(
     name   = "Year of inventory",
     values = c("2023" = 0.45, "2025" = 1.00),
@@ -985,7 +1119,9 @@ p_bar_drought <- ggplot(func_bar_data,
   labs(x = "Stem share [%]", y = NULL) +
   theme_paper() +
   theme(
-    axis.text.y      = element_text(size = 9),
+    axis.text.y      = element_text(size = 8, 
+                                    hjust = 1),
+    plot.margin = margin(5, 5, 5, 5),
     legend.position = "none"
   )
 
@@ -1057,7 +1193,8 @@ p_occurence_drought <- ggplot(func_occurence_data,
   theme(
     legend.position = 'none',
     axis.text.y     = element_blank(),
-    axis.ticks.y    = element_blank()
+    axis.ticks.y    = element_blank(),
+    plot.margin = margin(5, 5, 5, 0)
      )
 
 p_occurence_drought
@@ -1085,31 +1222,41 @@ p_species_composition
 
 
 
-p_fig1_combined6 <- ggarrange(
-  p_species_composition,
-         
-          p_func_alluvial_v2,
-  p_combined_drought,
-  p_management_intensity_plot_simpler,
-  align = "hv",
-          widths = c(2, 1)
+
+
+
+library(patchwork)
+
+# align the axis
+
+# Column 1: stems share - match to max of a and c
+p_bar <- p_bar + coord_cartesian(xlim = c(0, 35))
+p_bar_drought <- p_bar_drought + coord_cartesian(xlim = c(0, 35))
+
+# Column 2: plot share - match to max of b and d  
+p_occurence <- p_occurence + coord_cartesian(xlim = c(0, 85))
+p_occurence_drought <- p_occurence_drought + coord_cartesian(xlim = c(0, 85))
+
+# add visual lines
+p_bar               <- p_bar               + theme(panel.grid.major.x = element_line(color = "grey90", linewidth = 0.3))
+p_occurence         <- p_occurence         + theme(panel.grid.major.x = element_line(color = "grey90", linewidth = 0.3))
+p_bar_drought       <- p_bar_drought       + theme(panel.grid.major.x = element_line(color = "grey90", linewidth = 0.3))
+p_occurence_drought <- p_occurence_drought + theme(panel.grid.major.x = element_line(color = "grey90", linewidth = 0.3))
+
+
+p_fig1_combined <- 
+  (p_bar | p_occurence) /
+  (p_bar_drought | p_occurence_drought) +
+  plot_layout(heights = c(1.6, 1)) +
+  plot_annotation(tag_levels = list(c("[a]", "[b]", "[c]", "[d]"))) &
+  theme(
+    plot.tag          = element_text(size = 10, face = "plain"),
+    plot.tag.position = c(0, 1.05)   # top-left corner of each plot area
   )
 
-p_fig1_combined6
-
-
-p_fig1_combined <- ggarrange(
-  p_species_composition,
-  
-  p_func_alluvial_v2,
-  p_combined_drought,
-  align = "hv",
-  widths = c(3, 1)
-)
-
-
-
 p_fig1_combined
+
+
 
 pdf("outFigsCZ/p_fig1_combined_corel.pdf", width = 7, height = 6)
 print(p_fig1_combined)
@@ -1117,14 +1264,12 @@ dev.off()
 
 
 
-png("outFigsCZ/p_fig1_combined6_corel.png", width = 7, height = 6,
+png("outFigsCZ/p_fig1_combined_corel.png", width = 7, height = 6,
     units = 'in', res = 300)
-print(p_fig1_combined6)
+print(p_fig1_combined)
 dev.off()
 
-pdf("outFigsCZ/p_fig1_alluvial_corel.pdf", width = 4, height = 3)
-print(p_func_alluvial_v2)
-dev.off()
+
 
 ### ── Climate adaptation score per plot -----------------
 # higher = more climate adapted
@@ -1134,7 +1279,7 @@ climate_adapt <- func_stems_base_v2 %>%
   filter(year == 2025) %>%
   mutate(
     # climate adapted = drought tolerant + intermediate
-    # climate maladapted = Norway spruce + drought sensitive
+    # climate maladapted = Picea abies + drought sensitive
     share_adapted    = share_drought_tol + share_intermediate,
     share_maladapted = share_spruce + share_drought_sens
   ) %>%
@@ -1984,7 +2129,7 @@ response_labels <- c(
   rich   = "Species richness [#]",
   beta   = "Dissimilarity [dim.]",
   adapt  = "Climate-adapted share [%] ",
-  spruce = "Norway spruce share [%]"
+  spruce = "Picea abies share [%]"
 )
 
 # ── Term labels ───────────────────────────────────────────────────────────────
@@ -2150,7 +2295,7 @@ emm_table <- emm_mng2 %>%
 sjPlot::tab_df(
   emm_table,
   title  = "Predicted marginal means at management intensity 0 vs 1",
-  footnote = "Predicted marginal means from GAMs, all other variables held at their means. Proportions (climate-adapted share, Norway spruce share) scaled to %. 95% CI on the difference computed as lower.CL_1 − upper.CL_0 and upper.CL_1 − lower.CL_0.",
+  footnote = "Predicted marginal means from GAMs, all other variables held at their means. Proportions (climate-adapted share, Picea abies share) scaled to %. 95% CI on the difference computed as lower.CL_1 − upper.CL_0 and upper.CL_1 − lower.CL_0.",
   file   = "outTable/management_effects_emmeans.doc"
 )
 
