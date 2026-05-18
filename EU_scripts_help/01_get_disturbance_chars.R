@@ -2,7 +2,7 @@
 #   Get terrain characteristics
 # ------------------------------------------------------------------------------
 
-# run on subplot data, then calculate averages fro plot data
+# run on subplot data, then calculate averages for plot data
 # merge back to vegetation chars and create a table having both plot and subplot data
 
 # ── Paths ──────────────────────────────────────────────────────
@@ -231,13 +231,14 @@ str(all_sub_env)
 # merge into the same table
 # ── 1. add level indicator & subplot ID to plot-level ──────────
 all_sub_env_out <- all_sub_env %>%
-  mutate(level = "subplot") 
+  mutate(level = "subplot") %>% 
+  mutate(region = if_else(is.na(region) & country == 13, "15", region))
 
 all_plots_env_out <- all_plots_env %>%
   mutate(level = "plot",
          subplot = NA_character_) %>% # subplots don't exist at plot level
-  select(all_of(names(all_sub_env_out))) # match column order from subplot table
-
+  select(all_of(names(all_sub_env_out))) %>% # match column order from subplot table
+  mutate(region = if_else(is.na(region) & country == 13, "15", region))
 
 # get both levels
 df_both <- bind_rows(all_sub_env_out, all_plots_env_out) %>%
@@ -246,12 +247,42 @@ df_both <- bind_rows(all_sub_env_out, all_plots_env_out) %>%
 
 
 # ── 3. export ──────────────────────────────────────────────────
-fwrite(df_both, "EU_scripts_help/both_levels_EU_comb.csv")
-
+fwrite(df_both, "outDataShare/Karim_AEF/cleaned/both_levels_EU_comb.csv")
+anyNA(df_both)
 
 # ── Export -------------------------------------------
-fwrite(final_sub_env, "EU_scripts_help/env_chars_subplots.csv")
-fwrite(all_plots_env,  "EU_scripts_help/env_chars_plots.csv")
+fwrite(final_sub_env, "outDataShare/Karim_AEF/cleaned/env_chars_subplots.csv")
+fwrite(all_plots_env,  "outDataShare/Karim_AEF/cleaned/env_chars_plots.csv")
+
+
+
+# export as GPKG  ------------------------------
+# df_both — need to check if it has x/y coords
+library(sf)
+df_both_sf <- df_both %>%
+  filter(!is.na(x), !is.na(y)) %>%
+  st_as_sf(coords = c("x", "y"), crs = 3035)
+
+st_write(df_both_sf, "outDataShare/Karim_AEF/cleaned/both_levels_EU_comb.gpkg", delete_dsn = TRUE)
+
+# final_sub_env
+final_sub_env_sf <- final_sub_env %>%
+  filter(!is.na(x), !is.na(y)) %>%
+  st_as_sf(coords = c("x", "y"), crs = 3035)
+
+st_write(final_sub_env_sf, "outDataShare/Karim_AEF/cleaned/env_chars_subplots.gpkg", delete_dsn = TRUE)
+
+# all_plots_env — plot-level, likely centroid coords
+all_plots_env_sf <- all_plots_env %>%
+  filter(!is.na(x), !is.na(y)) %>%
+  st_as_sf(coords = c("x", "y"), crs = 3035)
+
+st_write(all_plots_env_sf, "outDataShare/Karim_AEF/cleaned/env_chars_plots.gpkg", delete_dsn = TRUE)
+
+
+
+
+
 
 
 # check distance calculation -------------------------------------------
