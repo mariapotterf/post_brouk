@@ -203,7 +203,7 @@ plot_means <- all_sub_env %>%
   summarise(
     x                    = mean(x,                    na.rm = TRUE),
     y                    = mean(y,                    na.rm = TRUE),
-    disturbance_year     = mean(disturbance_year,     na.rm = TRUE),
+    disturbance_year     = round(mean(disturbance_year,     na.rm = TRUE),0),
     disturbance_severity = mean(disturbance_severity, na.rm = TRUE),
     elevation            = mean(elevation,            na.rm = TRUE),
     slope                = mean(slope,                na.rm = TRUE),
@@ -266,14 +266,14 @@ df_both_sf <- df_both %>%
 st_write(df_both_sf, "outDataShare/Karim_AEF/cleaned/both_levels_EU_comb.gpkg", delete_dsn = TRUE)
 
 # final_sub_env
-final_sub_env_sf <- final_sub_env %>%
+final_sub_env_sf <- all_sub_env_out %>%
   filter(!is.na(x), !is.na(y)) %>%
   st_as_sf(coords = c("x", "y"), crs = 3035)
 
 st_write(final_sub_env_sf, "outDataShare/Karim_AEF/cleaned/env_chars_subplots.gpkg", delete_dsn = TRUE)
 
 # all_plots_env — plot-level, likely centroid coords
-all_plots_env_sf <- all_plots_env %>%
+all_plots_env_sf <- all_plots_env_out %>%
   filter(!is.na(x), !is.na(y)) %>%
   st_as_sf(coords = c("x", "y"), crs = 3035)
 
