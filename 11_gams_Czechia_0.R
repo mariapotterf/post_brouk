@@ -401,7 +401,7 @@ p_occurence <-
     axis.text.y = element_blank(),
     
     # legend inside bottom-right
-    legend.position = c(0.85, 0.15),
+    legend.position = c(1, 0.05),
     legend.justification = c(1, 0),
     
     # make legend box readable inside plot
@@ -945,14 +945,14 @@ p_tsd_merged <- ggarrange( p_bar_TSD_stems_share,
 p_tsd_merged
 
 
-pdf("outFigsCZ/p_tsd_merged_corel.pdf", width = 7, height = 3)
-print(p_tsd_merged)
-dev.off()
-
-png("outFigsCZ/p_tsd_merged_corel.png", width = 7, height = 3, 
-    units = "in", res = 300)
-print(p_tsd_merged)
-dev.off()
+# pdf("outFigsCZ/p_tsd_merged_corel.pdf", width = 7, height = 3)
+# print(p_tsd_merged)
+# dev.off()
+# 
+# png("outFigsCZ/p_tsd_merged_corel.png", width = 7, height = 3, 
+#     units = "in", res = 300)
+# print(p_tsd_merged)
+# dev.off()
 
 
 
@@ -1024,8 +1024,8 @@ p_alluvial_species_drought <- ggarrange(p_species_alluvial,
                                                    face = "plain"))
 
 
-# png("outFigsCZ/p_alluvial_species_drought_corel.png", 
-#     width = 7, height = 2.7,
+# png("outFigsCZ/p_alluvial_species_drought_corel.png",
+#     width = 7, height = 3,
 #     units = "in", res = 300)
 # print(p_alluvial_species_drought)
 # dev.off()
@@ -1090,8 +1090,19 @@ drought_group_order <- func_bar_data %>%
 func_bar_data <- func_bar_data %>%
   mutate(group = factor(group, levels = drought_group_order))
 
+func_bar_data_merged <- func_bar_data %>%
+  mutate(group = case_when(
+    as.character(group) == "Norway_spruce" ~ "drought_sensitive",
+    TRUE ~ as.character(group)
+  )) %>%
+  group_by(year, group) %>%
+  summarise(share = sum(share), .groups = "drop") %>%
+  mutate(group = factor(group, levels = c("drought_tolerant", 
+                                          "intermediate", 
+                                          "drought_sensitive")))
 
-p_bar_drought <- ggplot(func_bar_data,
+
+p_bar_drought <- ggplot(func_bar_data_merged,
                         aes(x = share, y = group,
                             fill = group, alpha = year)) +
   geom_col(position = position_dodge(width = 0.7),
@@ -1113,9 +1124,14 @@ p_bar_drought <- ggplot(func_bar_data,
     labels = scales::label_number(accuracy = 1),
     expand = expansion(mult = c(0.02, 0.05))
   ) +
-  scale_y_discrete(
-    labels = drought_labels
-  ) +
+  # scale_y_discrete(
+  #   labels = drought_labels
+  # ) +
+  scale_y_discrete(labels = c(
+    "drought_sensitive" = "Drought-sensitive\n(incl. Norway spruce)",
+    "intermediate"      = "Intermediate",
+    "drought_tolerant"  = "Drought-tolerant"
+  )) +
   labs(x = "Stem share [%]", y = NULL) +
   theme_paper() +
   theme(
@@ -1130,22 +1146,26 @@ p_bar_drought
 # p occurence drought
 func_occurence_data <- func_stems_base_v2 %>%
   filter(!is.na(year)) %>%
+  # merge Norway spruce into drought_sensitive before occurrence flags
+  mutate(drought_sensitive = drought_sensitive + Norway_spruce) %>%
+  
   mutate(
-    Norway_spruce_occ     = Norway_spruce     > 0,
+  #  Norway_spruce_occ     = Norway_spruce     > 0,
     drought_sensitive_occ = drought_sensitive > 0,
     intermediate_occ      = intermediate      > 0,
     drought_tolerant_occ  = drought_tolerant  > 0
   ) %>%
   group_by(year) %>%
   summarise(
-    Norway_spruce     = sum(Norway_spruce_occ,     na.rm = TRUE),
+   # Norway_spruce     = sum(Norway_spruce_occ,     na.rm = TRUE),
     drought_sensitive = sum(drought_sensitive_occ, na.rm = TRUE),
     intermediate      = sum(intermediate_occ,      na.rm = TRUE),
     drought_tolerant  = sum(drought_tolerant_occ,  na.rm = TRUE),
     n_plots           = n(),
     .groups = "drop"
   ) %>%
-  mutate(across(c(Norway_spruce, drought_sensitive,
+  mutate(across(c(#Norway_spruce, 
+                  drought_sensitive,
                   intermediate, drought_tolerant),
                 ~ .x / n_plots * 100)) %>%
   select(-n_plots) %>%
@@ -1153,17 +1173,19 @@ func_occurence_data <- func_stems_base_v2 %>%
                names_to  = "group",
                values_to = "share_plots") %>%
   mutate(
-    group = factor(group, levels = rev(drought_cl_levels)),
+    group = factor(group, levels = c("drought_tolerant",
+                                     "intermediate",
+                                     "drought_sensitive")),
     year  = factor(year)
   )
 
 # ── Plot ──────────────────────────────────────────────────────────────────────
 
 
-# apply to both plots
-
-func_occurence_data <- func_occurence_data %>%
-  mutate(group = factor(group, levels = drought_group_order))
+# # apply to both plots
+# 
+# func_occurence_data <- func_occurence_data %>%
+#   mutate(group = factor(group, levels = drought_group_order))
 
 
 p_occurence_drought <- ggplot(func_occurence_data,
@@ -1187,7 +1209,12 @@ p_occurence_drought <- ggplot(func_occurence_data,
     labels = scales::label_number(accuracy = 1),
     expand = expansion(mult = c(0.02, 0.05))
   ) +
-  scale_y_discrete(labels = drought_labels) +
+  #scale_y_discrete(labels = drought_labels) +
+  scale_y_discrete(labels = c(
+    "drought_sensitive" = "Drought-sensitive\n(incl. Norway spruce)",
+    "intermediate"      = "Intermediate",
+    "drought_tolerant"  = "Drought-tolerant"
+  )) +
   labs(x = "Plot share [%]", y = NULL) +
   theme_paper() +
   theme(
@@ -1198,9 +1225,6 @@ p_occurence_drought <- ggplot(func_occurence_data,
      )
 
 p_occurence_drought
-
-
-
 
 
 p_combined_drought <- ggarrange(
@@ -1230,8 +1254,8 @@ library(patchwork)
 # align the axis
 
 # Column 1: stems share - match to max of a and c
-p_bar <- p_bar + coord_cartesian(xlim = c(0, 35))
-p_bar_drought <- p_bar_drought + coord_cartesian(xlim = c(0, 35))
+p_bar <- p_bar + coord_cartesian(xlim = c(0, 55))
+p_bar_drought <- p_bar_drought + coord_cartesian(xlim = c(0, 55))
 
 # Column 2: plot share - match to max of b and d  
 p_occurence <- p_occurence + coord_cartesian(xlim = c(0, 85))
@@ -1256,6 +1280,11 @@ p_fig1_combined <-
 
 p_fig1_combined
 
+# print out tables
+func_occurence_data
+func_bar_data_merged
+
+
 
 
 pdf("outFigsCZ/p_fig1_combined_corel.pdf", width = 7, height = 6)
@@ -1268,6 +1297,53 @@ png("outFigsCZ/p_fig1_combined_corel.png", width = 7, height = 6,
     units = 'in', res = 300)
 print(p_fig1_combined)
 dev.off()
+
+
+# change in spruce : -------------------
+# Spruce share change 2023 -> 2025 per plot
+spruce_change <- func_stems_base_v2 %>%
+  filter(plot %in% plots_with_both) %>%
+  select(plot, year, share_spruce) %>%
+  pivot_wider(names_from = year, 
+              values_from = share_spruce,
+              names_prefix = "spruce_") %>%
+  mutate(delta = spruce_2025 - spruce_2023)
+
+# Run test first and extract values
+wilcox_result <- wilcox.test(spruce_change$spruce_2023, 
+                             spruce_change$spruce_2025, 
+                             paired = TRUE)
+
+wilcox_label <- paste0("Wilcoxon signed-rank test\np = ", 
+                       round(wilcox_result$p.value, 3))
+
+ggplot(spruce_change, aes(x = spruce_2023, y = spruce_2025)) +
+  geom_point(alpha = 0.5, size = 1.5) +
+  geom_abline(slope = 1, intercept = 0, 
+              linetype = "dashed", color = "grey50") +
+  geom_smooth(method = "lm", se = TRUE, color = "#006837") +
+  annotate("text", 
+           x = 0.02, y = 0.97,
+           label = wilcox_label,
+           hjust = 0, vjust = 1,
+           size = 3, color = "grey30") +
+  labs(x = "Spruce share 2023", 
+       y = "Spruce share 2025",
+       caption = "Points above diagonal = spruce increased 2023→2025") +
+  theme_paper()
+
+
+# Also get summary stats
+spruce_change %>%
+  summarise(
+    mean_2023 = mean(spruce_2023, na.rm = TRUE),
+    mean_2025 = mean(spruce_2025, na.rm = TRUE),
+    n_increased = sum(delta > 0),
+    n_decreased = sum(delta < 0),
+    n_stable    = sum(delta == 0),
+    n_new_colonisation = sum(spruce_2023 == 0 & spruce_2025 > 0),
+    n_local_extinction = sum(spruce_2023 > 0 & spruce_2025 == 0)
+  )
 
 
 
@@ -1893,7 +1969,7 @@ plot_df_cz <- plot_df_cz %>%
 
 
 # ── Refit with ML for fair AIC comparison ────────────────────────────────────
-compare_mng_aic <- function(response, data, family, k_tsd = 4) {
+#compare_mng_aic <- function(response, data, family, k_tsd = 4) {
   
   base_formula <- as.formula(paste0(
     response, " ~ grndwrk_pred + year_f + level +",
@@ -1927,29 +2003,29 @@ compare_mng_aic <- function(response, data, family, k_tsd = 4) {
 }
 
 ### ── Run for each response Plot and subplot level ─────────────────────────────────────────────────────
-aic_results_cross <- bind_rows(
-  compare_mng_aic("mean_hgt",        
-                  both_levels_crossscale %>% filter(mean_hgt < 6),
-                  tw(link = "log"), k_tsd = 4),
-  compare_mng_aic("cv_hgt_pos",      
-                  both_levels_crossscale,
-                  tw(link = "log"), k_tsd = 7),
-  compare_mng_aic("effective_numbers",
-                  both_levels_crossscale,
-                  tw(link = "log"), k_tsd = 3),
-  compare_mng_aic("sp_richness",     
-                  both_levels_crossscale,
-                  nb(link = "log"),  k_tsd = 7)
-)
+# aic_results_cross <- bind_rows(
+#   compare_mng_aic("mean_hgt",        
+#                   both_levels_crossscale %>% filter(mean_hgt < 6),
+#                   tw(link = "log"), k_tsd = 4),
+#   compare_mng_aic("cv_hgt_pos",      
+#                   both_levels_crossscale,
+#                   tw(link = "log"), k_tsd = 7),
+#   compare_mng_aic("effective_numbers",
+#                   both_levels_crossscale,
+#                   tw(link = "log"), k_tsd = 3),
+#   compare_mng_aic("sp_richness",     
+#                   both_levels_crossscale,
+#                   nb(link = "log"),  k_tsd = 7)
+# )
 
-aic_results_cross %>%
-  select(response, model, AIC, delta_AIC, best) %>%
-  print(n = Inf)
-
-  distinct()
-
+# aic_results_cross %>%
+#   select(response, model, AIC, delta_AIC, best) %>%
+#   print(n = Inf)
+# 
+#   distinct()
+# 
 #####  AIC comparison - plot level ---------------------
-compare_mng_aic_plot <- function(response, data, family, k_tsd = 4) {
+#compare_mng_aic_plot <- function(response, data, family, k_tsd = 4) {
     base_formula <- as.formula(paste0(
       response, " ~ year_f +",
       "s(time_snc_full_disturbance, k =", k_tsd, ") +",
@@ -1982,14 +2058,14 @@ compare_mng_aic_plot <- function(response, data, family, k_tsd = 4) {
   }
 # run
 # AIC for all three plot-level responses
-aic_adapted <- compare_mng_aic_plot("share_adapted_adj",  share_adapted_plot, betar(),   k_tsd = 4)
-aic_spruce  <- compare_mng_aic_plot("spruce_share_adj",   spruce_share_plot,  betar(),   k_tsd = 4)
-aic_beta    <- compare_mng_aic_plot("beta_jaccard_mean",  plot_df_cz,         gaussian(), k_tsd = 3)
-  
-aic_adapted
-aic_spruce
-aic_beta
-
+# aic_adapted <- compare_mng_aic_plot("share_adapted_adj",  share_adapted_plot, betar(),   k_tsd = 4)
+# aic_spruce  <- compare_mng_aic_plot("spruce_share_adj",   spruce_share_plot,  betar(),   k_tsd = 4)
+# aic_beta    <- compare_mng_aic_plot("beta_jaccard_mean",  plot_df_cz,         gaussian(), k_tsd = 3)
+#   
+# aic_adapted
+# aic_spruce
+# aic_beta
+# 
 
 ###  spruce
 gam_spruce <- gam(
@@ -2059,7 +2135,7 @@ gam_mean_hgt_cross <- gam(
   method = "REML"
 )
 
-plot(gam_mean_hgt_cross, page = 1)
+#plot(gam_mean_hgt_cross, page = 1)
 
 gam_cv_hgt_pos_cross <- gam(
   cv_hgt_pos ~
@@ -2119,6 +2195,32 @@ fin.models.all <- list(
 
 lapply(fin.models.all, summary)
 
+#### quantify interaction effect  -----------------------
+
+# Get predicted values at all four combinations
+emmeans(fin.models.all$eff, 
+        ~ planting_pred * browsing_pred,
+        at = list(planting_pred  = c(0, 1),
+                  browsing_pred  = c(0, 1)),
+        type = "response") %>%
+  summary() %>%
+  as.data.frame() %>%
+  select(planting_pred, browsing_pred, response, lower.CL, upper.CL)
+
+# Same for richness
+emmeans(fin.models.all$rich,
+        ~ planting_pred * browsing_pred,
+        at = list(planting_pred  = c(0, 1),
+                  browsing_pred  = c(0, 1)),
+        type = "response") %>%
+  summary() %>%
+  as.data.frame() %>%
+  select(planting_pred, browsing_pred, response, lower.CL, upper.CL)
+
+
+
+
+
 
 
 # ── Response labels ───────────────────────────────────────────────────────────
@@ -2129,7 +2231,7 @@ response_labels <- c(
   rich   = "Species richness [#]",
   beta   = "Dissimilarity [dim.]",
   adapt  = "Climate-adapted share [%] ",
-  spruce = "Picea abies share [%]"
+  spruce = "Norway spruce share [%]"
 )
 
 # ── Term labels ───────────────────────────────────────────────────────────────
@@ -2593,6 +2695,87 @@ both_levels_cz %>%
   )
 
 
+# SAR plot illustration ----------------------------------------
+
+# SAR predicted curve: S = c * A^z, z = 0.25
+# Anchor c so that predicted S at 4m2 matches your subplot richness baseline (1.3)
+# S = c * A^0.25 -> c = S / A^0.25 = 1.3 / 4^0.25 = 1.3 / 1.414 = 0.919
+c_val <- 1.3 / 4^0.25
+
+# Predicted curve
+curve_df <- data.frame(area = seq(4, 1600, by = 1)) %>%
+  mutate(predicted_richness = c_val * area^0.25)
+
+# Your observed values
+observed_df <- data.frame(
+  area    = c(4, 20, 1600),
+  value   = c(1.3, 3.1, NA),        # richness: subplot, plot, full plot (unknown)
+  eff     = c(1.5, 5.2, NA),        # effective species
+  label   = c("Subplot (4 m²)", "Plot (20 m²)", "Full plot (1600 m²)")
+)
+
+# Key reference points
+refs <- data.frame(
+  area      = c(4, 20, 1600),
+  predicted = c(c_val * 4^0.25,
+                c_val * 20^0.25,
+                c_val * 1600^0.25),
+  label     = c("4 m²", "20 m²", "1600 m²")
+)
+
+# Plot
+p_area_relationship <- ggplot() +
+  # SAR predicted curve
+  geom_line(data = curve_df,
+            aes(x = area, y = predicted_richness),
+            color = "grey50", linewidth = 0.8, linetype = "dashed") +
+  # Predicted reference points
+  geom_point(data = refs,
+             aes(x = area, y = predicted),
+             shape = 1, size = 2, color = "grey40") +
+  # Observed richness
+  geom_point(data = observed_df %>% filter(!is.na(value)),
+             aes(x = area, y = value, shape = "Species richness"),
+             size = 3, color = "#4393c3") +
+  # Observed effective species
+  geom_point(data = observed_df %>% filter(!is.na(eff)),
+             aes(x = area, y = eff, shape = "Effective species"),
+             size = 3, color = "#d73027") +
+  # Reference lines
+  geom_vline(xintercept = c(4, 20, 1600),
+             linetype = "dotted", color = "grey70", linewidth = 0.4) +
+  # Annotations
+  annotate("text", x = 4.5,    y = 4, label = "Subplot\n(4 m²)",
+           size = 2.8, hjust = 0.5, color = "grey40") +
+  annotate("text", x = 20,   y = 4, label = "Plot\n(20 m²)",
+           size = 2.8, hjust = 0.5, color = "grey40") +
+  annotate("text", x = 1400, y = 4, label = "Full plot\nextend\n(1600 m²)",
+           size = 2.8, hjust = 0.5,   color = "grey40") +
+  scale_x_log10(
+    breaks = c(4, 20, 100, 400, 1600),
+    labels = c("4", "20", "100", "400", "1600")
+  ) +
+  scale_shape_manual(
+    name   = "Observed",
+    values = c("Species richness" = 16, "Effective species" = 17)
+  ) +
+  labs(
+    x = expression("Sampled area (m"^2*")") #,
+   # y = "Number of species",
+    #title = "Species-area relationship vs. observed diversity",
+   # subtitle = "Dashed line: SAR prediction (z = 0.25); open circles: SAR-predicted values"
+  ) +
+  theme_paper() +
+  theme(legend.position = c(0.2, 0.85),
+        #legend.background = element_rect(fill = "white"),
+        legend.key = element_rect(fill = NA))
+
+p_area_relationship
+png("outFigsCZ/p_area_relationship.png", width = 4, height = 2.5,
+    units = 'in', res = 300)
+print(p_area_relationship)
+dev.off()
+
 
 
 # Tables & export ---------------------------------------------
@@ -2653,7 +2836,7 @@ ggsave("outFigsCZ/p_combined_function.png",
 
 
 
-## 7b. Model summary table -> Word
+## 7b. Model summary table -> Word ----------------------------
 clean_term  <- function(x) x %>%
   str_replace_all("[:()`,]", "_") %>%
   str_replace_all("__+", "_") %>%
@@ -2713,9 +2896,27 @@ extract_gam_summary <- function(model, model_name) {
 results <- map2(fin.models.all, 
                 names(fin.models.all), extract_gam_summary)
 
+# pvals_fmt <- map_dfr(results, "pvalues") %>%
+#   select(model, term_clean, pval_fmt) %>%
+#   pivot_wider(names_from = term_clean, values_from = pval_fmt, names_prefix = "p_")
+
 pvals_fmt <- map_dfr(results, "pvalues") %>%
+  mutate(term_clean = recode(term_clean,
+                             "planting_intensity"      = "planting",
+                             "planting_pred"           = "planting",
+                             "anti_browsing_intensity" = "browsing_protection",
+                             "browsing_pred"           = "browsing_protection",
+                             "grndwrk_intensity"       = "soil_preparation",
+                             "grndwrk_pred"            = "soil_preparation",
+                             "s_time_snc_full_disturbance_" = "time_since_disturbance",
+                             "time_snc_full_disturbance"    = "time_since_disturbance",
+                             "year_f2025"              = "year_2025",
+                             "levelplot"               = "scale_plot"
+  )) %>%
   select(model, term_clean, pval_fmt) %>%
-  pivot_wider(names_from = term_clean, values_from = pval_fmt, names_prefix = "p_")
+  pivot_wider(names_from = term_clean, 
+              values_from = pval_fmt, 
+              names_prefix = "p_")
 
 metrics_df    <- bind_rows(map(results, "metrics"))
 final_results <- left_join(metrics_df, pvals_fmt, by = "model")
