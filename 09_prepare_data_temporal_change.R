@@ -14,7 +14,7 @@
 
 #  - vertical structure
 # effect of pre-disturbance condistions
-
+# get deadwood: stumps, windthwo in proximity, standing deadwood - all presence vs absence, (nno stump indetity, standing dead trees ion the plot/surroundings?)
 
 gc()
 
@@ -131,7 +131,72 @@ target_cols <- c("plot",
                  "y")
 
 
-# I have few other species - keep simply as 'other' to not misrepresent their occerence elsewhere
+# get deadwood info: presence/absence
+# column mapping across years
+v_deadwood <- c("stump", "deadwood","standing_deadwood",  "windthrow")
+#stump_dw_wind_25 <- c("stump", "windthrow")
+
+# 2023 — select only cols that exist in this year's data
+dat23_dw <- dat23_subplot %>%
+  dplyr::select(ID, cluster, country,
+                any_of(v_deadwood)) %>% 
+  mutate(year = 2023) %>% 
+  distinct()
+
+# 2025 — same
+dat25_dw <- dat25_subplot %>%
+  dplyr::select(plot_key, cluster, #n_plots,
+                any_of(v_deadwood)) %>%
+  rename(deadwood = standing_deadwood,
+         ID = plot_key) %>% 
+  mutate(year = 2025, 
+         country = 13) %>% 
+  dplyr::select(ID, cluster, country, any_of(v_deadwood), year)
+
+dat_DW <- rbind(dat23_dw, dat25_dw)
+
+# convert all NA to 0 - no presence of deadwood/stumps, windthrows
+dat_DW <- dat_DW %>%
+  mutate(across(any_of(v_deadwood), ~ replace_na(., 0))) %>% 
+  mutate(country_name = case_when(
+    country == 11 ~ "DE",  # Germany
+    country == 12 ~ "PL",  # Poland
+    country == 13 ~ "CZ",  # Czech Republic
+    country == 14 ~ "AT",  # Austria
+    country == 15 ~ "SK",  # Slovakia
+    country == 16 ~ "SI",  # Slovenia
+    country == 17 ~ "IT",  # Italy
+    country == 18 ~ "CH",  # Switzerland
+    country == 19 ~ "FR",  # France
+    TRUE ~ NA_character_      # Fallback in case of unidentified country_id
+  ))
+
+table(dat_DW$stump, dat_DW$year)
+table(dat_DW$deadwood, dat_DW$year)
+table(dat_DW$windthrow, dat_DW$year)
+
+# what is distribution of deadwood per subplots?
+dat_DW %>%
+  group_by(year) %>%
+  summarise(
+    total          = n(),
+    stump_pct      = round(mean(stump    == 1, na.rm = TRUE) * 100, 1),
+    deadwood_pct   = round(mean(deadwood == 1, na.rm = TRUE) * 100, 1),
+    windthrow_pct  = round(mean(windthrow== 1, na.rm = TRUE) * 100, 1)
+  )
+
+
+dat_DW %>%
+  group_by(year, country_name) %>%
+  summarise(
+    total_subplot  = n(),
+    stump_pct      = round(mean(stump    == 1, na.rm = TRUE) * 100, 1),
+    deadwood_pct   = round(mean(deadwood == 1, na.rm = TRUE) * 100, 1),
+    windthrow_pct  = round(mean(windthrow== 1, na.rm = TRUE) * 100, 1)
+  )
+
+fwrite(dat_DW, "outData/df_subset_deadwood_windthrow_stumps_2023_2025.csv")
+# I have few other species - keep simply as 'other' to not misrepresent their occurence elsewhere
 # just remove
 
 
