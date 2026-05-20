@@ -151,7 +151,8 @@ dat25_dw <- dat25_subplot %>%
          ID = plot_key) %>% 
   mutate(year = 2025, 
          country = 13) %>% 
-  dplyr::select(ID, cluster, country, any_of(v_deadwood), year)
+  dplyr::select(ID, cluster, country, any_of(v_deadwood), year) %>% 
+  distinct()
 
 dat_DW <- rbind(dat23_dw, dat25_dw)
 
