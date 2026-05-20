@@ -19,9 +19,9 @@ village    <- vect("raw/Ownership_Czech/Obec.shp")
 company    <- vect("raw/Ownership_Czech/Právnické_osoby.shp")
 state      <- vect("raw/Ownership_Czech/Stát.shp")
 
-# study area
+# study area - plots from 2023 and 2025
 aoi        <- vect("raw/core_4.gpkg")
-subplots <- vect("raw/dat_czechia_2023.gpkg")
+subplots   <- vect("outDataShare/Karim_AEF/cleaned/env_chars_subplots.gpkg")
 
 # drones extent
 drone_ext <- vect("raw/position_drone.gpkg") # manually derived
@@ -129,6 +129,13 @@ owners_sf <- st_as_sf(all_owners_3035)
 aoi_sf    <- st_as_sf(aoi_3035)
 subplots_sf    <- st_as_sf(subplots_in_aoi)
 
+# get state vs no-state
+subplots_sf <- subplots_sf %>%
+  mutate(owner_2cat = case_when(
+    property_type == "state"  ~ "State",
+    is.na(property_type)      ~ NA_character_,
+    TRUE                      ~ "Non-state"
+  ))
 
 crs(owners_sf) == crs(subplots_sf)
 
@@ -142,10 +149,21 @@ ggplot() +
   theme_void()
 
 
-# export shp with ownership types: 
-writeVector(subplots_in_aoi, "outData/subplots_by_owner.gpkg", filetype = "GPKG", overwrite = TRUE)
+ggplot() +
+ # geom_sf(data = owners_sf, aes(fill = owner), color = NA, lwd = 1.2) +
+  geom_sf(data = subplots_sf, color = "white", size = 3) +
+  geom_sf(data = subplots_sf, aes(fill = owner_2cat), color = 'black', shape = 21,  size = 2, stroke = 0.8) +
+  geom_sf(data = aoi_sf, fill =NA, color = "black") +
+  # scale_fill_brewer(palette = "Set3") +
+  coord_sf(crs = st_crs(3035)) +  # ← forces plot to stay in EPSG:3035
+  theme_void()
 
-# some cluysters can have mixed ownership! 
+subplots_in_aoi_clean <- subplots_in_aoi[, c("subplot", "plot", "year", "property_type")]
+
+# export shp with ownership types: 
+writeVector(subplots_in_aoi_clean, "outData/subplots_by_owner.gpkg", filetype = "GPKG", overwrite = TRUE)
+
+# some plots can have mixed ownership! 
 table(subplots_sf$cluster, subplots_sf$property_type )
 
 
