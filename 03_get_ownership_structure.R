@@ -159,9 +159,13 @@ ggplot() +
   theme_void()
 
 subplots_in_aoi_clean <- subplots_in_aoi[, c("subplot", "plot", "year", "property_type")]
+subplots_in_aoi_basic <- subplots_in_aoi[, c("subplot", "plot", "year")]
 
 # export shp with ownership types: 
 writeVector(subplots_in_aoi_clean, "outData/subplots_by_owner.gpkg", filetype = "GPKG", overwrite = TRUE)
+# export shp with ownership types: 
+writeVector(subplots_in_aoi_basic, "outData/subplots_basic.gpkg", filetype = "GPKG", overwrite = TRUE)
+writeVector(subplots_in_aoi_basic, "outData/subplots_basic.shp", overwrite = TRUE)
 
 # some plots can have mixed ownership! 
 table(subplots_sf$cluster, subplots_sf$property_type )
