@@ -136,6 +136,10 @@ plot_year_master <- tibble(
 dat_overlap <- dat_overlap %>% 
   filter(plot %in% plots_with_both)
 
+drought_value_species <- dat_overlap %>% 
+  select(species, Drought_tolerance) %>% 
+  distinct()
+
 
 n_overlap_plots    <- length(plots_with_both)  #  125
 n_overlap_subplots <- length(unique(dat_overlap$subplot))  #  1250
@@ -449,7 +453,8 @@ p_species_composition
 top_species_alluvial <- tail(v_top_species, 7)#c("piab", "besp", "qusp", "fasy", "pisy")
 
 
-# For each plot × year, find dominant species
+# For each plot × year, find dominant species: eg one dominant species 
+# per plot
 dom_species_alluvial_plot <- 
   dat_overlap %>%
   mutate(species_other = ifelse(species %in% top_species_alluvial, species, "other")) %>%
@@ -610,8 +615,8 @@ species_table_wide %>%
   align(align = "right", j = 2:8, part = "all") %>%
   align(align = "left",  j = 1,   part = "all") %>%
   hline(i = 11) %>%
-  autofit() %>%
-  save_as_docx(path = "outTable/species_table.docx")
+  autofit() #%>%
+#  save_as_docx(path = "outTable/species_table.docx")
 
 
 
@@ -699,6 +704,9 @@ drought_cl_levels <- c("Norway_spruce", "drought_sensitive",
                        "intermediate", "drought_tolerant",
                        "no_regeneration")
 
+
+
+
 drought_colors <- c(
   "Norway_spruce"     = "#1a5c1a",   # dark forest green — matches piab in species fig
   "drought_sensitive" = "#a8d9a8",   # light green — low drought, shade-tolerant
@@ -706,6 +714,15 @@ drought_colors <- c(
   "drought_tolerant"  = "#d73027"#,   # deep red — high drought, matches Abies/rare end
  # "no_regeneration"   = "#d9d9d9"    # grey
 )
+
+drought_colors3 <- c(
+ # "Norway_spruce"     = "#1a5c1a",   # dark forest green — matches piab in species fig
+  "drought_sensitive" = "#1a5c1a",   # light green — low drought, shade-tolerant
+  "intermediate"      = "#f4a736",   # warm orange — matches mid species colors
+  "drought_tolerant"  = "#d73027"#,   # deep red — high drought, matches Abies/rare end
+  # "no_regeneration"   = "#d9d9d9"    # grey
+)
+
 
 drought_colors_grey <- c(
   "Norway_spruce"     = "#1a5c1a",   # dark forest green — matches piab in species fig
@@ -748,7 +765,7 @@ p_function_drought <- ggplot(species_functional_v2,
   theme_classic()
 
 
-# p_function_drought
+p_function_drought
 
 
 
@@ -1108,7 +1125,7 @@ p_bar_drought <- ggplot(func_bar_data_merged,
   geom_col(position = position_dodge(width = 0.7),
            width = 0.6,
            aes(colour = factor(year))) +
-  scale_fill_manual(values = drought_colors, 
+  scale_fill_manual(values = drought_colors3, 
                     guide = "none") +
   scale_alpha_manual(
     name   = "Year of inventory",
@@ -1194,7 +1211,7 @@ p_occurence_drought <- ggplot(func_occurence_data,
   geom_col(position = position_dodge(width = 0.7),
            width = 0.6,
            aes(colour = factor(year))) +
-  scale_fill_manual(values = drought_colors, guide = "none") +
+  scale_fill_manual(values = drought_colors3, guide = "none") +
   scale_alpha_manual(
     name   = "Year of inventory",
     values = c("2023" = 0.45, "2025" = 1.00),
@@ -1789,7 +1806,11 @@ p_combined_management_intens <- ggarrange(
   heights = c(1.2, 1.2)
 )
 
-
+plot_df_cz %>% 
+  summarise(
+    mean_jaccard = mean(beta_jaccard_mean, na.rm = TRUE),
+    median_jaccard = median(beta_jaccard_mean, na.rm = TRUE)
+  )
 
 #  Models (GAMs) -----------------------------------------------
 # All GAMs: REML, random effect s(plot_id, bs="re")
