@@ -212,19 +212,46 @@ species_labels <- c(
 # piab      besp      pisy      qusp      fasy      lade      saca      soau      acps      potr      absp      sasp 
 #"#006837" "#17934D" "#58B65F" "#94D168" "#C6E77F" "#EDF7A7" "#FEF0A7" "#FDCD7B" "#FA9C58" "#EE613D" "#D22B26" "#A50026" 
 
+# species_colors <- c(
+#   piab = "#006837",
+#   besp = "#17934D",
+#   pisy = "#58B65F",
+#   qusp = "#94D168",
+#   fasy = "#C6E77F",
+#   lade = "#EDF7A7",
+#   saca = "#FEF0A7",
+#   soau = "#FDCD7B",
+#   acps = "#FA9C58",
+#   potr = "#EE613D",
+#   absp = "#D22B26",
+#   sasp = "#A50026"
+# )
+
+
+# adjusted manually
 species_colors <- c(
-  piab = "#006837",
-  besp = "#17934D",
-  pisy = "#58B65F",
-  qusp = "#94D168",
-  fasy = "#C6E77F",
-  lade = "#EDF7A7",
-  saca = "#FEF0A7",
-  soau = "#FDCD7B",
-  acps = "#FA9C58",
-  potr = "#EE613D",
-  absp = "#D22B26",
-  sasp = "#A50026"
+  # Drought sensitive — green shades
+  # piab is darkest, others get progressively lighter
+  piab = "#1a5c1a",   # 1.75 — darkest green (base)
+  besp = "#4a8c3f",   # 1.81 — lighter
+  absp = "#85bb76",   # 1.56 — lighter (note: besp is actually more sensitive but lighter visually)
+  pisy = "#d73027",   # 4.34 — base red
+   qusp  = "#7a4800",   # 2.24 — darkest orange
+   fasy  = "#b36800",   # 2.31
+ 
+  saca = "#f4a736",   # 2.40 — base orange
+  # Intermediate — orange shades
+  # darker = lower value in intermediate range
+  soau = "#b8dba8",   # 2.11 — lightest green
+ 
+  
+  lade = "#f7c070",   # 2.75
+  acps  = "#fad499",   # 2.85
+  potr = "#fce8c4",   # 2.99 — lightest orange
+  
+  # Drought tolerant
+  
+  other = "#d9d9d9"   # grey
 )
 
 
