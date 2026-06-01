@@ -448,6 +448,109 @@ p_species_composition <- ggarrange(p_bar, p_occurence,# p_density,
 p_species_composition
 
 
+# Get seral stage -*--------------------------------------
+
+# ── Seral stage analysis ──────────────────────────────────────────────────────
+
+# 1. Check what seral stages you have
+dat_overlap %>% distinct(species, seral_stage) %>% arrange(seral_stage)
+
+# 2. Stem share by seral stage per year (overlapping plots)
+seral_stems_year <- dat_overlap %>%
+  filter(!is.na(seral_stage), seral_stage != "", n > 0) %>%
+  group_by(year, seral_stage) %>%
+  summarise(stems = sum(n, na.rm = TRUE), .groups = "drop") %>%
+  group_by(year) %>%
+  mutate(
+    total = sum(stems),
+    share = round(100 * stems / total, 2)
+  ) %>%
+  ungroup()
+
+seral_stems_year
+
+# 3. Plot share by seral stage per year
+seral_plot_year <- dat_overlap %>%
+  filter(!is.na(seral_stage), seral_stage != "", n > 0) %>%
+  distinct(plot, year, seral_stage) %>%
+  group_by(year, seral_stage) %>%
+  summarise(n_plots = n_distinct(plot), .groups = "drop") %>%
+  mutate(share_plots = round(100 * n_plots / n_overlap_plots, 2))
+
+seral_plot_year
+
+# 4. Plot-level seral dominance (same approach as drought tolerance)
+seral_stems_base <- dat_overlap %>%
+  filter(!is.na(seral_stage), seral_stage != "") %>%
+  mutate(n = coalesce(n, 0L)) %>%
+  group_by(plot, year, seral_stage) %>%
+  summarise(stems = sum(n, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(
+    names_from  = seral_stage,
+    values_from = stems,
+    values_fill = 0
+  ) %>%
+  mutate(
+    total_stems  = rowSums(across(where(is.numeric))),
+    share_early  = if_else(total_stems == 0, 0, early  / total_stems),
+    share_late   = if_else(total_stems == 0, 0, late   / total_stems)
+  )
+
+# 5. Summary across plots and years
+seral_stems_base %>%
+  group_by(year) %>%
+  summarise(
+    mean_share_early = round(mean(share_early, na.rm = TRUE), 3),
+    mean_share_late  = round(mean(share_late,  na.rm = TRUE), 3),
+    n_plots          = n(),
+    .groups = "drop"
+  )
+
+# 6. Test: did seral composition change between 2023 and 2025?
+seral_change <- seral_stems_base %>%
+  filter(plot %in% plots_with_both) %>%
+  select(plot, year, share_early) %>%
+  pivot_wider(names_from = year, 
+              values_from = share_early,
+              names_prefix = "early_") %>%
+  mutate(delta = early_2025 - early_2023)
+
+wilcox.test(seral_change$early_2023, 
+            seral_change$early_2025, 
+            paired = TRUE)
+
+seral_change %>%
+  summarise(
+    mean_2023   = mean(early_2023, na.rm = TRUE),
+    mean_2025   = mean(early_2025, na.rm = TRUE),
+    n_increased = sum(delta > 0, na.rm = TRUE),
+    n_decreased = sum(delta < 0, na.rm = TRUE),
+    n_stable    = sum(delta == 0, na.rm = TRUE)
+  )
+
+
+# ---------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 #### Species alluvial plot --------------------
 # find the max stems per species/plot and clasify plots accordingly -> make alluvial plot
 top_species_alluvial <- tail(v_top_species, 7)#c("piab", "besp", "qusp", "fasy", "pisy")
