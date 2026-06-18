@@ -328,7 +328,8 @@ results_list <- lapply(seq_len(nrow(pts_cz)), function(i) {
       delta_dist_to_forest    = t2$dist_to_forest_m   - t1$dist_to_forest_m,
       delta_pct_dist_forest   = t2$pct_dist_forest     - t1$pct_dist_forest,
       delta_patch_area_ha     = t2$patch_area_ha       - t1$patch_area_ha,
-      delta_patch_n           = t2$patch_n_disturbed   - t1$patch_n_disturbed
+      delta_patch_n           = t2$patch_n_disturbed   - t1$patch_n_disturbed#,
+      #delta_spruce_share      = t2$pct_spruce_in_undist_t2 - t1$pct_spruce_in_undist_t1
     )
     
   }, error = function(e) {
@@ -359,3 +360,56 @@ result_cz %>%
 data.table::fwrite(result_cz,
                    "outData/dist_and_patch_metrics_czechia_temporal.csv")
 cat("Exported to outData/dist_and_patch_metrics_czechia_temporal.csv\n")
+
+
+# check plots ------------------------------------------------------------------
+
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+
+# ── data prep: the most interesting variables from the temporal analysis ──────
+hist_vars <- c(
+  "dist_to_forest_m_t1", 
+  "dist_to_forest_m_t2",
+  "pct_dist_forest_t1",  
+  "pct_dist_forest_t2",
+  #"delta_pct_dist_forest", 
+  #"delta_dist_to_forest", 
+  "pct_spruce_in_undist_t1", 
+  "pct_spruce_in_undist_t2",
+  "patch_area_ha_t1",
+  "patch_area_ha_t2"
+ # "delta_patch_n", 
+
+)
+
+
+result_long <- result_cz %>%
+  select(all_of(hist_vars)) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
+  filter(!is.na(value)) %>%
+ # left_join(tibble(variable = names(hist_labels), label = hist_labels),
+  #          by = "variable") %>%
+  group_by(variable) %>%
+  mutate(mean_val = mean(value, na.rm = TRUE),
+         median_val = median(value, na.rm = TRUE)) %>%
+  ungroup()
+
+# ── plot ────────────────────────────────────────────────────────────────────
+p_temporal_hist <- ggplot(result_long, aes(x = value)) +
+  geom_histogram(bins = 30, fill = "#2c7fb8", colour = "white", linewidth = 0.2) +
+  geom_vline(aes(xintercept = mean_val), colour = "#d7301f", linewidth = 0.8) +
+  geom_vline(aes(xintercept = median_val), colour = "#d7301f", linewidth = 0.8,
+             linetype = "dashed") +
+  facet_wrap(~ variable, scales = "free", ncol = 2) +
+  labs(title    = "Landscape change: disturbance → field sampling",
+       subtitle = "Red solid = mean | Red dashed = median",
+       x = NULL, y = "Count") +
+  theme_bw(base_size = 11) +
+  theme(strip.background = element_blank(),
+        strip.text = element_text(face = "bold", size = 9),
+        plot.title = element_text(face = "bold"))
+
+p_temporal_hist
+#ggsave("figures/06_temporal_landscape_change.pdf", p_temporal_hist, width = 11, height = 11)
