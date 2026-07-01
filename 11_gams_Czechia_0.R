@@ -1972,8 +1972,32 @@ both_levels_crossscale <- both_levels_cz %>%
   )
 
 
+# get the average heights on plot level per year and meadian and IQR
+plot_height_summary <- both_levels_crossscale[
+  level == "plot",
+  .(
+    n          = .N,
+    mean_hgt   = mean(mean_hgt, na.rm = TRUE),
+    median_hgt = median(mean_hgt, na.rm = TRUE),
+    q1         = quantile(mean_hgt, 0.25, na.rm = TRUE),
+    q3         = quantile(mean_hgt, 0.75, na.rm = TRUE),
+    iqr_hgt    = IQR(mean_hgt, na.rm = TRUE)
+  ),
+  by = year
+][order(year)]
+
+plot_height_summary
+
+plot_height_summary[, `:=`(
+  iqr_median_ratio = iqr_hgt / median_hgt,
+  iqr_mean_ratio   = iqr_hgt / mean_hgt
+)]
 
 
+plot_height_summary
+
+# check levene test to analyze teh sperad of values between years
+car::leveneTest(mean_hgt ~ factor(year), data = both_levels_crossscale[level == "plot"])
 
 ##  Share adapted at plot level -----------
 
@@ -2093,7 +2117,7 @@ plot_df_cz <- plot_df_cz %>%
 
 
 # ── Refit with ML for fair AIC comparison ────────────────────────────────────
-#compare_mng_aic <- function(response, data, family, k_tsd = 4) {
+compare_mng_aic <- function(response, data, family, k_tsd = 4) {
   
   base_formula <- as.formula(paste0(
     response, " ~ grndwrk_pred + year_f + level +",
@@ -2149,7 +2173,7 @@ plot_df_cz <- plot_df_cz %>%
 #   distinct()
 # 
 #####  AIC comparison - plot level ---------------------
-#compare_mng_aic_plot <- function(response, data, family, k_tsd = 4) {
+compare_mng_aic_plot <- function(response, data, family, k_tsd = 4) {
     base_formula <- as.formula(paste0(
       response, " ~ year_f +",
       "s(time_snc_full_disturbance, k =", k_tsd, ") +",
