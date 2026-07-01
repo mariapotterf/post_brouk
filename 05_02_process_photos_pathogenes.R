@@ -1,10 +1,10 @@
 
-# identify photso of samples
+# identify photos of samples
 
-# read all fodlers in
+# read all folders in
 # loop over photos
 # filter photos of damage
-# export to final folder to share
+# export to final folder to share with Roman and Michal - separated between photos with samples and without
 
 library(fs)
 library(stringr)
@@ -14,7 +14,7 @@ library(writexl)  # for Excel writing
 
 # Set base directory and target folder
 base_dir <- "raw/collected_2025"
-target_dir <- "outShare/sample_photo_renamed"  # You can customize this
+target_dir <- "outShare/sample_photo_renamed"  
 
 # export final table as csv
 df_sample_photos <- fread('outShare/samples_list.csv') %>% 
@@ -26,7 +26,7 @@ df_sample_photos <- fread('outShare/samples_list.csv') %>%
 # )
 
 # Create target directory if it doesn't exist
-dir_create(target_dir)
+#dir_create(target_dir)
 
 # Find all files in subfolders named 'DCIM' that contain '_fol_dtl_'
 photo_files <- dir_ls(
