@@ -98,7 +98,9 @@ cat("Copied", nrow(matched_photos_renamed), "renamed SAMPLE photos to", target_d
 # ============================================================
 
 target_dir_damage <- "outShare/damage_photo_renamed"
+target_dir_unknown <- "outShare/damage_photo_unknown_cause"
 dir_create(target_dir_damage)
+dir_create(target_dir_unknown)
 
 # there may be one gpkg per transect/date (e.g. .../T1_JC_20250717/forest_structure_survey_v2.gpkg)
 # -> pick up all of them automatically so this doesn't need editing as new sessions come in
@@ -187,6 +189,10 @@ extract_damage_photos <- function(gpkg_file, layer_name, id_col) {
     ) %>%
     mutate(
       survey_layer = layer_name,
+      # the gpkg file itself is named identically in every transect/session
+      # folder (forest_structure_survey_v2.gpkg) - what actually identifies
+      # the session is its parent folder, e.g. "T1_JC_20250717"
+      survey_session = path_file(path_dir(gpkg_file)),
       gpkg_file = path_file(gpkg_file)
     )
 }
@@ -204,7 +210,9 @@ damage_all <- purrr::map_dfr(gpkg_files, function(gf) {
 })
 
 # specimen tag codes look like "T4433KL2" (T + digits); anything else in the sample
-# field is a cause note, not a physical sample
+# field is a cause note, not a physical sample. Rows with dmg_bool == 1 but no
+# sample code AND no cause note at all are genuinely unlabeled damage - flagged
+# as "unknown" rather than left blank, since that's a real, worth-tracking category
 damage_all <- damage_all %>%
   mutate(
     sample_note = str_trim(sample_note),
@@ -213,7 +221,8 @@ damage_all <- damage_all %>%
     # into the filename instead of treating it as "no sample"
     has_sample  = coalesce(str_detect(sample_note, "^T\\d"), FALSE),
     sample_code = if_else(has_sample, sample_note, NA_character_),
-    cause_note  = if_else(!has_sample, sample_note, NA_character_)
+    cause_note  = if_else(has_sample, "sampled", coalesce(sample_note, "unknown")),
+    cause_note  = if_else(cause_note == "", "unknown", cause_note)
   ) %>%
   left_join(damage_type_lookup, by = "dmg_type") %>%
   left_join(species_lookup, by = "species_id")
@@ -238,33 +247,76 @@ damage_matched <- damage_all %>%
   arrange(sort_key) %>%
   mutate(
     photo_seq = sprintf("%03d", row_number()),
-    # kept in the table for filtering, but no longer baked into the filename -
-    # since only no-sample photos get copied, every copied file would end in
-    # the same "_nosample" suffix, which is redundant
-    sample_tag = if_else(has_sample, paste0("sample_", sample_code), "nosample"),
     new_filename = paste0(
       photo_seq, "_", plot_id, "_", damage_type, "_", photo_view,
       ".jpg"
     ),
-    new_path = file.path(target_dir_damage, new_filename)
+    # cause_note already carries everything needed to route each photo:
+    # "sampled" -> not copied (lives with the specimen record elsewhere),
+    # "unknown" -> unknown-cause folder, anything else -> main damage folder
+    new_path = dplyr::case_when(
+      cause_note == "sampled" ~ NA_character_,
+      cause_note == "unknown" ~ file.path(target_dir_unknown, new_filename),
+      TRUE                    ~ file.path(target_dir_damage, new_filename)
+    )
   )
 
 file_copy(
-  path = damage_matched %>% dplyr::filter(!has_sample) %>% pull(original_path),
-  new_path = damage_matched %>% dplyr::filter(!has_sample) %>% pull(new_path),
+  path = damage_matched %>% dplyr::filter(!cause_note %in% c("sampled", "unknown")) %>% pull(original_path),
+  new_path = damage_matched %>% dplyr::filter(!cause_note %in% c("sampled", "unknown")) %>% pull(new_path),
+  overwrite = TRUE
+)
+
+file_copy(
+  path = damage_matched %>% dplyr::filter(cause_note == "unknown") %>% pull(original_path),
+  new_path = damage_matched %>% dplyr::filter(cause_note == "unknown") %>% pull(new_path),
   overwrite = TRUE
 )
 
 write_xlsx(
   damage_matched %>%
-    mutate(copied_to_folder = !has_sample) %>%
-    dplyr::select(plot_id, species_id, species_name, dmg_type, damage_type,
-                  damage_part, photo_view, has_sample, sample_code, cause_note,
-                  copied_to_folder, photo_date, photo_basename, new_filename,
-                  survey_layer, gpkg_file),
-  "outShare/damage_list_renamed.xlsx"
+    mutate(
+      copied_to_folder = cause_note != "sampled",
+      # plot_id (=subplot number) alone isn't guaranteed unique once photos
+      # are pooled across multiple transects/sessions - each session can
+      # reuse the same subplot numbers - so this pins it to the session
+      # folder (e.g. "T1_JC_20250717") to give a safe join key
+      subplot_uid = paste0(survey_session, "_", plot_id)
+    ) %>%
+    dplyr::select(subplot_uid, plot_id, survey_session, species_id, species_name,
+                  dmg_type, damage_type, damage_part, photo_view, has_sample,
+                  sample_code, cause_note, copied_to_folder, photo_date,
+                  photo_basename, new_filename, survey_layer, gpkg_file),
+  "outShare/damage_photos_renamed.xlsx"
 )
 
-cat("Copied", sum(!damage_matched$has_sample), "renamed DAMAGE photos (no sample) to", target_dir_damage, "\n")
-cat("  skipped", sum(damage_matched$has_sample), "photos where a physical sample was collected",
+cat("Copied", sum(!damage_matched$cause_note %in% c("sampled", "unknown")),
+    "renamed DAMAGE photos (known cause, no sample) to", target_dir_damage, "\n")
+cat("Copied", sum(damage_matched$cause_note == "unknown"),
+    "renamed DAMAGE photos (no sample, no cause note) to", target_dir_unknown, "\n")
+cat("  skipped", sum(damage_matched$cause_note == "sampled"),
+    "photos where a physical sample was collected",
     "(listed in damage_list_renamed.xlsx but not copied).\n")
+
+# 
+# # ============================================================
+# # 3) merge with manually inspected pathogen table (unchanged)
+# # ============================================================
+# 
+# library(readxl)
+# 
+# df_manual <- read_xlsx("outShare/samples_list_zari_maja.xlsx") %>%
+#   dplyr::filter(photo != "")
+# 
+# df_new <- read_xlsx("outShare/samples_list_renamed.xlsx") %>%
+#   dplyr::filter(photo != "")
+# 
+# df_merged <- df_manual %>%
+#   left_join(
+#     df_new %>% dplyr::select(plot_key, sample, photo, new_filename),
+#     by = c("plot_key", "sample", "photo")
+#   ) %>%
+#   dplyr::select(-c(photo)) %>%
+#   rename(photo = new_filename)
+# 
+# write_xlsx(df_merged, "outShare/samples_list_merged.xlsx")
