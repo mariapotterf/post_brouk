@@ -270,7 +270,9 @@ df_mng_sub <- dat_overlap_mng_upd2 %>%
            grndwrk_intensity, 
            logging_trail_intensity,
            planting_intensity, 
-           anti_browsing_intensity)
+           anti_browsing_intensity) %>% 
+  mutate(across(all_of(management_vars), ~ replace_na(.x, 0)))
+
 
 df_mng_plot <- df_mng_sub %>%
   select(plot, year,
@@ -279,89 +281,44 @@ df_mng_plot <- df_mng_sub %>%
          logging_trail_intensity,
          planting_intensity, 
          anti_browsing_intensity) %>%
-  distinct()
+  distinct() 
 
 
 # identify cumulative management type --------------------------------------------
-
+## activity definitions matching the paper's 3-activity framework
+## salvage/site-prep signal = clear OR grndwrk OR logging_trail (skid marks)
+## same 4-type classification, applied directly at the subplot level (no plot aggregation)
 df_mng_sub_cum <- df_mng_sub %>%
   mutate(
-    is_nested = case_when(
-      clear == 0 & grndwrk == 0 & planting == 0 & anti_browsing == 0 ~ TRUE,
-      clear == 1 & grndwrk == 0 & planting == 0 & anti_browsing == 0 ~ TRUE,
-      clear == 1 & grndwrk == 1 & planting == 0 & anti_browsing == 0 ~ TRUE,
-      clear == 1 & grndwrk == 1 & planting == 1 & anti_browsing == 0 ~ TRUE,
-      clear == 1 & grndwrk == 1 & planting == 1 & anti_browsing == 1 ~ TRUE,
-      TRUE ~ FALSE
+    plant  = planting,
+    browse = anti_browsing,
+    
+    mgmt_type = case_when(
+      clear == 0 & plant == 0 & browse == 0 ~ 0L,  # passive
+      clear == 1 & plant == 0 & browse == 0 ~ 1L,  # salvaged
+      clear == 1 & plant == 1 & browse == 0 ~ 2L,  # planted
+      clear == 1 & plant == 1 & browse == 1 ~ 3L,  # protected
+      is.na(clear) | is.na(plant) | is.na(browse) ~ NA_integer_,  # truly missing data
+      TRUE ~ 9L   # uncommon combos
     ),
-    mgmt_cum_level = case_when(
-      is_nested & clear == 0 & grndwrk == 0 & planting == 0 & anti_browsing == 0 ~ 0L,
-      is_nested & clear == 1 & grndwrk == 0 & planting == 0 & anti_browsing == 0 ~ 1L,
-      is_nested & clear == 1 & grndwrk == 1 & planting == 0 & anti_browsing == 0 ~ 2L,
-      is_nested & clear == 1 & grndwrk == 1 & planting == 1 & anti_browsing == 0 ~ 3L,
-      is_nested & clear == 1 & grndwrk == 1 & planting == 1 & anti_browsing == 1 ~ 4L,
-      TRUE ~ NA_integer_
-    ),
-    mgmt_n_measures = clear + grndwrk + planting + anti_browsing,
-    detectable_or   = as.integer(clear == 1 | grndwrk == 1),
-    detectable_type = case_when(
-      clear == 1 & grndwrk == 1 ~ "salvage_and_grndwrk",
-      clear == 1 & grndwrk == 0 ~ "salvage_only",
-      clear == 0 & grndwrk == 1 ~ "grndwrk_only",
-      TRUE                      ~ "none_detectable"
-    )
+    mgmt_type_label = factor(mgmt_type,
+                             levels = c(0:3, 9),
+                             labels = c("passive", "salvaged", "planted", "protected", "uncommon"))
   )
 
-
+## check distribution
 df_mng_sub_cum %>%
-  mutate(
-    is_nested_alt = case_when(
-      clear == 0 & planting == 0 & anti_browsing == 0 ~ TRUE,
-      clear == 1 & planting == 0 & anti_browsing == 0 ~ TRUE,
-      clear == 1 & planting == 1 & anti_browsing == 0 ~ TRUE,
-      clear == 1 & planting == 1 & anti_browsing == 1 ~ TRUE,
-      TRUE ~ FALSE
-    )
-  ) %>%
-  #filter(!is_nested_alt) %>%
-  count(clear, grndwrk, planting, anti_browsing, sort = TRUE)
+  count(mgmt_type, mgmt_type_label, sort = TRUE) %>%
+  mutate(pct = round(100 * n / sum(n), 1))
 
-## check how common non-nested combos are before trusting mgmt_cum_level
-df_mng_sub_cum %>%
-  filter(!is_nested) %>%
-  count(clear, grndwrk, planting, anti_browsing, sort = TRUE)
+## export
+df_mng_sub_cum_out <- df_mng_sub_cum %>%
+  select(-ends_with("_intensity"), -plant, -browse)
 
-## plot-level aggregation: "any subplot has it -> plot has it"
-df_mng_plot_cum <- df_mng_sub %>%
-  group_by(plot, year) %>%
-  summarise(
-    across(all_of(mgmt_vars_cum), ~ as.integer(any(.x == 1, na.rm = TRUE))),
-    detectable_or       = as.integer(any(detectable_or == 1, na.rm = TRUE)),
-    mgmt_cum_level_max  = suppressWarnings(max(mgmt_cum_level, na.rm = TRUE)),
-    mgmt_n_measures_max = max(mgmt_n_measures, na.rm = TRUE),
-    n_subplots_mgmt     = n(),
-    .groups = "drop"
-  ) %>%
-  mutate(
-    mgmt_cum_level_max = na_if(mgmt_cum_level_max, -Inf),  # handle all-NA groups
-    detectable_type_plot = case_when(
-      clear == 1 & grndwrk == 1 ~ "salvage_and_grndwrk",
-      clear == 1 & grndwrk == 0 ~ "salvage_only",
-      clear == 0 & grndwrk == 1 ~ "grndwrk_only",
-      TRUE                      ~ "none_detectable"
-    )
-  )
-
-df_mng_plot <- df_mng_plot %>%
-  left_join(df_mng_plot_cum, by = c("plot", "year"))
+fwrite(df_mng_sub_cum_out, "outDataShare/Karim_AEF/cleaned/subplot_cumul_management.csv")
 
 
-
-
-
-
-
-## Management intensity summary (for figures)
+## Management intensity summary (for figures) ------------------------------
 df_master_mng_intensity <- dat_overlap_mng_upd2 %>%
   distinct(plot, year,
            clear_intensity, grndwrk_intensity, logging_trail_intensity,
