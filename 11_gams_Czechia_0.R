@@ -104,6 +104,25 @@ dat_full <- dat_full %>%
   mutate(plot_year = paste0(plot, year, '_'),
          subplot_year = paste0(subplot, year, '_'))
 
+
+# how many lines? - no empty subplots?
+dat_full %>%
+  filter(!is.na(n)) %>% 
+ # head()
+  count(year, name = "n_lines")
+  
+  
+  # distinct subplots in 2025
+  dat_full %>%
+    filter(year == 2025) %>%
+    summarise(n_subplots_distinct = n_distinct(subplot))
+  
+  dat_full %>%
+    filter(year == 2025) %>%
+    summarise(n_plots_distinct = n_distinct(plot))
+  
+
+
 # select only overlapping plots
 dat_overlap <- dat_full %>%
   filter(status == "both")
