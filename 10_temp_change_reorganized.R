@@ -286,7 +286,6 @@ df_mng_plot <- df_mng_sub %>%
 
 # identify cumulative management type --------------------------------------------
 ## activity definitions matching the paper's 3-activity framework
-## salvage/site-prep signal = clear OR grndwrk OR logging_trail (skid marks)
 ## same 4-type classification, applied directly at the subplot level (no plot aggregation)
 df_mng_sub_cum <- df_mng_sub %>%
   mutate(
@@ -315,7 +314,7 @@ df_mng_sub_cum %>%
 df_mng_sub_cum_out <- df_mng_sub_cum %>%
   select(-ends_with("_intensity"), -plant, -browse)
 
-fwrite(df_mng_sub_cum_out, "outDataShare/Karim_AEF/cleaned/subplot_cumul_management.csv")
+# fwrite(df_mng_sub_cum_out, "outDataShare/Karim_AEF/cleaned/subplot_cumul_management.csv")
 
 
 ## Management intensity summary (for figures) ------------------------------
