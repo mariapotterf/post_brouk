@@ -10,8 +10,8 @@ proj1_root <- "C:/Users/potterf/OneDrive - CZU v Praze/Dokumenty/2023_PanEuropea
 elev_path  <- file.path(proj1_root, "rawData/dem")
 dist_path  <- file.path(proj1_root, "rawData/disturb_data")
 
-gpkg_sub  <- "C:/Users/potterf/OneDrive - CZU v Praze/Dokumenty/2025_CZU_postbrouk/r_post_brouk/outDataShare/Karim_AEF/regeneration_chars_subplot_3035.gpkg"
-gpkg_plot  <- "C:/Users/potterf/OneDrive - CZU v Praze/Dokumenty/2025_CZU_postbrouk/r_post_brouk/outDataShare/Karim_AEF/regeneration_chars_plot_3035.gpkg"
+gpkg_sub  <- "C:/Users/potterf/OneDrive - CZU v Praze/Dokumenty/2025_CZU_postbrouk/r_post_brouk/outDataShare/Karim_AEF/old/regeneration_chars_subplot_3035.gpkg"
+gpkg_plot  <- "C:/Users/potterf/OneDrive - CZU v Praze/Dokumenty/2025_CZU_postbrouk/r_post_brouk/outDataShare/Karim_AEF/old/regeneration_chars_plot_3035.gpkg"
 
 # ── Libraries ──────────────────────────────────────────────────
 library(terra)
@@ -58,6 +58,42 @@ all_subplots <- all_subplots[, !names(all_subplots) %in% cols_remove]
 
 # verify
 names(all_subplots)
+
+
+# Export data only for czechia - 1665 subplots! ----------------
+
+cz_col <- "country_name"          # <- set from names() above
+cz_val <- "Czech Republic"
+
+# which() not a bare logical — NAs in the country field would otherwise
+# silently pull in empty rows
+# cz_subplots <- all_subplots[which(all_subplots[[cz_col]][[1]] == cz_val), ]
+
+nrow(all_subplots); nrow(cz_subplots)
+
+keep_cols_cz <- c("plot", "subplot", "year", "country_name")
+#setdiff(keep_cols_cz, names(cz_subplots))   # character(0) = all present
+
+cz_subplots <- all_subplots[which(all_subplots[[cz_col]][[1]] == cz_val), keep_cols_cz]
+
+
+#out_dir <- file.path(sub("/+$", "", proj1_root), "outDataShare", "czechia")
+out_dir <- file.path(dirname(dirname(gpkg_sub)), "czechia")
+out_dir
+dir.create(out_dir, recursive = TRUE, showWarnings = F)
+
+# # GPKG — keeps full field names, NAs, UTF-8
+# writeVector(cz_subplots,
+#             file.path(out_dir, "regen_chars_subplot_cz_3035.gpkg"),
+#             filetype = "GPKG", overwrite = TRUE)
+# 
+# # SHP — writes .shp/.shx/.dbf/.prj alongside
+# writeVector(cz_subplots,
+#             file.path(out_dir, "regen_chars_subplot_cz_3035.shp"),
+#             filetype = "ESRI Shapefile", overwrite = TRUE)
+# 
+
+
 
 # ── Helper: load agent raster or return NA dummy ───────────────
 read_or_dummy <- function(path, reference) {
