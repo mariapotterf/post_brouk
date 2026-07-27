@@ -137,6 +137,7 @@ mng_both25 <- dat_overlap_mng %>%
 
 
 # Get management separately: per plot per year — long format ────────────────────────────────
+# to keep 
 mng_by_year <- dat_overlap %>%
   # if there is NA in management - > set to 0
   mutate(across(all_of(management_vars), ~ replace_na(.x, 0))) %>% 
@@ -179,7 +180,8 @@ hist(mng_wide$delta_planting)
 
 
 
-## Combine by row order, take max per management variable
+## Combine by row order, take max per management variable - this is because I do not know which of the subplots 
+# actually overlaps; i know only plots
 mng_both25_upd <- bind_rows(mng_both23, mng_both25) %>%
   group_by(plot, row_id) %>%
   summarise(
@@ -259,6 +261,7 @@ dat_overlap_mng_upd2 <- dat_overlap_mng_upd2 %>%
 
 
 ## Subplot and plot management tables ----------------------------------------------
+# subplot level - keep both rwa values and plot level merges
 df_mng_sub <- dat_overlap_mng_upd2 %>%
   distinct(plot, subplot, year,
            clear, 
@@ -273,7 +276,7 @@ df_mng_sub <- dat_overlap_mng_upd2 %>%
            anti_browsing_intensity) %>% 
   mutate(across(all_of(management_vars), ~ replace_na(.x, 0)))
 
-
+# summarize on plot level
 df_mng_plot <- df_mng_sub %>%
   select(plot, year,
          clear_intensity, 
@@ -285,25 +288,166 @@ df_mng_plot <- df_mng_sub %>%
 
 
 # identify cumulative management type --------------------------------------------
-## activity definitions matching the paper's 3-activity framework
-## same 4-type classification, applied directly at the subplot level (no plot aggregation)
+# ==============================================================================
+# Subplot-level cumulative management classification — three schemes
+# ------------------------------------------------------------------------------
+# Applied directly at the SUBPLOT level (no plot aggregation).
+#
+# Input : df_mng_sub  — one row per subplot, with 0/1 columns:
+#           clear, grndwrk, logging_trail, planting, anti_browsing
+#         (planting/anti_browsing already recoded to 0/1; no `== 2` artefact)
+#
+# Output: df_mng_sub_cum — same rows + three parallel classifications:
+#
+#   A) mgmt_type        — "ours": strict cumulative LADDER, gated on `clear`.
+#                         passive < salvaged < planted < protected; off-ladder
+#                         combos -> "uncommon" (9).
+#   B) mgmt_type_joh    — Johannes: PRECEDENCE, highest-activity-wins.
+#                         sitePrep = clear|grndwrk|logging_trail; then
+#                         pmax(sitePrep, planting*2, anti_browsing*3).
+#                         Never yields an "uncommon" bin.
+#   C) establishment + protect — TWO-AXIS: an ordinal establishment pathway
+#                         (passive < sitePrep < planted) PLUS an independent
+#                         binary protection flag. Lets protection be estimated
+#                         separately from planting; empties the "uncommon" bin.
+#
+# NA rule (uniform across all three schemes, for a fair comparison): if ANY of
+# the five management variables is NA for a subplot, all three classifications
+# are set to NA for that subplot. (You reported no NAs, so this is a no-op here,
+# but keeps the schemes aligned if that ever changes.)
+# ==============================================================================
+
+
+
+mng_vars <- c("clear", "grndwrk", "logging_trail", "planting", "anti_browsing")
+
 df_mng_sub_cum <- df_mng_sub %>%
   mutate(
+    # convenience aliases (match earlier naming)
     plant  = planting,
     browse = anti_browsing,
     
+    # shared flags
+    any_na    = if_any(all_of(mng_vars), is.na),
+    sitePrep  = clear == 1 | grndwrk == 1 | logging_trail == 1,  # Johannes / two-axis
+    planted   = plant  == 1,
+    protected = browse == 1,
+    
+    # ---- A) OURS: strict cumulative ladder (gated on `clear`) ----------------
     mgmt_type = case_when(
-      clear == 0 & plant == 0 & browse == 0 ~ 0L,  # passive
-      clear == 1 & plant == 0 & browse == 0 ~ 1L,  # salvaged
-      clear == 1 & plant == 1 & browse == 0 ~ 2L,  # planted
-      clear == 1 & plant == 1 & browse == 1 ~ 3L,  # protected
-      is.na(clear) | is.na(plant) | is.na(browse) ~ NA_integer_,  # truly missing data
-      TRUE ~ 9L   # uncommon combos
+      any_na                                  ~ NA_integer_,
+      clear == 0 & plant == 0 & browse == 0   ~ 0L,   # passive
+      clear == 1 & plant == 0 & browse == 0   ~ 1L,   # salvaged
+      clear == 1 & plant == 1 & browse == 0   ~ 2L,   # planted
+      clear == 1 & plant == 1 & browse == 1   ~ 3L,   # protected
+      TRUE                                    ~ 9L    # uncommon combos
     ),
     mgmt_type_label = factor(mgmt_type,
                              levels = c(0:3, 9),
-                             labels = c("passive", "salvaged", "planted", "protected", "uncommon"))
-  )
+                             labels = c("passive", "salvaged", "planted", "protected", "uncommon")),
+    
+    # ---- B) JOHANNES: precedence / highest-activity-wins ---------------------
+    mgmt_type_joh = if_else(
+      any_na,
+      NA_integer_,
+      pmax(as.integer(sitePrep),
+           as.integer(planted)   * 2L,
+           as.integer(protected) * 3L)
+    ),
+    mgmt_type_joh_label = factor(mgmt_type_joh,
+                                 levels = 0:3,
+                                 # level 1 spans clear/grndwrk/logging_trail, hence "sitePrep" not "salvaged"
+                                 labels = c("passive_joh", 
+                                            "salvaged_joh", 
+                                            "planted_joh", 
+                                            "protected_joh")),
+    
+    # ---- C) TWO-AXIS: establishment pathway + independent protection ---------
+    # Axis 1 (ordinal): passive < sitePrep < planted; planting takes priority
+    establishment = case_when(
+      any_na   ~ NA_integer_,
+      planted  ~ 2L,
+      sitePrep ~ 1L,
+      TRUE     ~ 0L
+    ),
+    establishment = factor(establishment,
+                           levels = 0:2, labels = c("passive", "salvaged", "planted"),
+                           ordered = TRUE),
+    
+    # Axis 2 (binary): browsing protection, independent of the pathway
+    protect = if_else(any_na, NA_integer_, as.integer(protected)),
+    
+    # combined descriptive label (base x protection) — for tabulation/plots only
+    mgmt_2axis = factor(
+      if_else(is.na(establishment),
+              NA_character_,
+              paste0(as.character(establishment),
+                     if_else(protect == 1L, "_protected", ""))),
+      levels = c("passive", "passive_protected",
+                 "salvaged", "salvaged_protected",
+                 "planted",  "planted_protected"))
+  ) %>%
+  select(-any_na)  # drop helper
+
+# ------------------------------------------------------------------------------
+# Distributions of each scheme
+# ------------------------------------------------------------------------------
+dist_ladder <- df_mng_sub_cum %>%
+  count(mgmt_type, mgmt_type_label, sort = TRUE) %>%
+  mutate(pct = round(100 * n / sum(n), 1))
+
+dist_joh <- df_mng_sub_cum %>%
+  count(mgmt_type_joh, mgmt_type_joh_label, sort = TRUE) %>%
+  mutate(pct = round(100 * n / sum(n), 1))
+
+dist_2axis <- df_mng_sub_cum %>%
+  count(establishment, protect, mgmt_2axis, sort = TRUE) %>%
+  mutate(pct = round(100 * n / sum(n), 1))
+
+print(dist_ladder)
+print(dist_joh)
+print(dist_2axis)
+# ------------------------------------------------------------------------------
+# Crosswalk: how the three schemes agree / diverge
+# (off-diagonals here ARE your methods-section justification)
+# ------------------------------------------------------------------------------
+# ours vs Johannes
+crosswalk_ladder_joh <- df_mng_sub_cum %>%
+  count(mgmt_type_label, mgmt_type_joh_label) %>%
+  pivot_wider(names_from = mgmt_type_joh_label, values_from = n, values_fill = 0)
+
+# full three-way (where do the "uncommon" subplots land under the other schemes?)
+crosswalk_all3 <- df_mng_sub_cum %>%
+  count(mgmt_type_label, mgmt_type_joh_label, mgmt_2axis) %>%
+  arrange(desc(n))
+
+print(crosswalk_ladder_joh)
+print(crosswalk_all3)
+
+# ------------------------------------------------------------------------------
+# Export
+# ------------------------------------------------------------------------------
+df_mng_sub_cum_out <- df_mng_sub_cum %>%
+  select(-ends_with("_intensity"), -plant, -browse,
+         -sitePrep, -planted, -protected)
+
+# fwrite(df_mng_sub_cum_out, "outDataShare/Karim_AEF/cleaned/subplot_cumul_management.csv")
+
+
+
+
+
+# check wheare are differences
+df_mng_sub_cum %>%
+  count(mgmt_type_label, mgmt_type_joh_label) %>%
+  tidyr::pivot_wider(names_from = mgmt_type_joh_label,
+                     values_from = n, values_fill = 0)
+
+
+df_mng_sub_cum %>%
+  filter(mgmt_type == 9L) %>%
+  count(clear, grndwrk, logging_trail, plant, browse, sort = TRUE)
+
 
 ## check distribution
 df_mng_sub_cum %>%
