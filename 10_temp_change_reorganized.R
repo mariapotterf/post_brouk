@@ -383,9 +383,12 @@ df_mng_sub_cum <- df_mng_sub %>%
               NA_character_,
               paste0(as.character(establishment),
                      if_else(protect == 1L, "_protected", ""))),
-      levels = c("passive", "passive_protected",
-                 "salvaged", "salvaged_protected",
-                 "planted",  "planted_protected"))
+      levels = c("passive", 
+                 "passive_protected",
+                 "salvaged", 
+                 "salvaged_protected",
+                 "planted",  
+                 "planted_protected"))
   ) %>%
   select(-any_na)  # drop helper
 
@@ -427,38 +430,11 @@ print(crosswalk_all3)
 # ------------------------------------------------------------------------------
 # Export
 # ------------------------------------------------------------------------------
-df_mng_sub_cum_out <- df_mng_sub_cum %>%
-  select(-ends_with("_intensity"), -plant, -browse,
-         -sitePrep, -planted, -protected)
-
-# fwrite(df_mng_sub_cum_out, "outDataShare/Karim_AEF/cleaned/subplot_cumul_management.csv")
-
-
-
-
-
-# check wheare are differences
-df_mng_sub_cum %>%
-  count(mgmt_type_label, mgmt_type_joh_label) %>%
-  tidyr::pivot_wider(names_from = mgmt_type_joh_label,
-                     values_from = n, values_fill = 0)
-
-
-df_mng_sub_cum %>%
-  filter(mgmt_type == 9L) %>%
-  count(clear, grndwrk, logging_trail, plant, browse, sort = TRUE)
-
-
-## check distribution
-df_mng_sub_cum %>%
-  count(mgmt_type, mgmt_type_label, sort = TRUE) %>%
-  mutate(pct = round(100 * n / sum(n), 1))
-
 ## export
 df_mng_sub_cum_out <- df_mng_sub_cum %>%
-  select(-ends_with("_intensity"), -plant, -browse)
+  select(-ends_with("_intensity"))
 
-# fwrite(df_mng_sub_cum_out, "outDataShare/Karim_AEF/cleaned/subplot_cumul_management.csv")
+fwrite(df_mng_sub_cum_out, "outDataShare/Karim_AEF/cleaned/subplot_cumul_management_20260727.csv")
 
 
 ## Management intensity summary (for figures) ------------------------------
