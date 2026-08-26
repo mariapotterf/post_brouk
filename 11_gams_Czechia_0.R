@@ -2111,7 +2111,123 @@ gratia::draw(gam_adapted_final, select = 1)
 
 
 summary(gam_spruce)
+gam.check(gam_spruce)
 gratia::draw(gam_spruce, select = 1)
+
+# aurtocorrelation check
+spruce_resid <- spruce_share_plot %>%
+  mutate(resid_dev = residuals(gam_spruce, type = "deviance"))
+
+spruce_wide <- spruce_resid %>%
+  select(plot_id, year_f, resid_dev) %>%
+  pivot_wider(names_from = year_f, values_from = resid_dev, names_prefix = "yr_") %>%
+  filter(!is.na(yr_2023), !is.na(yr_2025))
+
+nrow(spruce_wide)
+cor.test(spruce_wide$yr_2023, spruce_wide$yr_2025)
+
+
+raw_wide <- spruce_share_plot %>%
+  select(plot_id, year_f, spruce_share_adj) %>%
+  pivot_wider(names_from = year_f, values_from = spruce_share_adj, names_prefix = "yr_") %>%
+  filter(!is.na(yr_2023), !is.na(yr_2025))
+
+nrow(raw_wide)
+cor.test(raw_wide$yr_2023, raw_wide$yr_2025)
+
+
+
+plot_coords <- plot_df_cz %>%
+  mutate(plot_id = as.character(plot_id)) %>%
+  group_by(plot_id) %>%
+  summarise(x = mean(x, na.rm = TRUE), y = mean(y, na.rm = TRUE), .groups = "drop")
+
+nrow(plot_coords)  # should now be 208
+
+spruce_resid_xy <- spruce_resid %>%
+  mutate(plot_id = as.character(plot_id)) %>%
+  group_by(plot_id) %>%
+  summarise(resid_dev = mean(resid_dev, na.rm = TRUE), .groups = "drop") %>%
+  inner_join(plot_coords, by = "plot_id")
+
+nrow(spruce_resid_xy)  # should be close to 208
+
+coords_mat <- as.matrix(spruce_resid_xy[, c("x", "y")])
+nb <- spdep::knn2nb(spdep::knearneigh(coords_mat, k = 8))
+lw <- spdep::nb2listw(nb, style = "W")
+spdep::moran.test(spruce_resid_xy$resid_dev, lw)
+
+library(DHARMa)
+
+sim_spruce <- simulateResiduals(gam_spruce, n = 1000, plot = FALSE)
+testDispersion(sim_spruce)
+testUniformity(sim_spruce)
+
+plot_id_used <- as.character(gam_spruce$model$plot_id)
+length(plot_id_used)  # should be 327, matching the model's n
+
+sim_agg_spruce <- recalculateResiduals(sim_spruce, group = plot_id_used)
+
+coords_agg_spruce <- tibble(plot_id = sort(unique(plot_id_used))) %>%
+  left_join(
+    plot_df_cz %>% mutate(plot_id = as.character(plot_id)) %>%
+      group_by(plot_id) %>% summarise(x = mean(x, na.rm = TRUE), y = mean(y, na.rm = TRUE), .groups = "drop"),
+    by = "plot_id"
+  )
+
+nrow(coords_agg_spruce) == length(sim_agg_spruce$scaledResiduals)  # sanity check -- should be TRUE
+sum(is.na(coords_agg_spruce$x))  # should be 0
+
+testSpatialAutocorrelation(sim_agg_spruce, x = coords_agg_spruce$x, y = coords_agg_spruce$y, plot = FALSE)
+# we found small autocorrelation - my data are clustered in teh 4 clusters
+
+coords_mat_all <- as.matrix(plot_coords[, c("x", "y")])
+nb_all   <- spdep::knn2nb(spdep::knearneigh(coords_mat_all, k = 8))
+comp_all <- spdep::n.comp.nb(nb_all)
+comp_all$nc  # should print 4
+
+plot_coords$cluster_id <- factor(comp_all$comp.id)
+
+
+spruce_share_plot_cl <- spruce_share_plot %>%
+  mutate(plot_id_chr = as.character(plot_id)) %>%
+  left_join(plot_coords %>% select(plot_id, cluster_id),
+            by = c("plot_id_chr" = "plot_id")) %>%
+  select(-plot_id_chr)
+
+
+sum(is.na(spruce_share_plot_cl$cluster_id))  # should be 0
+
+gam_spruce_cl <- gam(
+  spruce_share_adj ~
+    planting_intensity + anti_browsing_intensity +
+    s(time_snc_full_disturbance, k = 4) +
+    grndwrk_intensity + year_f + cluster_id +
+    s(plot_id, bs = "re"),
+  data   = spruce_share_plot_cl,
+  family = betar(),
+  method = "REML"
+)
+
+summary(gam_spruce_cl)
+summary(gam_spruce)
+
+# test autocorrelation again
+spruce_resid_cl <- spruce_share_plot_cl %>%
+  mutate(resid_dev = residuals(gam_spruce_cl, type = "deviance"),
+         plot_id = as.character(plot_id)) %>%
+  group_by(plot_id) %>%
+  summarise(resid_dev = mean(resid_dev, na.rm = TRUE), .groups = "drop") %>%
+  inner_join(plot_coords, by = "plot_id")
+
+nrow(spruce_resid_cl)  # should be 208
+
+coords_mat <- as.matrix(spruce_resid_cl[, c("x", "y")])
+nb <- spdep::knn2nb(spdep::knearneigh(coords_mat, k = 8))
+lw <- spdep::nb2listw(nb, style = "W")
+spdep::moran.test(spruce_resid_cl$resid_dev, lw)
+
+
 
 # ── Effect size: planting 0 vs 1 ─────────────────────────────────────────────
 emmeans(gam_spruce, ~ planting_intensity,
