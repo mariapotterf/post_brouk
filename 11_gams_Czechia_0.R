@@ -2871,9 +2871,6 @@ ggsave("outFigsCZ/p_management_intensity_plot_simpler.png",# - this one cuts
 ggsave("outFigsCZ/p_combined_disturb_fig.png",
        p_combined_disturb_fig, width = 5, height = 2.5, dpi = 300)
 
-ggsave("outFigsCZ/density_plot.png",
-       p_height_seral_mng, width = 6, height = 4, dpi = 300)
-
 
 ggsave("outFigsCZ/p_func_tsd_col_v2.png",
        p_bar_TSD, width = 6, height = 3, dpi = 300, bg = "white")
