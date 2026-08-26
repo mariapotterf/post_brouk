@@ -553,7 +553,7 @@ p_species_alluvial <-
   )
   
 
-p_species_alluvial
+# p_species_alluvial
 
 
 ### Summary table  -----------------------
@@ -1336,52 +1336,6 @@ png("outFigsCZ/p_fig1_combined_corel.png", width = 7, height = 6,
 print(p_fig1_combined)
 dev.off()
 
-
-# change in spruce : -------------------
-# Spruce share change 2023 -> 2025 per plot
-spruce_change <- func_stems_base_v2 %>%
-  filter(plot %in% plots_with_both) %>%
-  select(plot, year, share_spruce) %>%
-  pivot_wider(names_from = year, 
-              values_from = share_spruce,
-              names_prefix = "spruce_") %>%
-  mutate(delta = spruce_2025 - spruce_2023)
-
-# Run test first and extract values
-wilcox_result <- wilcox.test(spruce_change$spruce_2023, 
-                             spruce_change$spruce_2025, 
-                             paired = TRUE)
-
-wilcox_label <- paste0("Wilcoxon signed-rank test\np = ", 
-                       round(wilcox_result$p.value, 3))
-
-ggplot(spruce_change, aes(x = spruce_2023, y = spruce_2025)) +
-  geom_point(alpha = 0.5, size = 1.5) +
-  geom_abline(slope = 1, intercept = 0, 
-              linetype = "dashed", color = "grey50") +
-  geom_smooth(method = "lm", se = TRUE, color = "#006837") +
-  annotate("text", 
-           x = 0.02, y = 0.97,
-           label = wilcox_label,
-           hjust = 0, vjust = 1,
-           size = 3, color = "grey30") +
-  labs(x = "Spruce share 2023", 
-       y = "Spruce share 2025",
-       caption = "Points above diagonal = spruce increased 2023→2025") +
-  theme_paper()
-
-
-# Also get summary stats
-spruce_change %>%
-  summarise(
-    mean_2023 = mean(spruce_2023, na.rm = TRUE),
-    mean_2025 = mean(spruce_2025, na.rm = TRUE),
-    n_increased = sum(delta > 0),
-    n_decreased = sum(delta < 0),
-    n_stable    = sum(delta == 0),
-    n_new_colonisation = sum(spruce_2023 == 0 & spruce_2025 > 0),
-    n_local_extinction = sum(spruce_2023 > 0 & spruce_2025 == 0)
-  )
 
 
 
