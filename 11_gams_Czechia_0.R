@@ -1816,33 +1816,73 @@ mng_subplot_binary <- dat_full %>% # from full data, not only overlaps
   mutate(plot_id = factor(plot_id))
 
 # ── Step 2: join binary management to subplot rows in both_levels_cz ──────────
+# NOTE on missing data: 5 of 1665 subplot rows (plot 26_134, year 2025) have
+# no raw planting/anti_browsing/grndwrk record in dat_full (NA in field plot -now it reads it from 
+# management intensityand binarizes it. For 26_134 this
+# resolves to 0 for all three variables, consistent with its recorded
+# intensity of 0.
 both_levels_crossscale <- both_levels_cz %>%
   rename(subplot = ID) %>%
   left_join(mng_subplot_binary,
-            by = c("plot_id", 
-                   "subplot",
-                   "year")) %>%
+            by = c("plot_id", "subplot", "year")) %>%
   mutate(
-    # subplot level: use binary (0/1) from dat_overlap
+    # subplot level: use binary (0/1) from dat_overlap; if missing, binarize
+    # the plot's own recorded intensity instead of assuming 0
     # plot level: use intensity (0-1) already in both_levels_cz
-    # for plot rows: planting_bin will be NA — use intensity instead
     planting_pred = case_when(
       level == "subplot" & !is.na(planting_bin) ~ as.numeric(planting_bin),
+      level == "subplot" & is.na(planting_bin)  ~ as.numeric(planting_intensity > 0),
       level == "plot"                            ~ planting_intensity,
-      TRUE                                       ~ planting_intensity  # fallback
+      TRUE                                       ~ planting_intensity
     ),
     browsing_pred = case_when(
       level == "subplot" & !is.na(anti_browsing_bin) ~ as.numeric(anti_browsing_bin),
+      level == "subplot" & is.na(anti_browsing_bin)  ~ as.numeric(anti_browsing_intensity > 0),
       level == "plot"                                 ~ anti_browsing_intensity,
       TRUE                                            ~ anti_browsing_intensity
     ),
     grndwrk_pred = case_when(
       level == "subplot" & !is.na(grndwrk_bin) ~ as.numeric(grndwrk_bin),
+      level == "subplot" & is.na(grndwrk_bin)  ~ as.numeric(grndwrk_intensity > 0),
       level == "plot"                           ~ grndwrk_intensity,
       TRUE                                      ~ grndwrk_intensity
     )
   )
+# any missing management??
+both_levels_crossscale %>%
+  filter(level == "subplot") %>%
+  summarise(
+    n_subplot_rows   = n(),
+    n_missing_binary = sum(is.na(planting_bin)),
+    pct_missing      = round(100 * mean(is.na(planting_bin)), 1),
+    n_fallback_used  = sum(is.na(planting_bin))  # these got planting_intensity instead of 0/1
+  )
 
+# and, if any exist, check whether they cluster in one year / one set of plots
+both_levels_crossscale %>%
+  filter(level == "subplot", is.na(planting_bin)) %>%
+  count(year, plot_id) %>%
+  arrange(desc(n))
+
+
+# does dat_full even have subplot rows for this plot/year?
+dat_full %>%
+  filter(plot == "26_134") %>%
+  distinct(plot, subplot, year, planting, planting_intensity)
+
+
+# check counts
+both_levels_crossscale %>%
+  filter(level == "subplot") %>%
+  count(planting_pred)
+
+both_levels_crossscale %>%
+  filter(level == "subplot") %>%
+  count(browsing_pred)
+
+both_levels_crossscale %>%
+  filter(level == "subplot") %>%
+  count(grndwrk_pred)
 
 # get the average heights on plot level per year and meadian and IQR
 plot_height_summary <- both_levels_crossscale[
@@ -1956,36 +1996,11 @@ cor.test(~ planting_pred + browsing_pred,
 
 
 
-### Management combination composite?  -------------------
-
-# ── Option 1: mean of planting and browsing 
-# interpretation: average management intensity across the two key interventions
-both_levels_crossscale <- both_levels_crossscale %>%
-  mutate(
-    mng_composite = (planting_pred + browsing_pred) / 2
-  )
-
-share_adapted_plot <- share_adapted_plot %>%
-  mutate(
-    mng_composite = (planting_intensity + anti_browsing_intensity) / 2
-  )
-
-spruce_share_plot <- spruce_share_plot %>%
-  mutate(
-    mng_composite = (planting_intensity + anti_browsing_intensity) / 2
-  )
-
-plot_df_cz <- plot_df_cz %>% 
-  mutate(
-    mng_composite = (planting_intensity + anti_browsing_intensity) / 2
-  )
-
-
 
 # Model comparison: browsing include or not? --------------------------------
 # check wheather including browisng protection along with planing is actualy meaningful
 # create models - only planting, only browsing, both effects and and tehir interaction 
-# Yes, I should include browing on cross scale analysis!!
+# -> Yes, I should include browsing on cross scale analysis!!
 
 
 # ── Refit with ML for fair AIC comparison ────────────────────────────────────
@@ -2087,31 +2102,7 @@ compare_mng_aic_plot <- function(response, data, family, k_tsd = 4) {
 # aic_beta
 # 
 
-###  spruce
-gam_spruce <- gam(
-  spruce_share_adj ~
-    planting_intensity+anti_browsing_intensity +
-    s(time_snc_full_disturbance, k = 4) +
-    grndwrk_intensity + year_f +
-    s(plot_id, bs = "re"),
-  data   = spruce_share_plot,
-  family = betar(),
-  method = "REML"
-)
-
-# 
-# update this based on AIC result — likely plant_only
-gam_adapted_final <- gam(
-  share_adapted_adj ~
-    planting_intensity + anti_browsing_intensity +
-    s(time_snc_full_disturbance, k = 6) +
-    grndwrk_intensity + year_f +
-    s(plot_id, bs = "re"),
-  data   = share_adapted_plot,
-  family = betar(),
-  method = "REML"
-)
-
+8
 summary(gam_adapted_final)
 gratia::draw(gam_adapted_final, select = 1)
 
@@ -2129,10 +2120,6 @@ emmeans(gam_spruce, ~ planting_intensity,
   summary(infer = TRUE)
 
 
-
-# ── Collinearity check ────────────────────────────────────────────────────────
-cor.test(~ planting_intensity + anti_browsing_intensity,
-         data = share_adapted_plot, method = "spearman")
 
 # ── Effect size at planting 0 vs 1 ───────────────────────────────────────────
 emmeans(gam_adapted_final, ~ planting_intensity,
