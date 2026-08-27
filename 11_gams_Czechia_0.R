@@ -2228,7 +2228,6 @@ lw <- spdep::nb2listw(nb, style = "W")
 spdep::moran.test(spruce_resid_cl$resid_dev, lw)
 
 
-
 # ── Effect size: planting 0 vs 1 ─────────────────────────────────────────────
 emmeans(gam_spruce, ~ planting_intensity,
         at   = list(planting_intensity = c(0, 1)),
@@ -2317,6 +2316,19 @@ fin.models.all <- list(
 )
 
 lapply(fin.models.all, summary)
+
+
+### test for spatial autocorrelation for all models ------------------------
+
+# first, checs if tehre is any residual corelation at teh level of subset
+# seems, that i can do analysis only on plot level
+#$ !!!
+nn <- spdep::knn2nb(spdep::knearneigh(as.matrix(plot_coords[, c("x","y")]), k = 1))
+nn_dist <- spdep::nbdists(nn, as.matrix(plot_coords[, c("x","y")]))
+summary(unlist(nn_dist))
+
+
+
 
 #### quantify interaction effect  -----------------------
 
