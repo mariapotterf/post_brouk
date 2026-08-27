@@ -2454,7 +2454,6 @@ nn_check <- tibble(
 
 print(nn_check, n = 15)
 
-## Test with adding xy coordinates -----------------------------------------
 
 #### quantify interaction effect  -----------------------
 
@@ -3040,6 +3039,34 @@ dev.off()
 
 
 # Tables & export ---------------------------------------------
+
+## Export models ---------------------------------
+# the fitted models carry their own fitting data + family/link info,
+# so this alone is enough to rebuild coefficient plots AND prediction
+# gradients later, with no need to re-run data prep or model fitting
+saveRDS(fin.models.all, "outModel/final_gam_models.rds")
+
+# optional convenience: pre-tidied coefficients, so a plotting script
+# that only needs the bar-plot numbers doesn't have to load mgcv at all
+final_coefs <- purrr::imap_dfr(
+  fin.models.all,
+  ~ broom::tidy(.x, parametric = TRUE) %>% mutate(model = .y)
+)
+write.csv(final_coefs, "outModel/final_gam_coefficients.csv", row.names = FALSE)
+
+# only needed if you also want to remake any spatial/cluster diagnostic
+# figure later without rerunning today's checks
+saveRDS(plot_coords, "outModel/plot_coords.rds")
+
+
+# add the cluster-adjusted models to the same export bundle
+saveRDS(models_with_cluster, "outModel/final_gam_models_with_cluster.rds")
+
+# and the comparison table you already built, so it's available without
+# needing both model lists loaded just to see the numbers
+write.csv(cluster_sensitivity_wide, "outModel/cluster_sensitivity_wide.csv", row.names = FALSE)
+
+
 
 
 ggsave("outFigsCZ/p_function_drought.png",
