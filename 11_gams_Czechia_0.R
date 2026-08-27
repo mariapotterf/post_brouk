@@ -2326,10 +2326,249 @@ lapply(fin.models.all, summary)
 nn <- spdep::knn2nb(spdep::knearneigh(as.matrix(plot_coords[, c("x","y")]), k = 1))
 nn_dist <- spdep::nbdists(nn, as.matrix(plot_coords[, c("x","y")]))
 summary(unlist(nn_dist))
+# my nearest distanece in 80 m? - anyway, in all cases, subplots are closer to other subplots in a plot that are plots
+# to each other
 
 
+run_autocorr_check <- function(model, id_col = "plot_id", k = 8, n_sim = 1000) {
+  
+  df <- model$model
+  df$resid_dev <- residuals(model, type = "deviance")
+  df$id <- as.character(df[[id_col]])
+  
+  plot_resid <- df %>%
+    group_by(id) %>%
+    summarise(resid_dev = mean(resid_dev, na.rm = TRUE), .groups = "drop") %>%
+    inner_join(plot_coords, by = c("id" = "plot_id"))
+  
+  nb <- spdep::knn2nb(spdep::knearneigh(as.matrix(plot_resid[, c("x", "y")]), k = k))
+  lw <- spdep::nb2listw(nb, style = "W")
+  mt <- spdep::moran.test(plot_resid$resid_dev, lw)
+  
+  sim  <- DHARMa::simulateResiduals(model, n = n_sim, plot = FALSE)
+  disp <- DHARMa::testDispersion(sim, plot = FALSE)
+  
+  ids     <- as.character(model$model[[id_col]])
+  sim_agg <- DHARMa::recalculateResiduals(sim, group = ids)
+  xy <- tibble(id = sort(unique(ids))) %>%
+    left_join(plot_coords, by = c("id" = "plot_id"))
+  sp_test <- DHARMa::testSpatialAutocorrelation(sim_agg, x = xy$x, y = xy$y, plot = FALSE)
+  
+  tibble(
+    n_plots          = nrow(plot_resid),
+    moran_I          = unname(mt$estimate["Moran I statistic"]),
+    moran_p          = mt$p.value,
+    dispersion_stat  = unname(disp$statistic),
+    dispersion_p     = disp$p.value,
+    dharma_spatial_I = unname(sp_test$statistic["observed"]),  # fixed: was the full 3-element vector
+    dharma_spatial_p = sp_test$p.value
+  )
+}
+
+autocorr_all <- purrr::imap_dfr(
+  fin.models.all,
+  ~ run_autocorr_check(.x) %>% mutate(model = .y, .before = 1)
+) %>%
+  mutate(
+    flag_moran          = ifelse(moran_p < 0.05, "CHECK", "ok"),
+    flag_dispersion     = ifelse(dispersion_p < 0.05, "CHECK", "ok"),
+    flag_dharma_spatial = ifelse(dharma_spatial_p < 0.05, "CHECK", "ok")
+  )
+
+print(autocorr_all, n = Inf)
+# ok, 6 out of 7 modesl have actually some (weak to medium) spatial autocorrelation. let's rerun 
+# all models by adding detected clusters to see wheather the summary will change. 
+# having some degree of spatial autocorrelation can be accepted - the estimates are teh dsame, just CI can be wider
+
+refit_with_cluster <- function(model, family_obj) {
+  dat <- model$model
+  dat$plot_id_chr <- as.character(dat$plot_id)
+  
+  dat <- dat %>%
+    left_join(plot_coords %>% select(plot_id, cluster_id),
+              by = c("plot_id_chr" = "plot_id")) %>%
+    select(-plot_id_chr)
+  
+  if (sum(is.na(dat$cluster_id)) > 0) {
+    warning("Unmatched plot_id in cluster join -- check before trusting this refit.")
+  }
+  
+  new_formula <- update(formula(model), . ~ . + cluster_id)
+  mgcv::gam(new_formula, data = dat, family = family_obj, method = "REML")
+}
+
+models_with_cluster <- list(
+  hgt    = refit_with_cluster(fin.models.all$hgt,    tw(link = "log")),
+  cvpos  = refit_with_cluster(fin.models.all$cvpos,  tw(link = "log")),
+  eff    = refit_with_cluster(fin.models.all$eff,    tw(link = "log")),
+  rich   = refit_with_cluster(fin.models.all$rich,   nb(link = "log")),
+  beta   = refit_with_cluster(fin.models.all$beta,   gaussian()),
+  adapt  = refit_with_cluster(fin.models.all$adapt,  betar()),
+  spruce = refit_with_cluster(fin.models.all$spruce, betar())
+)
+
+lapply(models_with_cluster, summary)2
+
+# compare original models with clustered ones
+
+compare_all_terms <- function(name) {
+  orig <- broom::tidy(fin.models.all[[name]], parametric = TRUE) %>%
+    mutate(model = name, version = "original")
+  
+  cl <- broom::tidy(models_with_cluster[[name]], parametric = TRUE) %>%
+    mutate(model = name, version = "with_cluster")
+  
+  bind_rows(orig, cl)
+}
+
+cluster_sensitivity <- purrr::map_dfr(names(fin.models.all), compare_all_terms) %>%
+  select(model, version, term, estimate, std.error, p.value) %>%
+  arrange(model, term, version)
+
+print(cluster_sensitivity, n = Inf)
 
 
+cluster_sensitivity_wide <- cluster_sensitivity %>%
+  select(model, term, version, estimate, p.value) %>%
+  pivot_wider(names_from = version, values_from = c(estimate, p.value)) %>%
+  arrange(model, term)
+
+print(cluster_sensitivity_wide, n = Inf)
+
+
+# 1. Confirm plot_coords really has one row per plot, not per plot-year
+nrow(plot_coords)
+n_distinct(plot_coords$plot_id)   # both should be 208 — if not, duplicates remain
+
+# 2. Recompute NN distances and show WHICH plot pairs are closest
+coords_mat <- as.matrix(plot_coords[, c("x","y")])
+dist_mat <- as.matrix(dist(coords_mat))
+diag(dist_mat) <- NA
+
+nn_check <- tibble(
+  plot_id      = plot_coords$plot_id,
+  nearest_plot = plot_coords$plot_id[apply(dist_mat, 1, which.min)],
+  nn_dist_m    = apply(dist_mat, 1, min, na.rm = TRUE)
+) %>%
+  arrange(nn_dist_m)
+
+print(nn_check, n = 15)
+
+## Test with adding xy coordinates -----------------------------------------
+
+# ============================================================
+# STEP 1: refit each final model with an added spatial smooth s(x, y)
+#          (in addition to s(plot_id, bs = "re"), not instead of it)
+# ============================================================
+
+refit_with_xy <- function(model, family_obj, k_xy = 5) {
+  
+  dat <- model$model
+  
+  # join x, y via a character key so plot_id keeps its factor class
+  dat <- dat %>%
+    mutate(plot_id_chr = as.character(plot_id)) %>%
+    left_join(
+      plot_coords %>%
+        mutate(plot_id_chr = as.character(plot_id)) %>%
+        select(plot_id_chr, x, y),
+      by = "plot_id_chr"
+    )
+  
+  if (any(is.na(dat$x)) || any(is.na(dat$y))) {
+    stop("Some plot_id values did not match plot_coords - check join.")
+  }
+  
+  old_formula <- formula(model)
+  new_formula <- update.formula(old_formula, paste0(". ~ . + s(x, y, bs = 'tp', k = ", k_xy, ")"))
+  
+  mgcv::gam(new_formula, data = dat, family = family_obj, method = "REML")
+}
+
+# same family objects used for the cluster refit, matched to fin.models.all names
+model_families <- list(
+  hgt    = tw(link = "log"),
+  cvpos  = tw(link = "log"),
+  eff    = tw(link = "log"),
+  rich   = nb(link = "log"),
+  beta   = gaussian(),
+  adapt  = betar(),
+  spruce = betar()
+)
+
+models_with_xy <- purrr::map2(
+  fin.models.all,
+  model_families[names(fin.models.all)],
+  ~ refit_with_xy(.x, .y, k_xy = 5)
+)
+names(models_with_xy) <- names(fin.models.all)
+
+# ============================================================
+# STEP 2: is s(x, y) actually picking anything up? check edf + significance
+#          (also worth a gam.check() per model to see if k=5 is adequate)
+# ============================================================
+
+xy_smooth_check <- purrr::imap_dfr(models_with_xy, function(m, nm) {
+  s <- summary(m)$s.table
+  xy_row <- s[grepl("x,y", rownames(s)), , drop = FALSE]
+  tibble(
+    model    = nm,
+    edf      = xy_row[1, "edf"],
+    ref.df   = xy_row[1, "Ref.df"],
+    stat     = xy_row[1, 3],
+    p.value  = xy_row[1, 4]
+  )
+})
+print(xy_smooth_check)
+
+# optional: check for concurvity between s(x,y) and s(plot_id, re) -
+# high concurvity (>0.8) would mean the two terms are fighting over the same variance
+purrr::iwalk(models_with_xy, ~ {
+  cat("\n---", .y, "---\n")
+  print(mgcv::concurvity(.x, full = FALSE)$estimate)
+})
+
+# ============================================================
+# STEP 3: re-check spatial autocorrelation on the xy-adjusted residuals
+#          (same structure as autocorr_all before, for direct comparison)
+# ============================================================
+
+run_autocorr_check <- function(model, model_name, coords = plot_coords) {
+  
+  dat <- model$model
+  plot_id_vec <- as.character(dat$plot_id)
+  
+  sim  <- DHARMa::simulateResiduals(model, plot = FALSE)
+  disp <- DHARMa::testDispersion(sim, plot = FALSE)
+  
+  sim_agg <- DHARMa::recalculateResiduals(sim, group = plot_id_vec)
+  agg_ids <- levels(factor(plot_id_vec))
+  coords_agg <- coords %>%
+    mutate(plot_id = as.character(plot_id)) %>%
+    filter(plot_id %in% agg_ids) %>%
+    arrange(match(plot_id, agg_ids))
+  
+  sp_test <- DHARMa::testSpatialAutocorrelation(
+    sim_agg, x = coords_agg$x, y = coords_agg$y, plot = FALSE
+  )
+  
+  nb <- spdep::knn2nb(spdep::knearneigh(as.matrix(coords_agg[, c("x","y")]), k = 8))
+  lw <- spdep::nb2listw(nb, style = "W")
+  moran_res <- spdep::moran.test(sim_agg$scaledResiduals, lw)   # fixed field name
+  
+  tibble(
+    model            = model_name,
+    moran_I          = unname(moran_res$estimate["Moran I statistic"]),
+    moran_p          = moran_res$p.value,
+    dispersion_ratio = unname(disp$statistic),
+    dispersion_p     = disp$p.value,
+    dharma_spatial_I = unname(sp_test$statistic["observed"]),
+    dharma_spatial_p = sp_test$p.value
+  )
+}
+
+autocorr_xy_all <- purrr::imap_dfr(models_with_xy, run_autocorr_check)
+print(autocorr_xy_all, n = Inf)
 #### quantify interaction effect  -----------------------
 
 # Get predicted values at all four combinations
