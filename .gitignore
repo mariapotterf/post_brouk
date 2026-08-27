@@ -17,5 +17,6 @@
 /outFigSPEI/
 /outFigsTest/
 /reports/
+/outModel/
 *.html
 combined_gam_plots.png
