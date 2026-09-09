@@ -1325,16 +1325,148 @@ func_bar_data_merged
 
 
 
-pdf("outFigsCZ/p_fig1_combined_corel.pdf", width = 7, height = 6)
+#pdf("outFigsCZ/p_fig1_combined_corel.pdf", width = 7, height = 6)
 print(p_fig1_combined)
-dev.off()
+#dev.off()
 
 
 
-png("outFigsCZ/p_fig1_combined_corel.png", width = 7, height = 6,
-    units = 'in', res = 300)
+# png("outFigsCZ/p_fig1_combined_corel.png", width = 7, height = 6,
+#     units = 'in', res = 300)
 print(p_fig1_combined)
-dev.off()
+#dev.off()
+
+
+### alternatrive: counts in only 2 classes: climate sensitive and climate adapted -----
+# (qusp, fasy are intermediate, but considered as climate adapted in Czechia)
+
+##### ── Binary reclassification: climate_sensitive vs climate_adapted ─────────────
+# climate_sensitive = Norway spruce + drought-sensitive (score < 2.2)
+# climate_adapted   = intermediate  + drought-tolerant  (score > 2.2)
+# same grouping already used for share_adapted in the GAMM (climate_adapt block)
+
+climate_group_order <- c("climate_sensitive", "climate_adapted")
+
+climate_colors2 <- c(
+  "climate_sensitive" = "#1a5c1a",   # keep the spruce/sensitive dark green
+  "climate_adapted"   = "#e2672c"    # blend of the old intermediate (orange) + tolerant (red)
+)
+
+climate_labels2 <- c(
+  "climate_sensitive" = "Climate-sensitive\n(incl. Norway spruce)",
+  "climate_adapted"   = "Climate-adapted\n(intermediate + drought-tolerant)"
+)
+
+# ── [c] Stem share, binary ─────────────────────────────────────────────────
+func_bar_data2 <- func_stems_base_v2 %>%
+  mutate(
+    share_climate_sensitive = share_spruce + share_drought_sens,
+    share_climate_adapted   = share_intermediate + share_drought_tol
+  ) %>%
+  select(plot, year, share_climate_sensitive, share_climate_adapted) %>%
+  pivot_longer(starts_with("share_climate_"),
+               names_to = "group", values_to = "share_stems") %>%
+  mutate(group = sub("share_", "", group)) %>%
+  group_by(year, group) %>%
+  summarise(share_stems = mean(share_stems, na.rm = TRUE) * 100, .groups = "drop") %>%
+  mutate(group = factor(group, levels = climate_group_order))  |>  
+  mutate(year_f = as.character(year))
+
+p_bar_drought2 <- ggplot(func_bar_data2,
+                         aes(x = share_stems, y = group,
+                             fill = group, alpha = year_f)) +
+  geom_col(position = position_dodge(width = 0.7),
+           width = 0.6,
+           aes(colour = factor(year_f))) +
+  scale_fill_manual(values = climate_colors2, guide = "none") +
+  scale_alpha_manual(
+    name   = "Year of inventory",
+    values = c("2023" = 0.45, "2025" = 1.00),
+    breaks = c("2025", "2023")
+  ) +
+  scale_colour_manual(
+    name   = "Year of inventory",
+    values = c("2023" = "grey50", "2025" = "black"),
+    breaks = c("2025", "2023")
+  ) +
+  scale_x_continuous(
+    labels = scales::label_number(accuracy = 1),
+    expand = expansion(mult = c(0.02, 0.05))
+  ) +
+  scale_y_discrete(labels = climate_labels2) +
+  labs(x = "Stem share [%]", y = NULL) +
+  theme_paper() +
+  theme(plot.margin = margin(5, 5, 5, 5))
+
+p_bar_drought2
+
+# ── [d] Plot occurrence, binary (not mutually exclusive) ──────────────────
+func_occurence_data2 <- func_stems_base_v2 %>%
+  mutate(year_f = as.character(year)) |> 
+  select(plot, year_f, Norway_spruce, drought_sensitive, intermediate, drought_tolerant) %>%
+  pivot_longer(cols = c(Norway_spruce, drought_sensitive, intermediate, drought_tolerant),
+               names_to = "func_group_drought", values_to = "stems") %>%
+  mutate(
+    group = case_when(
+      func_group_drought %in% c("Norway_spruce", "drought_sensitive") ~ "climate_sensitive",
+      func_group_drought %in% c("intermediate", "drought_tolerant")   ~ "climate_adapted"
+    ),
+    present = stems > 0
+  ) %>%
+  group_by(plot, year_f, group) %>%
+  summarise(present = any(present), .groups = "drop") %>%
+  group_by(year_f, group) %>%
+  summarise(share_plots = mean(present, na.rm = TRUE) * 100, n = n(), .groups = "drop") %>%
+  mutate(group = factor(group, levels = climate_group_order))
+
+p_occurence_drought2 <- ggplot(func_occurence_data2,
+                               aes(x = share_plots, y = group,
+                                   fill = group, alpha = year_f)) +
+  geom_col(position = position_dodge(width = 0.7),
+           width = 0.6,
+           aes(colour = factor(year_f))) +
+  scale_fill_manual(values = climate_colors2, guide = "none") +
+  scale_alpha_manual(
+    name   = "Year of inventory",
+    values = c("2023" = 0.45, "2025" = 1.00),
+    breaks = c("2025", "2023")
+  ) +
+  scale_colour_manual(
+    name   = "Year of inventory",
+    values = c("2023" = "grey50", "2025" = "black"),
+    breaks = c("2025", "2023")
+  ) +
+  scale_x_continuous(
+    labels = scales::label_number(accuracy = 1),
+    expand = expansion(mult = c(0.02, 0.05))
+  ) +
+  scale_y_discrete(labels = climate_labels2) +
+  labs(x = "Plot share [%]", y = NULL) +
+  theme_paper() +
+  theme(
+    legend.position = "none",
+    axis.text.y     = element_blank(),
+    axis.ticks.y    = element_blank(),
+    plot.margin     = margin(5, 5, 5, 0)
+  )
+
+p_occurence_drought2
+
+# ── combine [c] + [d] ────────────────────────────────────────────────────
+p_combined_drought2 <- ggarrange(
+  p_bar_drought2, p_occurence_drought2,
+  ncol = 2, common.legend = FALSE,
+  align = "h",
+  widths = c(1.5, 1),
+  labels = c("[c]", "[d]"),
+  font.label = list(size = 10, face = "plain"),
+  label.x = 0.02,
+  label.y = 1.01
+)
+
+p_combined_drought2
+
+
 
 
 
