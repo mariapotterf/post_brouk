@@ -1779,6 +1779,39 @@ p_management_intensity_plot <- mng_shifted %>%
 p_management_intensity_plot
 
 
+p_management_intensity_plot_no_soil_preps <- mng_shifted %>% 
+  filter(!activity  %in% c( "logging_trail_intensity", "grndwrk_intensity")) %>% 
+  droplevels(.) %>% 
+  ggplot(aes(x = proportion_shifted, 
+             y = activity,
+             fill = intensity_class_plot)) +
+  geom_vline(xintercept = 0, color = "grey", 
+             linewidth = 0.5, lty = 'dashed') +
+  geom_col(width = 0.4, color = "black") +
+  scale_fill_manual(values = fill_colors, name = "Intensity class",
+                    breaks = intensity_levels) +
+  ylab('') +
+  scale_y_discrete(labels = activity_intens_labels) +   # 👈 this does the relabeling
+  scale_x_continuous(labels = abs, name = "Plots share [%]") +
+  annotate("text", x = -80, y = 3.5, label = "Low intensity", hjust = 0, size = 2.5, fontface = "bold") +
+  annotate("text", x =  80, y = 3.5, label = "High intensity",     hjust = 1, size = 2.5, fontface = "bold") +
+  theme_classic2() +
+  theme(
+    legend.position = "right",
+    axis.text.y = element_text(size = 10),
+    panel.grid.major.y = element_blank()
+  )
+
+p_management_intensity_plot_no_soil_preps
+
+ggsave("outFigsCZ/p_management_intensity_no_soil_prep.png",
+       p_management_intensity_plot_no_soil_preps,
+       width = 7, height = 3.5, dpi = 300, bg = "white")
+
+ggsave("outFigsCZ/p_management_intensity_no_soil_prep.svg",
+       p_management_intensity_plot_no_soil_preps,
+       width = 7, height = 3.5, device = "svg", bg = "white")
+
 
 
 # make management intensity plot simpler
@@ -2234,7 +2267,7 @@ compare_mng_aic_plot <- function(response, data, family, k_tsd = 4) {
 # aic_beta
 # 
 
-8
+
 summary(gam_adapted_final)
 gratia::draw(gam_adapted_final, select = 1)
 
@@ -2436,6 +2469,40 @@ m_beta_add <- mgcv::gam(
   method = "REML"
 )
 
+
+gam_spruce <- gam(
+  spruce_share_adj ~
+    planting_intensity + anti_browsing_intensity +
+    s(time_snc_full_disturbance, k = 4) +
+    grndwrk_intensity + year_f +
+    s(plot_id, bs = "re"),
+  data   = spruce_share_plot,
+  family = betar(),
+  method = "REML"
+)
+
+summary(gam_spruce)
+appraise(gam_spruce)
+
+
+gam_adapted <- gam(
+  share_adapted_adj ~
+    planting_intensity + anti_browsing_intensity +
+    s(time_snc_full_disturbance, k = 4) +
+    grndwrk_intensity + year_f +
+    s(plot_id, bs = "re"),
+  data   = share_adapted_plot,
+  family = betar(),          # built into mgcv
+  method = "REML"
+)
+
+summary(gam_adapted)
+appraise(gam_adapted)
+
+
+
+
+
 # ## Final model list
 fin.models.all <- list(
   hgt   = gam_mean_hgt_cross,
@@ -2443,7 +2510,7 @@ fin.models.all <- list(
   eff   = gam_eff_cross,
   rich  = gam_rich_cross,
   beta  = m_beta_add,
-  adapt = gam_adapted_final,
+  adapt = gam_adapted,  # gam_adapted_final
   spruce = gam_spruce
 )
 
