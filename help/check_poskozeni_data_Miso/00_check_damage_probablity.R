@@ -12,7 +12,7 @@ library(ggplot2)
 library(ggpubr)
 
 
-df <- fread("from_Miso_poskozeni/poskoz_jedinci_clean.csv",
+df <- fread("inData_Michal/poskoz_jedinci_clean.csv",
                na = c("", "NA"))
 
 View(df)
