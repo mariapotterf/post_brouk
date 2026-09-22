@@ -17,6 +17,13 @@ df <- fread("inData_Michal/poskoz_jedinci_clean.csv",
 
 View(df)
 
+head(df)
+
+table(df$dmg_stem_cause)
+
+table(df$dmg_foliage )
+
+
 # # get total sum of indivudual per plots
 # get total sum of damaged terminals per plot
 # quantify the anti_browing intensity
