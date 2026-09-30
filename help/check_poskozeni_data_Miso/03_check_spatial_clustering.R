@@ -84,7 +84,7 @@ ggplot(plot_terminal, aes(x = n_ind, y = pct_terminal)) +
   theme_minimal()
 
 
-# add cpoordinates 
+# add coordinates 
 
 plot_terminal <- plot_terminal %>%
   left_join(plot_coords, by = "plot")
@@ -191,10 +191,10 @@ plot_terminal %>%
 # classify teh hotspots
 plot_terminal <- plot_terminal %>%
   mutate(hotspot = case_when(
-    gi_z >=  1.96 ~ "Hot spot (95%)",
-    gi_z <= -1.96 ~ "Cold spot (95%)",
-    is.na(gi_z)   ~ "No neighbours",
-    TRUE          ~ "Not significant"
+    gi_z >=  1.96 ~ "Hotspot (95%)",
+    gi_z <= -1.96 ~ "Coldspot (95%)",
+    is.na(gi_z)   ~ "Isolated",
+    TRUE          ~ "ns"
   ))
 
 table(plot_terminal$hotspot, useNA = "always")
@@ -212,10 +212,10 @@ plot_terminal_sf <- plot_terminal_sf %>%
 
 ggplot(plot_terminal_sf) +
   geom_sf(aes(color = hotspot), size = 2.5) +
-  scale_color_manual(values = c("Hot spot (95%)"  = "red",
-                                "Cold spot (95%)" = "blue",
-                                "Not significant" = "grey70",
-                                "No neighbours"   = "grey90")) +
+  scale_color_manual(values = c("Hotspot (95%)"  = "red",
+                                "Coldspot (95%)" = "blue",
+                                "ns" = "grey70",
+                                "Isolated"   = "grey90")) +
   theme_minimal() +
   labs(title = "Terminal damage hot/cold spots (Gi*, plot level)")
 
