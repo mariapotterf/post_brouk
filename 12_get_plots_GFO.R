@@ -36,11 +36,7 @@ str(cluster_sensitivity_wide)
 
 # get raw data --------------------------------------------------------
 
-ok, lets start again. show me, how to access raw data from teh model, paryicularly richness
-
-Since fin.models.all$rich is the GAM fit on species richness, its own model frame has exactly what went into that fit — this is the same idea as before, just applied specifically to richness so you can look at it directly rather than trusting a plot of it.
-
-
+#
 # ---- pull the raw data straight from the fitted model ----
 rich_data <- fin.models.all$rich$model
 
