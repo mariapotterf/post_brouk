@@ -212,3 +212,4 @@ ggplot(emm_sp, aes(reorder(species, prob), prob * 100)) +
   labs(x = NULL, y = "% terminal damage",
        subtitle = "black = model estimate (average plot); red x = raw pooled rate") +
   theme_classic(base_size = 12)
+
