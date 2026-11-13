@@ -1,0 +1,71 @@
+"species_g","planted","prot_class","records","individuals"
+"SM","not planted","none",121,365
+"SM","not planted","fence",4,7
+"SM","not planted","individual",4,8
+"SM","not planted","unknown",4,9
+"SM","planted","none",107,178
+"SM","planted","fence",16,19
+"SM","planted","individual",46,76
+"SM","planted","unknown",68,154
+"BR","not planted","none",102,218
+"BR","not planted","fence",11,30
+"BR","not planted","individual",2,2
+"BR","planted","none",53,126
+"BR","planted","fence",31,64
+"BR","planted","individual",13,22
+"BR","planted","unknown",29,49
+"BO","not planted","none",64,227
+"BO","not planted","fence",6,15
+"BO","not planted","individual",4,11
+"BO","not planted","unknown",2,3
+"BO","planted","none",51,93
+"BO","planted","fence",16,33
+"BO","planted","individual",5,15
+"BO","planted","unknown",13,26
+"DB","not planted","none",18,23
+"DB","not planted","fence",5,9
+"DB","not planted","individual",1,1
+"DB","planted","none",44,80
+"DB","planted","fence",72,154
+"DB","planted","individual",2,2
+"DB","planted","unknown",10,17
+"BK","not planted","none",11,26
+"BK","not planted","fence",2,5
+"BK","planted","none",48,96
+"BK","planted","fence",33,60
+"BK","planted","individual",11,20
+"BK","planted","unknown",19,35
+"MD","not planted","none",32,55
+"MD","not planted","fence",4,11
+"MD","not planted","individual",1,1
+"MD","not planted","unknown",1,1
+"MD","planted","none",27,36
+"MD","planted","fence",17,18
+"MD","planted","individual",4,6
+"MD","planted","unknown",9,18
+"JIV","not planted","none",22,32
+"JIV","not planted","fence",5,17
+"JIV","planted","none",11,25
+"JIV","planted","fence",8,21
+"JIV","planted","individual",1,1
+"JIV","planted","unknown",7,13
+"JR","not planted","none",41,53
+"JR","not planted","fence",4,9
+"JR","not planted","unknown",1,1
+"JR","planted","none",18,22
+"JR","planted","fence",7,7
+"JR","planted","individual",4,8
+"JR","planted","unknown",1,1
+"KL","not planted","none",12,26
+"KL","not planted","unknown",1,4
+"KL","planted","none",7,18
+"KL","planted","fence",27,43
+"KL","planted","individual",3,3
+"KL","planted","unknown",5,6
+"other","not planted","none",40,69
+"other","not planted","fence",9,26
+"other","not planted","unknown",3,12
+"other","planted","none",35,54
+"other","planted","fence",38,48
+"other","planted","individual",5,7
+"other","planted","unknown",17,22

@@ -1,0 +1,21 @@
+"outcome","protected","records","num","den","pct","lwr","upr"
+"Terminal damage
+(% individuals, small)","not protected",668,89,1420,6.26760563380282,5.12109485642473,7.65010104064697
+"Terminal damage
+(% individuals, small)","protected",533,83,1042,7.96545105566219,6.47162329774591,9.76808260035567
+"Missing terminal
+(% records, small)","not protected",668,57,668,8.53293413173653,6.64424221162531,10.8958446183656
+"Missing terminal
+(% records, small)","protected",533,48,533,9.00562851782364,6.85970607145101,11.738256530553
+"Foliage damage
+(% individuals)  [negative control]","not protected",864,259,1822,14.2151481888035,12.6868817353791,15.8939984461219
+"Foliage damage
+(% individuals)  [negative control]","protected",611,235,1150,20.4347826086957,18.2044934475966,22.8619406279298
+"Stem damage
+(% records)","not protected",864,65,864,7.52314814814815,5.94623321441993,9.47612035793705
+"Stem damage
+(% records)","protected",611,62,611,10.1472995090016,7.99655432732201,12.7960530694449
+"Stem damage by game
+(% records)","not protected",864,39,864,4.51388888888889,3.31936122036872,6.11111549335415
+"Stem damage by game
+(% records)","protected",611,20,611,3.27332242225859,2.12878737935865,5.00176461972534

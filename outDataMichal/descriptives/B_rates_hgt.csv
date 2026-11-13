@@ -1,0 +1,21 @@
+"outcome","hgt_class","protected","records","num","den","pct","lwr","upr"
+"Terminal damage
+(% individuals, small)","0.2-0.4 m","not protected",90,10,144,6.94444444444444,3.8154728721779,12.3109759757783
+"Terminal damage
+(% individuals, small)","0.2-0.4 m","protected",96,27,147,18.3673469387755,12.9412056544159,25.4047148343617
+"Terminal damage
+(% individuals, small)","0.4-0.8 m","not protected",211,51,393,12.9770992366412,10.0097471145621,16.661247055404
+"Terminal damage
+(% individuals, small)","0.4-0.8 m","protected",205,37,400,9.25,6.78535468850079,12.4899255203732
+"Terminal damage
+(% individuals, small)","0.8-1.3 m","not protected",157,20,330,6.06060606060606,3.9571907863572,9.17526484529566
+"Terminal damage
+(% individuals, small)","0.8-1.3 m","protected",120,13,229,5.67685589519651,3.34722166716785,9.46904484190957
+"Terminal damage
+(% individuals, small)","1.3-2.0 m","not protected",209,8,552,1.44927536231884,0.736150702989013,2.83349935558883
+"Terminal damage
+(% individuals, small)","1.3-2.0 m","protected",109,6,262,2.29007633587786,1.05367656301575,4.90536069827067
+"Terminal damage
+(% individuals, small)",NA,"not protected",1,0,1,0,0,79.3456708526107
+"Terminal damage
+(% individuals, small)",NA,"protected",3,0,4,0,0,48.9900020403999

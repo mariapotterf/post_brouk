@@ -1,0 +1,401 @@
+"outcome","species_g","prot_class","records","num","den","pct","lwr","upr"
+"Terminal damage
+(% individuals, small)","SM","none",172,17,401,4.23940149625935,2.66344637379787,6.68381438201378
+"Terminal damage
+(% individuals, small)","SM","fence",17,1,23,4.34782608695652,0.771646696212674,20.9915864940591
+"Terminal damage
+(% individuals, small)","SM","individual",48,6,81,7.40740740740741,3.43891618935261,15.2330560506806
+"Terminal damage
+(% individuals, small)","SM","unknown",70,9,161,5.59006211180124,2.96846668795446,10.2815866966281
+"Terminal damage
+(% individuals, small)","BR","none",102,3,235,1.27659574468085,0.435082340847915,3.68547287231428
+"Terminal damage
+(% individuals, small)","BR","fence",30,0,78,0,0,4.69394537741198
+"Terminal damage
+(% individuals, small)","BR","individual",14,0,23,0,-1.38777878078145e-15,14.3121125417263
+"Terminal damage
+(% individuals, small)","BR","unknown",25,1,43,2.32558139534884,0.411698117741992,12.0592678612169
+"Terminal damage
+(% individuals, small)","BO","none",99,4,282,1.41843971631206,0.552940486789983,3.58977351984866
+"Terminal damage
+(% individuals, small)","BO","fence",20,1,43,2.32558139534884,0.411698117741992,12.0592678612169
+"Terminal damage
+(% individuals, small)","BO","individual",9,1,26,3.84615384615385,0.682180897698988,18.8931769919584
+"Terminal damage
+(% individuals, small)","BO","unknown",15,1,29,3.44827586206897,0.611305661403226,17.1758910647002
+"Terminal damage
+(% individuals, small)","DB","none",50,15,82,18.2926829268293,11.4109217076367,28.0123882027098
+"Terminal damage
+(% individuals, small)","DB","fence",66,18,145,12.4137931034483,7.99838420524927,18.7694011450829
+"Terminal damage
+(% individuals, small)","DB","individual",3,2,3,66.6666666666667,20.7654955126488,93.8509684723839
+"Terminal damage
+(% individuals, small)","DB","unknown",10,1,17,5.88235294117647,1.04601306451642,26.9825452035628
+"Terminal damage
+(% individuals, small)","BK","none",56,10,111,9.00900900900901,4.96712356016682,15.7932977505777
+"Terminal damage
+(% individuals, small)","BK","fence",33,7,62,11.2903225806452,5.57779269133493,21.5199692099554
+"Terminal damage
+(% individuals, small)","BK","individual",10,4,19,21.0526315789474,8.50753849159158,43.3347142402661
+"Terminal damage
+(% individuals, small)","BK","unknown",17,2,30,6.66666666666667,1.84766353276933,21.3238177210721
+"Terminal damage
+(% individuals, small)","MD","none",44,2,70,2.85714285714286,0.787044689380629,9.83244351239181
+"Terminal damage
+(% individuals, small)","MD","fence",11,6,19,31.5789473684211,15.3641710044286,53.9899898249354
+"Terminal damage
+(% individuals, small)","MD","individual",4,0,5,0,-2.77555756156289e-15,43.4491494752081
+"Terminal damage
+(% individuals, small)","MD","unknown",9,0,18,0,0,17.5884550582375
+"Terminal damage
+(% individuals, small)","JIV","none",27,2,51,3.92156862745098,1.08208562687512,13.2165489862653
+"Terminal damage
+(% individuals, small)","JIV","fence",10,0,31,0,-1.38777878078145e-15,11.0259000734754
+"Terminal damage
+(% individuals, small)","JIV","individual",1,0,1,0,0,79.3456708526107
+"Terminal damage
+(% individuals, small)","JIV","unknown",6,0,12,0,0,24.2500757499242
+"Terminal damage
+(% individuals, small)","JR","none",46,18,60,30,19.8980102527269,42.5089469663904
+"Terminal damage
+(% individuals, small)","JR","fence",9,1,14,7.14285714285714,1.27218861122916,31.4692695539578
+"Terminal damage
+(% individuals, small)","JR","individual",4,2,8,25,7.14776888580276,59.0730120897411
+"Terminal damage
+(% individuals, small)","JR","unknown",1,0,1,0,0,79.3456708526107
+"Terminal damage
+(% individuals, small)","KL","none",13,2,28,7.14285714285714,1.98116474477708,22.6457384259179
+"Terminal damage
+(% individuals, small)","KL","fence",20,3,34,8.82352941176471,3.04653903043101,22.9608179523604
+"Terminal damage
+(% individuals, small)","KL","individual",2,2,2,100,34.2371952889619,100
+"Terminal damage
+(% individuals, small)","KL","unknown",4,1,7,14.2857142857143,2.56789559489748,51.313450331903
+"Terminal damage
+(% individuals, small)","other","none",59,16,100,16,10.0952023494737,24.4204445588944
+"Terminal damage
+(% individuals, small)","other","fence",41,5,68,7.35294117647059,3.18143751548716,16.0853939581994
+"Terminal damage
+(% individuals, small)","other","individual",5,4,7,57.1428571428571,25.0454230409026,84.1783077737373
+"Terminal damage
+(% individuals, small)","other","unknown",19,5,32,15.625,6.86431910662722,31.7544925535665
+"Missing terminal
+(% records, small)","SM","none",172,13,172,7.55813953488372,4.4699005921073,12.500827608728
+"Missing terminal
+(% records, small)","SM","fence",17,1,17,5.88235294117647,1.04601306451642,26.9825452035628
+"Missing terminal
+(% records, small)","SM","individual",48,5,48,10.4166666666667,4.53210509011782,22.1676881261409
+"Missing terminal
+(% records, small)","SM","unknown",70,5,70,7.14285714285714,3.08937615102935,15.6556131233092
+"Missing terminal
+(% records, small)","BR","none",102,1,102,0.980392156862745,0.17326897927339,5.34592196266248
+"Missing terminal
+(% records, small)","BR","fence",30,0,30,0,-1.38777878078145e-15,11.3517091390478
+"Missing terminal
+(% records, small)","BR","individual",14,0,14,0,0,21.5317011927181
+"Missing terminal
+(% records, small)","BR","unknown",25,0,25,0,0,13.3196493953179
+"Missing terminal
+(% records, small)","BO","none",99,0,99,0,0,3.73545335739623
+"Missing terminal
+(% records, small)","BO","fence",20,0,20,0,-1.38777878078145e-15,16.1130125494933
+"Missing terminal
+(% records, small)","BO","individual",9,1,9,11.1111111111111,1.98903713271305,43.500621476806
+"Missing terminal
+(% records, small)","BO","unknown",15,0,15,0,-1.38777878078145e-15,20.3889266304348
+"Missing terminal
+(% records, small)","DB","none",50,11,50,22,12.7537862243023,35.2418156894596
+"Missing terminal
+(% records, small)","DB","fence",66,9,66,13.6363636363636,7.34323734334689,23.9298148204065
+"Missing terminal
+(% records, small)","DB","individual",3,2,3,66.6666666666667,20.7654955126488,93.8509684723839
+"Missing terminal
+(% records, small)","DB","unknown",10,1,10,10,1.78757495157211,40.4156385497572
+"Missing terminal
+(% records, small)","BK","none",56,8,56,14.2857142857143,7.42070004258528,25.7361674208515
+"Missing terminal
+(% records, small)","BK","fence",33,3,33,9.09090909090909,3.14033710492631,23.572943534351
+"Missing terminal
+(% records, small)","BK","individual",10,3,10,30,10.7789287486212,60.3226780020435
+"Missing terminal
+(% records, small)","BK","unknown",17,2,17,11.7647058823529,3.28790800129209,34.3368424977099
+"Missing terminal
+(% records, small)","MD","none",44,1,44,2.27272727272727,0.402314838563701,11.8079791315376
+"Missing terminal
+(% records, small)","MD","fence",11,3,11,27.2727272727273,9.74588057392147,56.5650293010246
+"Missing terminal
+(% records, small)","MD","individual",4,0,4,0,0,48.9900020403999
+"Missing terminal
+(% records, small)","MD","unknown",9,0,9,0,0,29.9152753550959
+"Missing terminal
+(% records, small)","JIV","none",27,1,27,3.7037037037037,0.65679765330976,18.2838539341565
+"Missing terminal
+(% records, small)","JIV","fence",10,0,10,0,-2.77555756156289e-15,27.7540168766617
+"Missing terminal
+(% records, small)","JIV","individual",1,0,1,0,0,79.3456708526107
+"Missing terminal
+(% records, small)","JIV","unknown",6,0,6,0,0,39.0343033653064
+"Missing terminal
+(% records, small)","JR","none",46,10,46,21.7391304347826,12.2607746185808,35.5739658391895
+"Missing terminal
+(% records, small)","JR","fence",9,1,9,11.1111111111111,1.98903713271305,43.500621476806
+"Missing terminal
+(% records, small)","JR","individual",4,2,4,50,15.0035708820171,84.9964291179829
+"Missing terminal
+(% records, small)","JR","unknown",1,0,1,0,0,79.3456708526107
+"Missing terminal
+(% records, small)","KL","none",13,2,13,15.3846153846154,4.3257263182738,42.235170508631
+"Missing terminal
+(% records, small)","KL","fence",20,0,20,0,-1.38777878078145e-15,16.1130125494933
+"Missing terminal
+(% records, small)","KL","individual",2,1,2,50,9.45286548008661,90.5471345199134
+"Missing terminal
+(% records, small)","KL","unknown",4,1,4,25,4.55860626446362,69.9363947557363
+"Missing terminal
+(% records, small)","other","none",59,10,59,16.9491525423729,9.47573785633763,28.4634616548142
+"Missing terminal
+(% records, small)","other","fence",41,4,41,9.75609756097561,3.85964597529614,22.5479755190306
+"Missing terminal
+(% records, small)","other","individual",5,3,5,60,23.0719932208837,88.2381768840747
+"Missing terminal
+(% records, small)","other","unknown",19,1,19,5.26315789473684,0.935175249052997,24.6392153365452
+"Foliage damage
+(% individuals)  [negative control]","SM","none",228,31,543,5.70902394106814,4.05078705442985,7.98955515801339
+"Foliage damage
+(% individuals)  [negative control]","SM","fence",20,3,26,11.5384615384615,4.00317182114949,28.9762930868983
+"Foliage damage
+(% individuals)  [negative control]","SM","individual",50,8,84,9.52380952380952,4.90511231894844,17.6828186841298
+"Foliage damage
+(% individuals)  [negative control]","SM","unknown",72,50,163,30.6748466257669,24.1082215438796,38.1314117370287
+"Foliage damage
+(% individuals)  [negative control]","BR","none",155,60,344,17.4418604651163,13.7973817446592,21.8054903672446
+"Foliage damage
+(% individuals)  [negative control]","BR","fence",42,5,94,5.31914893617021,2.29314105250109,11.8538066670783
+"Foliage damage
+(% individuals)  [negative control]","BR","individual",15,0,24,0,0,13.7980575828975
+"Foliage damage
+(% individuals)  [negative control]","BR","unknown",29,6,49,12.2448979591837,5.73474775980982,24.244662401881
+"Foliage damage
+(% individuals)  [negative control]","BO","none",115,72,320,22.5,18.2664173900227,27.3860250386215
+"Foliage damage
+(% individuals)  [negative control]","BO","fence",22,3,48,6.25,2.14828431312272,16.8356976627422
+"Foliage damage
+(% individuals)  [negative control]","BO","individual",9,4,26,15.3846153846154,6.14993399892948,33.5315844183136
+"Foliage damage
+(% individuals)  [negative control]","BO","unknown",15,8,29,27.5862068965517,14.6985813385027,45.717476344436
+"Foliage damage
+(% individuals)  [negative control]","DB","none",62,18,103,17.4757281553398,11.3498054339811,25.9405384021277
+"Foliage damage
+(% individuals)  [negative control]","DB","fence",77,65,163,39.8773006134969,32.6767731266971,47.5439871633025
+"Foliage damage
+(% individuals)  [negative control]","DB","individual",3,0,3,0,0,56.1506080449018
+"Foliage damage
+(% individuals)  [negative control]","DB","unknown",10,1,17,5.88235294117647,1.04601306451642,26.9825452035628
+"Foliage damage
+(% individuals)  [negative control]","BK","none",59,46,122,37.7049180327869,29.6041536912028,46.5563528503542
+"Foliage damage
+(% individuals)  [negative control]","BK","fence",35,16,65,24.6153846153846,15.7578543670186,36.3060139916483
+"Foliage damage
+(% individuals)  [negative control]","BK","individual",11,0,20,0,-1.38777878078145e-15,16.1130125494933
+"Foliage damage
+(% individuals)  [negative control]","BK","unknown",19,23,35,65.7142857142857,49.1516468727367,79.1685047173111
+"Foliage damage
+(% individuals)  [negative control]","MD","none",59,17,91,18.6813186813187,12.0036562111879,27.8961345979085
+"Foliage damage
+(% individuals)  [negative control]","MD","fence",21,5,29,17.2413793103448,7.59774527147993,34.5488005728151
+"Foliage damage
+(% individuals)  [negative control]","MD","individual",5,0,7,0,0,35.4338842975207
+"Foliage damage
+(% individuals)  [negative control]","MD","unknown",10,1,19,5.26315789473684,0.935175249052997,24.6392153365452
+"Foliage damage
+(% individuals)  [negative control]","JIV","none",33,0,57,0,0,6.31410087834639
+"Foliage damage
+(% individuals)  [negative control]","JIV","fence",13,0,38,0,0,9.181293258384
+"Foliage damage
+(% individuals)  [negative control]","JIV","individual",1,0,1,0,0,79.3456708526107
+"Foliage damage
+(% individuals)  [negative control]","JIV","unknown",7,0,13,0,0,22.8101843055292
+"Foliage damage
+(% individuals)  [negative control]","JR","none",59,0,75,0,0,4.87255459047001
+"Foliage damage
+(% individuals)  [negative control]","JR","fence",11,0,16,0,0,19.361341827272
+"Foliage damage
+(% individuals)  [negative control]","JR","individual",4,0,8,0,0,32.4415619510877
+"Foliage damage
+(% individuals)  [negative control]","JR","unknown",2,0,2,0,0,65.7628047110381
+"Foliage damage
+(% individuals)  [negative control]","KL","none",19,6,44,13.6363636363636,6.40286740786005,26.709737521741
+"Foliage damage
+(% individuals)  [negative control]","KL","fence",27,17,43,39.5348837209302,26.3651061984564,54.4212034066809
+"Foliage damage
+(% individuals)  [negative control]","KL","individual",3,0,3,0,0,56.1506080449018
+"Foliage damage
+(% individuals)  [negative control]","KL","unknown",6,0,10,0,-2.77555756156289e-15,27.7540168766617
+"Foliage damage
+(% individuals)  [negative control]","other","none",75,9,123,7.31707317073171,3.89699006136988,13.3225972033761
+"Foliage damage
+(% individuals)  [negative control]","other","fence",47,13,74,17.5675675675676,10.5641089554945,27.7722047893411
+"Foliage damage
+(% individuals)  [negative control]","other","individual",5,0,7,0,0,35.4338842975207
+"Foliage damage
+(% individuals)  [negative control]","other","unknown",20,7,34,20.5882352941176,10.3493960223513,36.798716108214
+"Stem damage
+(% records)","SM","none",228,14,228,6.14035087719298,3.69252565506913,10.0416790778175
+"Stem damage
+(% records)","SM","fence",20,2,20,10,2.78658939841532,30.1038206411793
+"Stem damage
+(% records)","SM","individual",50,2,50,4,1.10386526608266,13.4603378779547
+"Stem damage
+(% records)","SM","unknown",72,9,72,12.5,6.71770829310555,22.0812621927492
+"Stem damage
+(% records)","BR","none",155,10,155,6.45161290322581,3.54176759461012,11.4679024162686
+"Stem damage
+(% records)","BR","fence",42,5,42,11.9047619047619,5.19372676501908,25.0006818071075
+"Stem damage
+(% records)","BR","individual",15,4,15,26.6666666666667,10.8972761031828,51.9508896576868
+"Stem damage
+(% records)","BR","unknown",29,7,29,24.1379310344828,12.2182681850621,42.1079522183287
+"Stem damage
+(% records)","BO","none",115,8,115,6.95652173913043,3.56682264647797,13.1290145014568
+"Stem damage
+(% records)","BO","fence",22,1,22,4.54545454545455,0.806921930114786,21.7984894995181
+"Stem damage
+(% records)","BO","individual",9,0,9,0,0,29.9152753550959
+"Stem damage
+(% records)","BO","unknown",15,2,15,13.3333333333333,3.73604698913593,37.8824992065162
+"Stem damage
+(% records)","DB","none",62,3,62,4.83870967741935,1.65913850008461,13.2882503847542
+"Stem damage
+(% records)","DB","fence",77,1,77,1.2987012987013,0.229615817215495,6.99636684517615
+"Stem damage
+(% records)","DB","individual",3,0,3,0,0,56.1506080449018
+"Stem damage
+(% records)","DB","unknown",10,1,10,10,1.78757495157211,40.4156385497572
+"Stem damage
+(% records)","BK","none",59,3,59,5.08474576271186,1.74424011594533,13.9167233222867
+"Stem damage
+(% records)","BK","fence",35,2,35,5.71428571428571,1.5812829614044,18.60738073937
+"Stem damage
+(% records)","BK","individual",11,0,11,0,2.77555756156289e-15,25.8840017248814
+"Stem damage
+(% records)","BK","unknown",19,3,19,15.7894736842105,5.52037103992783,37.5659276431767
+"Stem damage
+(% records)","MD","none",59,6,59,10.1694915254237,4.74473265131825,20.4640462467365
+"Stem damage
+(% records)","MD","fence",21,2,21,9.52380952380952,2.65182087969472,28.9145838607407
+"Stem damage
+(% records)","MD","individual",5,1,5,20,3.62231609697874,62.4471735881461
+"Stem damage
+(% records)","MD","unknown",10,3,10,30,10.7789287486212,60.3226780020435
+"Stem damage
+(% records)","JIV","none",33,2,33,6.06060606060606,1.67805304290709,19.6065817177982
+"Stem damage
+(% records)","JIV","fence",13,0,13,0,0,22.8101843055292
+"Stem damage
+(% records)","JIV","individual",1,0,1,0,0,79.3456708526107
+"Stem damage
+(% records)","JIV","unknown",7,1,7,14.2857142857143,2.56789559489748,51.313450331903
+"Stem damage
+(% records)","JR","none",59,11,59,18.6440677966102,10.7426122390436,30.3791924253825
+"Stem damage
+(% records)","JR","fence",11,2,11,18.1818181818182,5.13666006710006,47.6986137578245
+"Stem damage
+(% records)","JR","individual",4,2,4,50,15.0035708820171,84.9964291179829
+"Stem damage
+(% records)","JR","unknown",2,0,2,0,0,65.7628047110381
+"Stem damage
+(% records)","KL","none",19,2,19,10.5263157894737,2.93579413950966,31.3945504948417
+"Stem damage
+(% records)","KL","fence",27,2,27,7.40740740740741,2.05542216973835,23.3699772907306
+"Stem damage
+(% records)","KL","individual",3,0,3,0,0,56.1506080449018
+"Stem damage
+(% records)","KL","unknown",6,1,6,16.6666666666667,3.00525858717303,56.3509436563646
+"Stem damage
+(% records)","other","none",75,6,75,8,3.71796178943681,16.374984066558
+"Stem damage
+(% records)","other","fence",47,5,47,10.6382978723404,4.63040995551994,22.5945396920128
+"Stem damage
+(% records)","other","individual",5,0,5,0,-2.77555756156289e-15,43.4491494752081
+"Stem damage
+(% records)","other","unknown",20,4,20,20,8.06563532712,41.602172202576
+"Stem damage by game
+(% records)","SM","none",228,10,228,4.3859649122807,2.39951906841586,7.8840538537862
+"Stem damage by game
+(% records)","SM","fence",20,0,20,0,-1.38777878078145e-15,16.1130125494933
+"Stem damage by game
+(% records)","SM","individual",50,0,50,0,0,7.13500341743187
+"Stem damage by game
+(% records)","SM","unknown",72,4,72,5.55555555555556,2.1813862926925,13.4322083572094
+"Stem damage by game
+(% records)","BR","none",155,4,155,2.58064516129032,1.00802085346772,6.44695315837805
+"Stem damage by game
+(% records)","BR","fence",42,0,42,0,0,8.3801612509162
+"Stem damage by game
+(% records)","BR","individual",15,1,15,6.66666666666667,1.18665886061949,29.817077552424
+"Stem damage by game
+(% records)","BR","unknown",29,0,29,0,0,11.6973594465556
+"Stem damage by game
+(% records)","BO","none",115,4,115,3.47826086956522,1.36076226271264,8.60342536182288
+"Stem damage by game
+(% records)","BO","fence",22,1,22,4.54545454545455,0.806921930114786,21.7984894995181
+"Stem damage by game
+(% records)","BO","individual",9,0,9,0,0,29.9152753550959
+"Stem damage by game
+(% records)","BO","unknown",15,1,15,6.66666666666667,1.18665886061949,29.817077552424
+"Stem damage by game
+(% records)","DB","none",62,3,62,4.83870967741935,1.65913850008461,13.2882503847542
+"Stem damage by game
+(% records)","DB","fence",77,1,77,1.2987012987013,0.229615817215495,6.99636684517615
+"Stem damage by game
+(% records)","DB","individual",3,0,3,0,0,56.1506080449018
+"Stem damage by game
+(% records)","DB","unknown",10,1,10,10,1.78757495157211,40.4156385497572
+"Stem damage by game
+(% records)","BK","none",59,1,59,1.69491525423729,0.299815669298153,8.99593746238532
+"Stem damage by game
+(% records)","BK","fence",35,0,35,0,0,9.89042675893887
+"Stem damage by game
+(% records)","BK","individual",11,0,11,0,2.77555756156289e-15,25.8840017248814
+"Stem damage by game
+(% records)","BK","unknown",19,1,19,5.26315789473684,0.935175249052997,24.6392153365452
+"Stem damage by game
+(% records)","MD","none",59,4,59,6.77966101694915,2.66781870983916,16.1757498816671
+"Stem damage by game
+(% records)","MD","fence",21,2,21,9.52380952380952,2.65182087969472,28.9145838607407
+"Stem damage by game
+(% records)","MD","individual",5,0,5,0,-2.77555756156289e-15,43.4491494752081
+"Stem damage by game
+(% records)","MD","unknown",10,2,10,20,5.66809479806933,50.9843153279277
+"Stem damage by game
+(% records)","JIV","none",33,1,33,3.03030303030303,0.536927208965172,15.3190616731681
+"Stem damage by game
+(% records)","JIV","fence",13,0,13,0,0,22.8101843055292
+"Stem damage by game
+(% records)","JIV","individual",1,0,1,0,0,79.3456708526107
+"Stem damage by game
+(% records)","JIV","unknown",7,1,7,14.2857142857143,2.56789559489748,51.313450331903
+"Stem damage by game
+(% records)","JR","none",59,9,59,15.2542372881356,8.23837108906736,26.5182232688102
+"Stem damage by game
+(% records)","JR","fence",11,1,11,9.09090909090909,1.6231752262826,37.7364625486204
+"Stem damage by game
+(% records)","JR","individual",4,1,4,25,4.55860626446362,69.9363947557363
+"Stem damage by game
+(% records)","JR","unknown",2,0,2,0,0,65.7628047110381
+"Stem damage by game
+(% records)","KL","none",19,0,19,0,0,16.8184365368451
+"Stem damage by game
+(% records)","KL","fence",27,0,27,0,6.93889390390723e-16,12.4559037144636
+"Stem damage by game
+(% records)","KL","individual",3,0,3,0,0,56.1506080449018
+"Stem damage by game
+(% records)","KL","unknown",6,0,6,0,0,39.0343033653064
+"Stem damage by game
+(% records)","other","none",75,3,75,4,1.36958160014865,11.1131686230838
+"Stem damage by game
+(% records)","other","fence",47,2,47,4.25531914893617,1.17480293705697,14.2487871938594
+"Stem damage by game
+(% records)","other","individual",5,0,5,0,-2.77555756156289e-15,43.4491494752081
+"Stem damage by game
+(% records)","other","unknown",20,1,20,5,0.888121943287314,23.6135893512567

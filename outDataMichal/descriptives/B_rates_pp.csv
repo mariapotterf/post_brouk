@@ -1,0 +1,41 @@
+"outcome","planted","protected","records","num","den","pct","lwr","upr"
+"Terminal damage
+(% individuals, small)","not planted","not protected",334,48,800,6,4.55510402276586,7.86545246497999
+"Terminal damage
+(% individuals, small)","not planted","protected",59,9,163,5.52147239263804,2.93170355867348,10.1595158973854
+"Terminal damage
+(% individuals, small)","planted","not protected",334,41,620,6.61290322580645,4.91175555863969,8.84840407162543
+"Terminal damage
+(% individuals, small)","planted","protected",474,74,879,8.41865756541524,6.75904175817073,10.4401477680138
+"Missing terminal
+(% records, small)","not planted","not protected",334,29,334,8.68263473053892,6.11328990283587,12.1916198536891
+"Missing terminal
+(% records, small)","not planted","protected",59,5,59,8.47457627118644,3.67414913061998,18.3520246141606
+"Missing terminal
+(% records, small)","planted","not protected",334,28,334,8.38323353293413,5.86356900200679,11.8493473469568
+"Missing terminal
+(% records, small)","planted","protected",474,43,474,9.07172995780591,6.80464963462521,11.996894642809
+"Foliage damage
+(% individuals)  [negative control]","not planted","not protected",463,150,1094,13.7111517367459,11.7994754835201,15.8767940256696
+"Foliage damage
+(% individuals)  [negative control]","not planted","protected",74,21,182,11.5384615384615,7.67179971454364,16.9952285503874
+"Foliage damage
+(% individuals)  [negative control]","planted","not protected",401,109,728,14.9725274725275,12.5647795182196,17.7480094787437
+"Foliage damage
+(% individuals)  [negative control]","planted","protected",537,214,968,22.1074380165289,19.6063573275532,24.8290321433235
+"Stem damage
+(% records)","not planted","not protected",463,31,463,6.69546436285097,4.75666018400334,9.34696725622478
+"Stem damage
+(% records)","not planted","protected",74,2,74,2.7027027027027,0.744319656230968,9.32947122165438
+"Stem damage
+(% records)","planted","not protected",401,34,401,8.4788029925187,6.13077536718917,11.6148318036154
+"Stem damage
+(% records)","planted","protected",537,60,537,11.1731843575419,8.77958262181802,14.1183601399814
+"Stem damage by game
+(% records)","not planted","not protected",463,15,463,3.23974082073434,1.97296847366274,5.27608559521201
+"Stem damage by game
+(% records)","not planted","protected",74,0,74,0,0,4.93515035662165
+"Stem damage by game
+(% records)","planted","not protected",401,24,401,5.98503740648379,4.05454842733857,8.75085496994076
+"Stem damage by game
+(% records)","planted","protected",537,20,537,3.7243947858473,2.42368781351459,5.68249336781466

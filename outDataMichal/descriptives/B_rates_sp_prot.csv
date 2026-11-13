@@ -1,0 +1,201 @@
+"outcome","species_g","protected","records","num","den","pct","lwr","upr"
+"Terminal damage
+(% individuals, small)","SM","not protected",172,17,401,4.23940149625935,2.66344637379787,6.68381438201378
+"Terminal damage
+(% individuals, small)","SM","protected",135,16,265,6.0377358490566,3.75023112754047,9.58163417901923
+"Terminal damage
+(% individuals, small)","BR","not protected",102,3,235,1.27659574468085,0.435082340847915,3.68547287231428
+"Terminal damage
+(% individuals, small)","BR","protected",69,1,144,0.694444444444444,0.122688703040198,3.82856723574834
+"Terminal damage
+(% individuals, small)","BO","not protected",99,4,282,1.41843971631206,0.552940486789983,3.58977351984866
+"Terminal damage
+(% individuals, small)","BO","protected",44,3,98,3.06122448979592,1.04647014655547,8.61716436036508
+"Terminal damage
+(% individuals, small)","DB","not protected",50,15,82,18.2926829268293,11.4109217076367,28.0123882027098
+"Terminal damage
+(% individuals, small)","DB","protected",79,21,165,12.7272727272727,8.47713142380974,18.6735233911174
+"Terminal damage
+(% individuals, small)","BK","not protected",56,10,111,9.00900900900901,4.96712356016682,15.7932977505777
+"Terminal damage
+(% individuals, small)","BK","protected",60,13,111,11.7117117117117,6.9734264210682,19.0115824955613
+"Terminal damage
+(% individuals, small)","MD","not protected",44,2,70,2.85714285714286,0.787044689380629,9.83244351239181
+"Terminal damage
+(% individuals, small)","MD","protected",24,6,42,14.2857142857143,6.71587568418993,27.8413823521788
+"Terminal damage
+(% individuals, small)","JIV","not protected",27,2,51,3.92156862745098,1.08208562687512,13.2165489862653
+"Terminal damage
+(% individuals, small)","JIV","protected",17,0,44,0,6.93889390390723e-16,8.0298317782014
+"Terminal damage
+(% individuals, small)","JR","not protected",46,18,60,30,19.8980102527269,42.5089469663904
+"Terminal damage
+(% individuals, small)","JR","protected",14,3,23,13.0434782608696,4.5375765143447,32.1278979730182
+"Terminal damage
+(% individuals, small)","KL","not protected",13,2,28,7.14285714285714,1.98116474477708,22.6457384259179
+"Terminal damage
+(% individuals, small)","KL","protected",26,6,43,13.953488372093,6.55563426771395,27.2638765944257
+"Terminal damage
+(% individuals, small)","other","not protected",59,16,100,16,10.0952023494737,24.4204445588944
+"Terminal damage
+(% individuals, small)","other","protected",65,14,107,13.0841121495327,7.95643970177763,20.7706808017156
+"Missing terminal
+(% records, small)","SM","not protected",172,13,172,7.55813953488372,4.4699005921073,12.500827608728
+"Missing terminal
+(% records, small)","SM","protected",135,11,135,8.14814814814815,4.61050686003902,14.0017822521579
+"Missing terminal
+(% records, small)","BR","not protected",102,1,102,0.980392156862745,0.17326897927339,5.34592196266248
+"Missing terminal
+(% records, small)","BR","protected",69,0,69,0,0,5.27390941440056
+"Missing terminal
+(% records, small)","BO","not protected",99,0,99,0,0,3.73545335739623
+"Missing terminal
+(% records, small)","BO","protected",44,1,44,2.27272727272727,0.402314838563701,11.8079791315376
+"Missing terminal
+(% records, small)","DB","not protected",50,11,50,22,12.7537862243023,35.2418156894596
+"Missing terminal
+(% records, small)","DB","protected",79,12,79,15.1898734177215,8.90818032098665,24.7000551549095
+"Missing terminal
+(% records, small)","BK","not protected",56,8,56,14.2857142857143,7.42070004258528,25.7361674208515
+"Missing terminal
+(% records, small)","BK","protected",60,8,60,13.3333333333333,6.91402697830964,24.1653945900721
+"Missing terminal
+(% records, small)","MD","not protected",44,1,44,2.27272727272727,0.402314838563701,11.8079791315376
+"Missing terminal
+(% records, small)","MD","protected",24,3,24,12.5,4.34425503931558,31.0042881478576
+"Missing terminal
+(% records, small)","JIV","not protected",27,1,27,3.7037037037037,0.65679765330976,18.2838539341565
+"Missing terminal
+(% records, small)","JIV","protected",17,0,17,0,0,18.4323660371565
+"Missing terminal
+(% records, small)","JR","not protected",46,10,46,21.7391304347826,12.2607746185808,35.5739658391895
+"Missing terminal
+(% records, small)","JR","protected",14,3,14,21.4285714285714,7.57124833691637,47.5897237732083
+"Missing terminal
+(% records, small)","KL","not protected",13,2,13,15.3846153846154,4.3257263182738,42.235170508631
+"Missing terminal
+(% records, small)","KL","protected",26,2,26,7.69230769230769,2.13546391833756,24.1419474805151
+"Missing terminal
+(% records, small)","other","not protected",59,10,59,16.9491525423729,9.47573785633763,28.4634616548142
+"Missing terminal
+(% records, small)","other","protected",65,8,65,12.3076923076923,6.37039144493732,22.4517161179316
+"Foliage damage
+(% individuals)  [negative control]","SM","not protected",228,31,543,5.70902394106814,4.05078705442985,7.98955515801339
+"Foliage damage
+(% individuals)  [negative control]","SM","protected",142,61,273,22.3443223443223,17.806164836072,27.6500093805198
+"Foliage damage
+(% individuals)  [negative control]","BR","not protected",155,60,344,17.4418604651163,13.7973817446592,21.8054903672446
+"Foliage damage
+(% individuals)  [negative control]","BR","protected",86,11,167,6.58682634730539,3.71741780117395,11.4086404890785
+"Foliage damage
+(% individuals)  [negative control]","BO","not protected",115,72,320,22.5,18.2664173900227,27.3860250386215
+"Foliage damage
+(% individuals)  [negative control]","BO","protected",46,15,103,14.5631067961165,9.02838848770376,22.646165244176
+"Foliage damage
+(% individuals)  [negative control]","DB","not protected",62,18,103,17.4757281553398,11.3498054339811,25.9405384021277
+"Foliage damage
+(% individuals)  [negative control]","DB","protected",90,66,183,36.0655737704918,29.4606556268611,43.2434959111262
+"Foliage damage
+(% individuals)  [negative control]","BK","not protected",59,46,122,37.7049180327869,29.6041536912028,46.5563528503542
+"Foliage damage
+(% individuals)  [negative control]","BK","protected",65,39,120,32.5,24.7757264088354,41.3099830781221
+"Foliage damage
+(% individuals)  [negative control]","MD","not protected",59,17,91,18.6813186813187,12.0036562111879,27.8961345979085
+"Foliage damage
+(% individuals)  [negative control]","MD","protected",36,6,55,10.9090909090909,5.09665562830513,21.825793795232
+"Foliage damage
+(% individuals)  [negative control]","JIV","not protected",33,0,57,0,0,6.31410087834639
+"Foliage damage
+(% individuals)  [negative control]","JIV","protected",21,0,52,0,0,6.87945904128821
+"Foliage damage
+(% individuals)  [negative control]","JR","not protected",59,0,75,0,0,4.87255459047001
+"Foliage damage
+(% individuals)  [negative control]","JR","protected",17,0,26,0,0,12.8733043804622
+"Foliage damage
+(% individuals)  [negative control]","KL","not protected",19,6,44,13.6363636363636,6.40286740786005,26.709737521741
+"Foliage damage
+(% individuals)  [negative control]","KL","protected",36,17,56,30.3571428571429,19.9001646207759,43.3361124841143
+"Foliage damage
+(% individuals)  [negative control]","other","not protected",75,9,123,7.31707317073171,3.89699006136988,13.3225972033761
+"Foliage damage
+(% individuals)  [negative control]","other","protected",72,20,115,17.3913043478261,11.5495895219303,25.3411961962021
+"Stem damage
+(% records)","SM","not protected",228,14,228,6.14035087719298,3.69252565506913,10.0416790778175
+"Stem damage
+(% records)","SM","protected",142,13,142,9.15492957746479,5.42824689439804,15.0334046508401
+"Stem damage
+(% records)","BR","not protected",155,10,155,6.45161290322581,3.54176759461012,11.4679024162686
+"Stem damage
+(% records)","BR","protected",86,16,86,18.6046511627907,11.7890081834718,28.1052056328449
+"Stem damage
+(% records)","BO","not protected",115,8,115,6.95652173913043,3.56682264647797,13.1290145014568
+"Stem damage
+(% records)","BO","protected",46,3,46,6.52173913043478,2.24274544663436,17.5030091037814
+"Stem damage
+(% records)","DB","not protected",62,3,62,4.83870967741935,1.65913850008461,13.2882503847542
+"Stem damage
+(% records)","DB","protected",90,2,90,2.22222222222222,0.61153137948636,7.74467738080758
+"Stem damage
+(% records)","BK","not protected",59,3,59,5.08474576271186,1.74424011594533,13.9167233222867
+"Stem damage
+(% records)","BK","protected",65,5,65,7.69230769230769,3.33030104588514,16.7761462185596
+"Stem damage
+(% records)","MD","not protected",59,6,59,10.1694915254237,4.74473265131825,20.4640462467365
+"Stem damage
+(% records)","MD","protected",36,6,36,16.6666666666667,7.8703406285641,31.8911147346743
+"Stem damage
+(% records)","JIV","not protected",33,2,33,6.06060606060606,1.67805304290709,19.6065817177982
+"Stem damage
+(% records)","JIV","protected",21,1,21,4.76190476190476,0.845576947192329,22.6698165862355
+"Stem damage
+(% records)","JR","not protected",59,11,59,18.6440677966102,10.7426122390436,30.3791924253825
+"Stem damage
+(% records)","JR","protected",17,4,17,23.5294117647059,9.55488907167594,47.2622458891716
+"Stem damage
+(% records)","KL","not protected",19,2,19,10.5263157894737,2.93579413950966,31.3945504948417
+"Stem damage
+(% records)","KL","protected",36,3,36,8.33333333333333,2.87480892712918,21.8270102769188
+"Stem damage
+(% records)","other","not protected",75,6,75,8,3.71796178943681,16.374984066558
+"Stem damage
+(% records)","other","protected",72,9,72,12.5,6.71770829310555,22.0812621927492
+"Stem damage by game
+(% records)","SM","not protected",228,10,228,4.3859649122807,2.39951906841586,7.8840538537862
+"Stem damage by game
+(% records)","SM","protected",142,4,142,2.8169014084507,1.10075637252651,7.01873765386925
+"Stem damage by game
+(% records)","BR","not protected",155,4,155,2.58064516129032,1.00802085346772,6.44695315837805
+"Stem damage by game
+(% records)","BR","protected",86,1,86,1.16279069767442,0.205551574240555,6.29655880669656
+"Stem damage by game
+(% records)","BO","not protected",115,4,115,3.47826086956522,1.36076226271264,8.60342536182288
+"Stem damage by game
+(% records)","BO","protected",46,2,46,4.34782608695652,1.20051935888308,14.5325229190534
+"Stem damage by game
+(% records)","DB","not protected",62,3,62,4.83870967741935,1.65913850008461,13.2882503847542
+"Stem damage by game
+(% records)","DB","protected",90,2,90,2.22222222222222,0.61153137948636,7.74467738080758
+"Stem damage by game
+(% records)","BK","not protected",59,1,59,1.69491525423729,0.299815669298153,8.99593746238532
+"Stem damage by game
+(% records)","BK","protected",65,1,65,1.53846153846154,0.272087452748662,8.21347941379715
+"Stem damage by game
+(% records)","MD","not protected",59,4,59,6.77966101694915,2.66781870983916,16.1757498816671
+"Stem damage by game
+(% records)","MD","protected",36,4,36,11.1111111111111,4.40656890874183,25.3151290150363
+"Stem damage by game
+(% records)","JIV","not protected",33,1,33,3.03030303030303,0.536927208965172,15.3190616731681
+"Stem damage by game
+(% records)","JIV","protected",21,1,21,4.76190476190476,0.845576947192329,22.6698165862355
+"Stem damage by game
+(% records)","JR","not protected",59,9,59,15.2542372881356,8.23837108906736,26.5182232688102
+"Stem damage by game
+(% records)","JR","protected",17,2,17,11.7647058823529,3.28790800129209,34.3368424977099
+"Stem damage by game
+(% records)","KL","not protected",19,0,19,0,0,16.8184365368451
+"Stem damage by game
+(% records)","KL","protected",36,0,36,0,0,9.64218304485764
+"Stem damage by game
+(% records)","other","not protected",75,3,75,4,1.36958160014865,11.1131686230838
+"Stem damage by game
+(% records)","other","protected",72,3,72,4.16666666666667,1.42705487725901,11.5494646054523
