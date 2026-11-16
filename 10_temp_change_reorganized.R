@@ -42,7 +42,7 @@ source('my_variables.R')
 
 
 # 1. Data ingestion & QC -----------------------------------------
-
+# data is on subplot level, on individual species and 3 vertical layers
 dat_overlap <- fread('outData/full_table_23_25.csv') # contacis data acros 10 Eu countries, CZ is collected 2x times
 
 hist(dat_overlap$x)
@@ -71,7 +71,7 @@ tree_summary <- dat_overlap %>%
   mutate(share = n_trees_recovery / total_trees * 100)
 
 
-# Get subplot xy
+# Get subplot& plot xy
 dat_sub_xy <- dat_overlap %>%
   dplyr::select(subplot, year, x, y) %>%
   dplyr::distinct()
@@ -88,6 +88,9 @@ dat_plot_xy <- dat_overlap %>%
 
 # 2. Management data cleaning ------------------------------------
 # define variables for cumulative management
+# idea - if teh site jhas salvage, site preparation in 2023, 
+# needs to have it also in 2025. if planting was not present in 2025,
+# it can occur in 2025
 mgmt_vars_cum <- c("clear", "grndwrk", "planting", "anti_browsing")
 
 # define variables on subplot level
@@ -108,7 +111,9 @@ dat_overlap_mng <- dat_overlap %>%
   # if managemnet is NA -> convert to 0
   mutate(across(all_of(management_vars), ~ replace_na(.x, 0)))
 
-## Identify plots surveyed in both years
+## Identify plots surveyed in both years - needs to have partly consistent management;
+# if present in 2023 -> needs to be present in 2025;
+# if not present in 2023 - > it can be recorded in 2025
 plots_with_both <- dat_overlap_mng %>%
   dplyr::filter(status == "both", year %in% c(2023, 2025)) %>%
   distinct(plot, year) %>%
