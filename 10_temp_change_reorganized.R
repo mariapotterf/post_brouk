@@ -111,9 +111,14 @@ dat_overlap_mng <- dat_overlap %>%
   # if managemnet is NA -> convert to 0
   mutate(across(all_of(management_vars), ~ replace_na(.x, 0)))
 
-## Identify plots surveyed in both years - needs to have partly consistent management;
+## Identify plots surveyed in both years - needs to have partly consistent management; 
+# ON SUBPLOT LEVEL
 # if present in 2023 -> needs to be present in 2025;
 # if not present in 2023 - > it can be recorded in 2025
+# hence, I am modifying management in 2025 to be consistent with 2023
+# if already recorded in 2023; some management can be indipendent (browing, planting) and can also occur later
+# another problem - management should be consistent on plot level, 
+# but i do not know how it fits on subplot level (which subplot belongs to which)
 plots_with_both <- dat_overlap_mng %>%
   dplyr::filter(status == "both", year %in% c(2023, 2025)) %>%
   distinct(plot, year) %>%
@@ -141,9 +146,9 @@ mng_both25 <- dat_overlap_mng %>%
   mutate(row_id = row_number())
 
 
-# Get management separately: per plot per year — long format ────────────────────────────────
+# Get management separately: per PLOT per year — long format ────────────────────────────────
 # to keep 
-mng_by_year <- dat_overlap %>%
+mng_by_year_plot <- dat_overlap %>%
   # if there is NA in management - > set to 0
   mutate(across(all_of(management_vars), ~ replace_na(.x, 0))) %>% 
   filter(status == "both", year %in% c(2023, 2025)) %>%
@@ -164,8 +169,8 @@ mng_by_year <- dat_overlap %>%
     .groups = "drop"
   )
 
-# ── Wide format: one row per plot, columns per year ───────────────────────────
-mng_wide <- mng_by_year %>%
+## ── Wide format: one row per plot, columns per year ───────────────────────────
+mng_wide <- mng_by_year_plot %>%
   pivot_wider(
     names_from  = year,
     values_from = c(clear_intensity, grndwrk_intensity, logging_trail_intensity,
@@ -182,7 +187,10 @@ mng_wide <- mng_by_year %>%
   )
 
 hist(mng_wide$delta_planting)
-
+hist(mng_wide$delta_browsing)
+hist(mng_wide$delta_grndwrk)
+hist(mng_wide$delta_clear)
+hist(mng_wide$delta_logging_trail)
 
 
 ## Combine by row order, take max per management variable - this is because I do not know which of the subplots 
@@ -265,7 +273,7 @@ dat_overlap_mng_upd2 <- dat_overlap_mng_upd2 %>%
          country_name = factor(country_name))
 
 
-## Subplot and plot management tables ----------------------------------------------
+### Subplot and plot management tables ----------------------------------------------
 # subplot level - keep both rwa values and plot level merges
 df_mng_sub <- dat_overlap_mng_upd2 %>%
   distinct(plot, subplot, year,
@@ -292,11 +300,10 @@ df_mng_plot <- df_mng_sub %>%
   distinct() 
 
 
-# identify cumulative management type --------------------------------------------
-# ==============================================================================
+### identify cumulative management type fpor Karim - to correspond to Johanness  --------------------------------------------
 # Subplot-level cumulative management classification — three schemes
-# ------------------------------------------------------------------------------
-# Applied directly at the SUBPLOT level (no plot aggregation).
+# 
+##### Applied directly at the SUBPLOT level (no plot aggregation). -------------------
 #
 # Input : df_mng_sub  — one row per subplot, with 0/1 columns:
 #           clear, grndwrk, logging_trail, planting, anti_browsing
@@ -321,8 +328,6 @@ df_mng_plot <- df_mng_sub %>%
 # are set to NA for that subplot. (You reported no NAs, so this is a no-op here,
 # but keeps the schemes aligned if that ever changes.)
 # ==============================================================================
-
-
 
 mng_vars <- c("clear", "grndwrk", "logging_trail", "planting", "anti_browsing")
 
@@ -397,9 +402,7 @@ df_mng_sub_cum <- df_mng_sub %>%
   ) %>%
   select(-any_na)  # drop helper
 
-# ------------------------------------------------------------------------------
-# Distributions of each scheme
-# ------------------------------------------------------------------------------
+# distribution of each scheme 
 dist_ladder <- df_mng_sub_cum %>%
   count(mgmt_type, mgmt_type_label, sort = TRUE) %>%
   mutate(pct = round(100 * n / sum(n), 1))
@@ -415,10 +418,9 @@ dist_2axis <- df_mng_sub_cum %>%
 print(dist_ladder)
 print(dist_joh)
 print(dist_2axis)
-# ------------------------------------------------------------------------------
-# Crosswalk: how the three schemes agree / diverge
+
+#### Crosswalk: how the three schemes agree / diverge ----------------------------
 # (off-diagonals here ARE your methods-section justification)
-# ------------------------------------------------------------------------------
 # ours vs Johannes
 crosswalk_ladder_joh <- df_mng_sub_cum %>%
   count(mgmt_type_label, mgmt_type_joh_label) %>%
@@ -432,14 +434,11 @@ crosswalk_all3 <- df_mng_sub_cum %>%
 print(crosswalk_ladder_joh)
 print(crosswalk_all3)
 
-# ------------------------------------------------------------------------------
-# Export
-# ------------------------------------------------------------------------------
-## export
+## export management types
 df_mng_sub_cum_out <- df_mng_sub_cum %>%
   select(-ends_with("_intensity"))
 
-fwrite(df_mng_sub_cum_out, "outDataShare/Karim_AEF/cleaned/subplot_cumul_management_20260727.csv")
+#fwrite(df_mng_sub_cum_out, "outDataShare/Karim_AEF/cleaned/subplot_cumul_management_20260727.csv")
 
 
 ## Management intensity summary (for figures) ------------------------------
