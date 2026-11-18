@@ -51,6 +51,12 @@ dat_counts_mature_species23 <- fread("C:/Users/potterf/OneDrive - CZU v Praze/Do
 
 #fwrite(dat_counts_mature_species23, 'outData/mature_trees_count_EU_23.csv') # export Mature trees position at 2023 data
 
+# and export from 2025 data 
+dat_counts_mature_species25 <- dat_overlap |> 
+  dplyr::filter(vegtype == "mature" & n > 0)
+
+#fwrite(dat_counts_mature_species25, 'outData/mature_trees_count_EU_25.csv') # export Mature trees position at 2025 data (only czechia)
+
 # get a mastertable about plots and subplots for 23 data - keep all teh empty plots and subplots
 dat_master23 <- fread("C:/Users/potterf/OneDrive - CZU v Praze/Dokumenty/2023_PanEuropean/r_paneurop/outData/sub_plots_counts_DBH.csv") |> 
   dplyr::select(ID, cluster, country) |> 
