@@ -45,10 +45,11 @@ source('my_variables.R')
 # data is on subplot level, on individual species and 3 vertical layers
 dat_overlap <- fread('outData/full_table_23_25.csv') # contacis data acros 10 Eu countries, CZ is collected 2x times
 
-# mature trees are missing from 2023 estimation - can be useful for some other metrics? look them up again just to keep the databases
+# mature trees were already removed from2023 estimation - can be useful for some other metrics? look them up again just to keep the databases
 dat_counts_mature_species23 <- fread("C:/Users/potterf/OneDrive - CZU v Praze/Dokumenty/2023_PanEuropean/r_paneurop/outData/sub_plots_counts_DBH.csv") |> 
   dplyr::filter(VegType == "Mature" & count > 0)
 
+#fwrite(dat_counts_mature_species23, 'outData/mature_trees_count_EU_23.csv') # export Mature trees position at 2023 data
 
 # get a mastertable about plots and subplots for 23 data - keep all teh empty plots and subplots
 dat_master23 <- fread("C:/Users/potterf/OneDrive - CZU v Praze/Dokumenty/2023_PanEuropean/r_paneurop/outData/sub_plots_counts_DBH.csv") |> 
@@ -57,12 +58,12 @@ dat_master23 <- fread("C:/Users/potterf/OneDrive - CZU v Praze/Dokumenty/2023_Pa
   mutate(n_subplots = n_distinct(ID)) |> 
   distinct()
 
-
+# 180/4221 - 4.26% of subplots have mature trees present
 
 hist(dat_overlap$x)
 
 dat_master_subplot <- dat_overlap %>%
-  dplyr::select(plot, subplot, year, status) %>%
+  dplyr::select(plot, subplot, year, status, x, y) %>%
   distinct()
 
 table(dat_master_subplot$year)
@@ -73,12 +74,16 @@ n_subplots_total <- length(unique(dat_master_subplot$subplot))
 
 cat("Plots:", n_plots_total, "| Subplots:", n_subplots_total, "\n")
 
+# filter only regeneration from both datasets (from 2023 it is aleady meroved, for consistency remove also from 2025 data)-----------------
+dat_regen <- dat_overlap |> 
+  filter(vegtype != 'mature')
+
 ## Quick counts
-total_trees_per_year <- dat_overlap %>%
+total_trees_per_year <- dat_regen %>%
   group_by(year) %>%
   summarise(total_trees = sum(n, na.rm = TRUE), .groups = "drop")
 
-tree_summary <- dat_overlap %>%
+tree_summary <- dat_regen %>%
   group_by(year, seral_stage) %>%
   summarise(n_trees_recovery = sum(n, na.rm = TRUE), .groups = "drop") %>%
   left_join(total_trees_per_year) %>%
@@ -86,12 +91,12 @@ tree_summary <- dat_overlap %>%
 
 
 # Get subplot& plot xy
-dat_sub_xy <- dat_overlap %>%
+dat_sub_xy <- dat_master_subplot %>%
   dplyr::select(subplot, year, x, y) %>%
   dplyr::distinct()
 
 
-dat_plot_xy <- dat_overlap %>%
+dat_plot_xy <- dat_master_subplot %>%
   dplyr::group_by(plot, year) %>%
   dplyr::summarise(
     x = mean(x, na.rm = TRUE),
@@ -249,6 +254,7 @@ management_intensity <- mng_subplot %>%
   )
 
 dat_overlap_mng_upd2 <- dat_overlap_mng_upd %>%
+  dplyr::filter(vegtype != "mature") |>    # remove again mature tree layer to keep calculations on regeneration layer
   left_join(management_intensity, by = c("plot", "year", "n_subplots"))
 
 
@@ -285,18 +291,6 @@ dat_overlap_mng_upd2 <- dat_overlap_mng_upd2 %>%
   mutate(country_name   = factor(country_name),
          region = factor(region),
          country_name = factor(country_name))
-
-
-
-#### investigate presence of mature trees and keep them separated from analysis ----------
-# 1) residual canopy covariate, per subplot and plot (before touching the mature rows)
-mature_sub <- dat_overlap_mng_upd2 %>%
-  filter(vegtype == "mature", n > 0) %>%
-  dplyr::select(plot, subplot, species, year, country_name)
-
-
-
-# hm, only czeciah found in 2023! i have no mature trees in 2023?
 
 
 ### Subplot and plot management tables ----------------------------------------------
