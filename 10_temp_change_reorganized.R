@@ -157,7 +157,13 @@ mng_both23 <- dat_overlap_mng %>%
   dplyr::select(plot, subplot, all_of(management_vars), year) %>%
   distinct() %>%
   group_by(plot, year) %>%
-  arrange(plot, subplot) %>%
+  arrange(plot, 
+          desc(clear), 
+          desc(grndwrk), 
+          desc(planting),    # then fixed priority per activity
+          desc(anti_browsing), 
+          desc(logging_trail),
+          subplot) %>%
   mutate(row_id = row_number())
 
 ## 2025 management — resolve duplicates by taking max presence
@@ -167,11 +173,17 @@ mng_both25 <- dat_overlap_mng %>%
   group_by(plot, subplot, year) %>%
   summarise(across(all_of(management_vars), ~ max(.x, na.rm = TRUE)), .groups = "drop") %>%
   group_by(plot) %>%
-  arrange(plot, subplot) %>%
+  arrange(plot, 
+          desc(clear), 
+          desc(grndwrk), 
+          desc(planting),    # then fixed priority per activity
+          desc(anti_browsing), 
+          desc(logging_trail),
+          subplot) %>%
   mutate(row_id = row_number())
 
 
-# Get management separately: per PLOT per year — long format ────────────────────────────────
+### Get management separately: per PLOT per year — long format ────────────────────────────────
 # to keep 
 mng_by_year_plot <- dat_overlap %>%
   # if there is NA in management - > set to 0
@@ -220,6 +232,7 @@ hist(mng_wide$delta_logging_trail)
 
 ## Combine by row order, take max per management variable - this is because I do not know which of the subplots 
 # actually overlaps; i know only plots
+# subplots are now ordered by management applied
 mng_both25_upd <- bind_rows(mng_both23, mng_both25) %>%
   group_by(plot, row_id) %>%
   summarise(
@@ -667,7 +680,7 @@ p_manag_intensity_country <- ggplot(
 
 p_manag_intensity_country
 
-ggsave("mng_intensity_by_country_EU_CZ.png", p_manag_intensity_country,
+ggsave("outFigs/mng_intensity_by_country_EU_CZ.png", p_manag_intensity_country,
        width = 13, height = 6, dpi = 300)
 
 
@@ -790,9 +803,13 @@ field_sub_summ <- dat_overlap_mng_upd2 %>%
   summarise(
     stems_total       = sum(n, na.rm = TRUE),
     sp_richness       = if (stems_total > 0) n_distinct(species[n > 0]) else 0,
-    shannon_sp        = if (stems_total > 0) vegan::diversity(n, index = "shannon") else 0,
+    shannon_sp        = if (stems_total > 0) vegan::diversity(tapply(n, species, sum), index = "shannon") else 0,  # <- changed
     evenness_sp       = if (sp_richness > 1) shannon_sp / log(sp_richness) else 0,
     effective_numbers = ifelse(stems_total > 0, exp(shannon_sp), NA_real_),
+    #sp_richness       = if (stems_total > 0) n_distinct(species[n > 0]) else 0,
+   # shannon_sp        = if (stems_total > 0) vegan::diversity(n, index = "shannon") else 0,
+   # evenness_sp       = if (sp_richness > 1) shannon_sp / log(sp_richness) else 0,
+   # effective_numbers = ifelse(stems_total > 0, exp(shannon_sp), NA_real_),
     mean_hgt          = if (stems_total > 0) weighted.mean(hgt_est[n > 0], n[n > 0], na.rm = TRUE) else NA_real_,
     var_hgt = {
       if (stems_total > 1) {
@@ -823,10 +840,14 @@ plot_metrics_pooled <- dat_overlap_mng_upd2 %>%
   summarise(
     stems_total       = sum(n, na.rm = TRUE),
     sp_richness       = if (stems_total > 0) n_distinct(species[n > 0]) else 0,
-    shannon_sp        = if (stems_total > 0) vegan::diversity(n, index = "shannon") else 0,
+    shannon_sp        = if (stems_total > 0) vegan::diversity(tapply(n, species, sum), index = "shannon") else 0,  # <- changed
     evenness_sp       = if (sp_richness > 1) shannon_sp / log(sp_richness) else 0,
-    mean_hgt          = if (stems_total > 0) weighted.mean(hgt_est, n, na.rm = TRUE) else NA_real_,
     effective_numbers = ifelse(stems_total > 0, exp(shannon_sp), NA_real_),
+   # sp_richness       = if (stems_total > 0) n_distinct(species[n > 0]) else 0,
+   # shannon_sp        = if (stems_total > 0) vegan::diversity(n, index = "shannon") else 0,
+   # evenness_sp       = if (sp_richness > 1) shannon_sp / log(sp_richness) else 0,
+    mean_hgt          = if (stems_total > 0) weighted.mean(hgt_est, n, na.rm = TRUE) else NA_real_,
+  #  effective_numbers = ifelse(stems_total > 0, exp(shannon_sp), NA_real_),
     var_hgt = {
       if (stems_total > 1) {
         sel <- (n > 0) & is.finite(hgt_est)
@@ -847,6 +868,11 @@ plot_metrics_pooled <- dat_overlap_mng_upd2 %>%
   left_join(df_mng_plot,       by = join_by(plot, year)) %>%
   left_join(spruce_share_plot, by = join_by(plot, year)) %>%
   left_join(iv_max_plot,       by = join_by(plot, year))
+
+
+# is not effcetive numbers correctly calculated?
+plot(plot_metrics_pooled$sp_richness, plot_metrics_pooled$effective_numbers)
+abline(0, 1, lty = 2)   # 1:1 line, no point should lie above it
 
 ## 3f. Plot context
 df_plot_context <- dat_overlap_mng_upd2 %>%
