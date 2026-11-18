@@ -45,6 +45,20 @@ source('my_variables.R')
 # data is on subplot level, on individual species and 3 vertical layers
 dat_overlap <- fread('outData/full_table_23_25.csv') # contacis data acros 10 Eu countries, CZ is collected 2x times
 
+# mature trees are missing from 2023 estimation - can be useful for some other metrics? look them up again just to keep the databases
+dat_counts_mature_species23 <- fread("C:/Users/potterf/OneDrive - CZU v Praze/Dokumenty/2023_PanEuropean/r_paneurop/outData/sub_plots_counts_DBH.csv") |> 
+  dplyr::filter(VegType == "Mature" & count > 0)
+
+
+# get a mastertable about plots and subplots for 23 data - keep all teh empty plots and subplots
+dat_master23 <- fread("C:/Users/potterf/OneDrive - CZU v Praze/Dokumenty/2023_PanEuropean/r_paneurop/outData/sub_plots_counts_DBH.csv") |> 
+  dplyr::select(ID, cluster, country) |> 
+  group_by(cluster) |> 
+  mutate(n_subplots = n_distinct(ID)) |> 
+  distinct()
+
+
+
 hist(dat_overlap$x)
 
 dat_master_subplot <- dat_overlap %>%
@@ -273,6 +287,18 @@ dat_overlap_mng_upd2 <- dat_overlap_mng_upd2 %>%
          country_name = factor(country_name))
 
 
+
+#### investigate presence of mature trees and keep them separated from analysis ----------
+# 1) residual canopy covariate, per subplot and plot (before touching the mature rows)
+mature_sub <- dat_overlap_mng_upd2 %>%
+  filter(vegtype == "mature", n > 0) %>%
+  dplyr::select(plot, subplot, species, year, country_name)
+
+
+
+# hm, only czeciah found in 2023! i have no mature trees in 2023?
+
+
 ### Subplot and plot management tables ----------------------------------------------
 # subplot level - keep both rwa values and plot level merges
 df_mng_sub <- dat_overlap_mng_upd2 %>%
@@ -302,6 +328,7 @@ df_mng_plot <- df_mng_sub %>%
 
 ### identify cumulative management type fpor Karim - to correspond to Johanness  --------------------------------------------
 # Subplot-level cumulative management classification — three schemes
+# for EU level estimation !!!!
 # 
 ##### Applied directly at the SUBPLOT level (no plot aggregation). -------------------
 #
@@ -444,8 +471,11 @@ df_mng_sub_cum_out <- df_mng_sub_cum %>%
 ## Management intensity summary (for figures) ------------------------------
 df_master_mng_intensity <- dat_overlap_mng_upd2 %>%
   distinct(plot, year,
-           clear_intensity, grndwrk_intensity, logging_trail_intensity,
-           planting_intensity, anti_browsing_intensity)
+           clear_intensity, 
+           grndwrk_intensity, 
+           logging_trail_intensity,
+           planting_intensity, 
+           anti_browsing_intensity)
 
 mng_intensity_props <- df_master_mng_intensity %>%
   pivot_longer(cols = c(clear_intensity, grndwrk_intensity, logging_trail_intensity,
@@ -490,7 +520,7 @@ mng_shifted <- mng_intensity_props %>%
                                                "logging_trail_intensity")))
   )
 
-## Intensity class summary table
+## Intensity class summary table: for all data: EU from 2023 and czechia 2025!!
 intensity_class_summary_counts <- mng_intensity_props %>%
   group_by(activity, intensity_class) %>%
   summarise(n_plots = sum(n), .groups = "drop")
@@ -515,13 +545,13 @@ low_high_summary <- intensity_class_summary_counts %>%
   mutate(value = paste0(value, "%)")) %>%
   pivot_wider(names_from = group, values_from = value)
 
-intensity_class_summary_final <- intensity_class_summary_percent %>%
+intensity_class_summary_EU_CZ <- intensity_class_summary_percent %>%
   left_join(low_high_summary, by = "activity") %>%
   mutate(high_n = as.numeric(str_extract(High, "^[0-9]+"))) %>%
   arrange(desc(high_n)) %>%
   select(-high_n)
 
-intensity_class_summary_final
+intensity_class_summary_EU_CZ
 
 
 # 3. Derived variables -------------------------------------------
