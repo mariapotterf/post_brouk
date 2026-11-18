@@ -468,9 +468,10 @@ df_mng_sub_cum_out <- df_mng_sub_cum %>%
 #fwrite(df_mng_sub_cum_out, "outDataShare/Karim_AEF/cleaned/subplot_cumul_management_20260727.csv")
 
 
-## Management intensity summary (for figures) ------------------------------
+### Management intensity summary (for figures) ------------------------------
 df_master_mng_intensity <- dat_overlap_mng_upd2 %>%
-  distinct(plot, year,
+  distinct(plot, country_name,
+           year,
            clear_intensity, 
            grndwrk_intensity, 
            logging_trail_intensity,
@@ -552,6 +553,122 @@ intensity_class_summary_EU_CZ <- intensity_class_summary_percent %>%
   select(-high_n)
 
 intensity_class_summary_EU_CZ
+
+#### make a plot to illustrate management for all samples
+
+# ---- settings -------------------------------------------------------------
+# yellow -> red, low -> high intensity (ColorBrewer YlOrRd, 5 classes)
+col_intensity <- setNames(
+  c("#FFFFB2", "#FECC5C", "#FD8D3C", "#F03B20", "#BD0026"),
+  intensity_levels            # "0–19", "20–39", "40–59", "60–79", "80–100"
+)
+
+activity_labels <- c(
+  clear_intensity          = "Clearing",
+  grndwrk_intensity        = "Ground work",
+  planting_intensity       = "Planting",
+  anti_browsing_intensity  = "Anti-browsing",
+  logging_trail_intensity  = "Logging trails"
+)
+
+# ---- 1) overall: all plots pooled (EU 2023 + Czechia 2025) ----------------
+plot_manag_intensity <- intensity_class_summary_counts %>%
+  ungroup() %>%
+  group_by(activity) %>%
+  mutate(share = n_plots / sum(n_plots) * 100) %>%
+  ungroup() %>%
+  mutate(intensity_class = factor(intensity_class, levels = intensity_levels),
+         # order activities by share of high classes (60-100)
+         activity = fct_reorder(activity,
+                                if_else(intensity_class %in% intensity_levels[4:5], share, 0),
+                                .fun = sum))
+
+p_manag_intensity_EU_CZ <- ggplot(plot_manag_intensity,
+                aes(x = share, y = activity, fill = fct_rev(intensity_class))) +
+  geom_col(width = 0.7, colour = "grey30", linewidth = 0.2) +
+  geom_text(aes(label = if_else(share >= 4, sprintf("%.0f%%", share), "")),
+            position = position_stack(vjust = 0.5), size = 3) +
+  scale_fill_manual(values = col_intensity, breaks = intensity_levels,
+                    name = "Intensity (%)") +
+  scale_y_discrete(labels = activity_labels) +
+  scale_x_continuous(labels = label_percent(scale = 1), expand = c(0, 0)) +
+  labs(x = "Share of plots", y = NULL) +
+  theme_minimal(base_size = 12) +
+  theme(panel.grid.major.y = element_blank(),
+        legend.position = "bottom")
+
+p_manag_intensity_EU_CZ
+
+ggsave("outFigs/mng_intensity_all_countries.png", p_manag_intensity_EU_CZ,
+       width = 7, height = 6, dpi = 300, bg = 'white')
+
+
+# management per country 
+
+## ---- 1) intensity classes per country (and year for Czechia) ---------------
+mng_by_country <- df_master_mng_intensity %>%
+  mutate(
+    # Czechia has two surveys -> separate bars; other countries have one record
+    country_lab = if_else(country_name == "Czechia",
+                          paste0("Czechia ", year),
+                          as.character(country_name))
+  ) %>%
+  pivot_longer(cols = c(clear_intensity, grndwrk_intensity, logging_trail_intensity,
+                        planting_intensity, anti_browsing_intensity),
+               names_to = "activity", values_to = "applied") %>%
+  filter(!is.na(applied)) %>%
+  mutate(intensity_class = cut(applied,
+                               breaks = c(-Inf, 0.19, 0.39, 0.59, 0.79, Inf),
+                               labels = intensity_levels, right = TRUE)) %>%
+  count(country_lab, activity, intensity_class, name = "n_plots") %>%
+  group_by(country_lab, activity) %>%
+  mutate(share = n_plots / sum(n_plots) * 100) %>%
+  ungroup() %>%
+  mutate(intensity_class = factor(intensity_class, levels = intensity_levels),
+         activity = factor(activity, levels = names(activity_labels)))
+
+## sample size per bar (same for all activities within a country)
+n_per_country <- df_master_mng_intensity %>%
+  mutate(country_lab = if_else(country_name == "Czechia",
+                               paste0("Czechia ", year), as.character(country_name))) %>%
+  count(country_lab, name = "n_total")
+
+mng_by_country <- mng_by_country %>%
+  left_join(n_per_country, by = "country_lab") %>%
+  mutate(country_n = paste0(country_lab, " (n=", n_total, ")"))
+
+## order countries by overall share of high-intensity management (60-100 %)
+country_order <- mng_by_country %>%
+  filter(intensity_class %in% intensity_levels[4:5]) %>%
+  group_by(country_n) %>%
+  summarise(high = sum(share) / n_distinct(activity), .groups = "drop") %>%
+  arrange(high) %>%
+  pull(country_n)
+
+mng_by_country <- mng_by_country %>%
+  mutate(country_n = factor(country_n, levels = country_order))
+
+## ---- 2) plot: one panel per activity, one bar per country ------------------
+p_manag_intensity_country <- ggplot(
+  mng_by_country,
+  aes(x = share, y = country_n, fill = fct_rev(intensity_class))) +
+  geom_col(width = 0.75, colour = "grey30", linewidth = 0.15) +
+  facet_wrap(~ activity, nrow = 1, labeller = labeller(activity = activity_labels)) +
+  scale_fill_manual(values = col_intensity, breaks = intensity_levels,
+                    name = "Intensity (%)") +
+  scale_x_continuous(labels = label_percent(scale = 1, suffix = ""),
+                     breaks = c(0, 50, 100), expand = c(0, 0)) +
+  labs(x = "Share of plots (%)", y = NULL) +
+  theme_minimal(base_size = 11) +
+  theme(panel.grid.major.y = element_blank(),
+        panel.spacing.x   = unit(1, "lines"),
+        strip.text        = element_text(face = "bold"),
+        legend.position   = "bottom")
+
+p_manag_intensity_country
+
+ggsave("mng_intensity_by_country_EU_CZ.png", p_manag_intensity_country,
+       width = 13, height = 6, dpi = 300)
 
 
 # 3. Derived variables -------------------------------------------
