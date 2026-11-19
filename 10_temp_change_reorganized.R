@@ -79,22 +79,22 @@ n_plots_total    <- length(unique(dat_master_subplot$plot))
 n_subplots_total <- length(unique(dat_master_subplot$subplot))
 
 cat("Plots:", n_plots_total, "| Subplots:", n_subplots_total, "\n")
-
-# filter only regeneration from both datasets (from 2023 it is aleady meroved, for consistency remove also from 2025 data)-----------------
-dat_regen <- dat_overlap |> 
-  filter(vegtype != 'mature')
-
-## Quick counts
-total_trees_per_year <- dat_regen %>%
-  group_by(year) %>%
-  summarise(total_trees = sum(n, na.rm = TRUE), .groups = "drop")
-
-tree_summary <- dat_regen %>%
-  group_by(year, seral_stage) %>%
-  summarise(n_trees_recovery = sum(n, na.rm = TRUE), .groups = "drop") %>%
-  left_join(total_trees_per_year) %>%
-  mutate(share = n_trees_recovery / total_trees * 100)
-
+# 
+# # filter only regeneration from both datasets (from 2023 it is aleady meroved, for consistency remove also from 2025 data)-----------------
+# dat_regen <- dat_overlap |> 
+#   filter(vegtype != 'mature')
+# 
+# ## Quick counts
+# total_trees_per_year <- dat_regen %>%
+#   group_by(year) %>%
+#   summarise(total_trees = sum(n, na.rm = TRUE), .groups = "drop")
+# 
+# tree_summary <- dat_regen %>%
+#   group_by(year, seral_stage) %>%
+#   summarise(n_trees_recovery = sum(n, na.rm = TRUE), .groups = "drop") %>%
+#   left_join(total_trees_per_year) %>%
+#   mutate(share = n_trees_recovery / total_trees * 100)
+# 
 
 # Get subplot& plot xy
 dat_sub_xy <- dat_master_subplot %>%
@@ -273,12 +273,12 @@ management_intensity <- mng_subplot %>%
   )
 
 dat_overlap_mng_upd2 <- dat_overlap_mng_upd %>%
-  dplyr::filter(vegtype != "mature") |>    # remove again mature tree layer to keep calculations on regeneration layer
+ # dplyr::filter(vegtype != "mature") |>    # remove again mature tree layer to keep calculations on regeneration layer
   left_join(management_intensity, by = c("plot", "year", "n_subplots"))
 
 
 # add indication of country and region
-dat_overlap_mng_upd2 <- dat_overlap_mng_upd2 %>% 
+dat_overlap_mng_upd_cntries <- dat_overlap_mng_upd2 %>% 
   mutate(
   region = str_extract(plot, "^\\d+(?=_)"),
   country = case_when(
@@ -312,9 +312,16 @@ dat_overlap_mng_upd2 <- dat_overlap_mng_upd2 %>%
          country_name = factor(country_name))
 
 
+dat_overlap_mng_upd2
+
+# filter only regeneration data
+dat_regen <- dat_overlap_mng_upd_cntries |> 
+ dplyr::filter(vegtype != "mature")   # remove again mature tree layer to keep calculations on regeneration layer
+
+
 ### Subplot and plot management tables ----------------------------------------------
 # subplot level - keep both rwa values and plot level merges
-df_mng_sub <- dat_overlap_mng_upd2 %>%
+df_mng_sub <- dat_regen %>%
   distinct(plot, subplot, year,
            clear, 
            grndwrk, 
@@ -337,6 +344,26 @@ df_mng_plot <- df_mng_sub %>%
          planting_intensity, 
          anti_browsing_intensity) %>%
   distinct() 
+
+
+#####  how many stems i have?  ---------------------------------------------
+
+# stems per year in Czechia (small + advanced regeneration; mature layer already removed)
+n_stems_regen_czechia <- dat_regen %>%
+  dplyr::filter(country_name == "Czechia") %>%
+  group_by(country_name) %>%
+  summarise(n_stems = sum(n, na.rm = TRUE), .groups = "drop")
+n_stems_regen_czechia 
+# 5074
+
+
+# including mature trees
+n_stems_all_layers_czechia <- dat_overlap %>%
+  dplyr::filter(country_name == "Czechia") %>%
+  group_by(country_name) %>%
+  summarise(n_stems = sum(n, na.rm = TRUE), .groups = "drop")
+n_stems_all_layers_czechia 
+# 5074
 
 
 ### identify cumulative management type fpor Karim - to correspond to Johanness  --------------------------------------------
@@ -482,7 +509,7 @@ df_mng_sub_cum_out <- df_mng_sub_cum %>%
 
 
 ### Management intensity summary (for figures) ------------------------------
-df_master_mng_intensity <- dat_overlap_mng_upd2 %>%
+df_master_mng_intensity <- dat_regen %>%
   distinct(plot, country_name,
            year,
            clear_intensity, 
@@ -680,14 +707,14 @@ p_manag_intensity_country <- ggplot(
 
 p_manag_intensity_country
 
-ggsave("outFigs/mng_intensity_by_country_EU_CZ.png", p_manag_intensity_country,
-       width = 13, height = 6, dpi = 300)
+# ggsave("outFigs/mng_intensity_by_country_EU_CZ.png", p_manag_intensity_country,
+#        width = 13, height = 6, dpi = 300)
 
 
 # 3. Derived variables -------------------------------------------
 
 ## 3a. Importance values (IV)
-dat_iv <- dat_overlap_mng_upd2 %>%
+dat_iv <- dat_regen %>%
   mutate(size_height = hgt_est * n)
 
 iv_sub  <- calc_iv_subplot(dat_iv, size_height)
@@ -741,7 +768,7 @@ iv_leaf_sub_wide <- iv_leaf_sub %>%
 ## 3b. Community-weighted means (CWM: shade & drought tolerance)
 wvar <- "n"   # weight by stem counts; alternatives: "basal_area_cm2" or "hgt_est"
 
-cwm_subplot <- dat_overlap_mng_upd2 %>%
+cwm_subplot <- dat_regen %>%
   mutate(w = wfun(.data[[wvar]])) %>%
   filter(w > 0) %>%
   group_by(plot, subplot, year, time_snc_full_disturbance) %>%
@@ -757,7 +784,7 @@ cwm_subplot <- dat_overlap_mng_upd2 %>%
   ) %>%
   select(-stems_total, -stems_with_traits, -trait_coverage)
 
-cwm_plot <- dat_overlap_mng_upd2 %>%
+cwm_plot <- dat_regen %>%
   filter(species != "ots1") %>%
   mutate(w = wfun(.data[[wvar]])) %>%
   filter(w > 0) %>%
@@ -775,7 +802,7 @@ cwm_plot <- dat_overlap_mng_upd2 %>%
   select(-stems_total, -stems_with_traits, -trait_coverage)
 
 ## 3c. Spruce share
-spruce_share_plot <- dat_overlap_mng_upd2 %>%
+spruce_share_plot <- dat_regen %>%
   filter(!is.na(n)) %>%
   group_by(plot, year) %>%
   summarise(total_stems  = n(),
@@ -784,7 +811,7 @@ spruce_share_plot <- dat_overlap_mng_upd2 %>%
             .groups = "drop") %>%
   select(plot, year, spruce_share)
 
-spruce_share_sub <- dat_overlap_mng_upd2 %>%
+spruce_share_sub <- dat_regen %>%
   filter(!is.na(n)) %>%
   group_by(plot, subplot, year) %>%
   summarise(total_stems  = n(),
@@ -794,7 +821,7 @@ spruce_share_sub <- dat_overlap_mng_upd2 %>%
   select(plot, subplot, year, spruce_share)
 
 ## 3d. Subplot summary table
-field_sub_summ <- dat_overlap_mng_upd2 %>%
+field_sub_summ <- dat_regen %>%
   mutate(n = coalesce(n, 0L)) %>%
   group_by(plot, subplot, year,
            time_snc_full_disturbance, time_snc_part_disturbance,
@@ -838,7 +865,7 @@ field_sub_summ_cleaned <- field_sub_summ %>%
 nrow(field_sub_summ_cleaned) #5460
 
 ## 3e. Plot summary table (pooled across subplots)
-plot_metrics_pooled <- dat_overlap_mng_upd2 %>%
+plot_metrics_pooled <- dat_regen %>%
   mutate(n = coalesce(n, 0L)) %>%
   group_by(plot, year) %>%
   summarise(
@@ -879,7 +906,7 @@ plot(plot_metrics_pooled$sp_richness, plot_metrics_pooled$effective_numbers)
 abline(0, 1, lty = 2)   # 1:1 line, no point should lie above it
 
 ## 3f. Plot context
-df_plot_context <- dat_overlap_mng_upd2 %>%
+df_plot_context <- dat_regen %>%
   dplyr::select(plot, year,
                 pre_dist_trees_n, area_m2, pre_dist_dens_ha,
                 time_snc_full_disturbance,
@@ -979,6 +1006,42 @@ both_levels_re2 <- both_levels_re2 %>%
   mutate(country_name   = factor(country_name),
          region = factor(region),
          country_name = factor(country_name))
+
+cz_counts <- both_levels_re2 %>%
+   dplyr::filter(country_name == "Czechia") %>%
+  group_by(year) %>%
+  dplyr::summarise(n_plots     = n_distinct(plot_id[level == "plot"]),
+            n_subplots  = sum(level == "subplot"),
+            .groups = "drop")
+cz_counts
+
+# plots surveyed in both years
+both_levels_re2 %>%
+  filter(level == "plot") %>%
+  filter(country_name == "Czechia") %>%
+  distinct(plot_id, year) %>%
+  count(plot_id) %>%
+  count(n, name = "n_plots")
+
+# A tibble: 2 × 2
+# n n_plots
+# <int>   <int>
+#   1     1      83
+# 2     2     125
+
+
+# plots and subplots per year in Czechia
+both_levels_re2 %>%
+  filter(country_name == "Czechia") %>%
+  group_by(year) %>%
+  summarise(n_plots    = n_distinct(plot_id[level == "plot"]),
+            n_subplots = n_distinct(ID[level == "subplot"]),
+            .groups = "drop")
+
+# year n_plots n_subplots
+# <dbl>   <int>      <int>
+#   1  2023     134        670
+# 2  2025     199        995
 
 
 
@@ -1116,7 +1179,7 @@ species_occurence <- df_stem_dens_species %>%
   mutate(share_of_plots = n_plots / total_plots * 100)
 
 ## 4d. Beta diversity (Jaccard within-plot turnover)
-comm_sub <- dat_overlap_mng_upd2 %>%
+comm_sub <- dat_regen %>%
   mutate(n = coalesce(n, 0L)) %>%
   filter(!is.na(species), species != "") %>%
   group_by(plot, year, subplot, species) %>%
@@ -1188,7 +1251,7 @@ data.table::fwrite(both_levels_re2, "outData/both_levels_re2_all_countries.csv")
 data.table::fwrite(plot_df_AEF2,    "outData/plot_df_AEF2_all_countries.csv")
 data.table::fwrite(sub_df_AEF,      "outData/sub_df_AEF_all_countries.csv")
 data.table::fwrite(beta_plotyear,   "outData/beta_plotyear_all_countries.csv")
-data.table::fwrite(dat_overlap_mng_upd2,   "outData/dat_full_species_all_countries.csv")
+data.table::fwrite(dat_regen,   "outData/dat_full_species_all_countries.csv")
 
 #mng_wide
 data.table::fwrite(mng_wide,   "outData/mng_intensity_year_CZ.csv")
@@ -1294,7 +1357,7 @@ p_management_bin_plot <- mng_sub_conv %>%
         axis.text  = element_text(size = 8))
 
 ## 6c. Disturbance history
-plot_context_chars <- dat_overlap_mng_upd2 %>%
+plot_context_chars <- dat_regen %>%
   dplyr::select(plot, year, status, disturbance_year, forest_year,
                 disturbance_length, time_snc_full_disturbance, time_snc_part_disturbance,
                 planting_intensity, clear_intensity, grndwrk_intensity,
@@ -1538,7 +1601,7 @@ p_spruce_shares_boxplot <- ggarrange(
 )
 
 ## 6h. Height by seral stage x management (heatmap)
-dat_clean <- dat_overlap_mng_upd2 %>%
+dat_clean <- dat_regen %>%
   as_tibble() %>%
   dplyr::filter(!is.na(hgt_est), !is.na(n), n > 0)
 
