@@ -829,9 +829,13 @@ field_sub_summ <- dat_overlap_mng_upd2 %>%
   ) %>%
   left_join(cwm_subplot)
 
+# is this step needed?
+nrow(field_sub_summ) # 5460
+
 field_sub_summ_cleaned <- field_sub_summ %>%
   group_by(plot, subplot, year) %>%
   summarise(across(where(is.numeric), safe_max), .groups = "drop")
+nrow(field_sub_summ_cleaned) #5460
 
 ## 3e. Plot summary table (pooled across subplots)
 plot_metrics_pooled <- dat_overlap_mng_upd2 %>%
@@ -886,8 +890,11 @@ df_plot_context <- dat_overlap_mng_upd2 %>%
   ungroup() %>%
   distinct()
 
+nrow(df_plot_context)  # 1092  # EU + CZ
+
 ## 3g. Bind subplot + plot into unified analysis table
-sub_df <- field_sub_summ_cleaned %>%
+sub_df <- #field_sub_summ_cleaned %>%
+  field_sub_summ |> 
   transmute(
     ID      = subplot, plot_id = plot, year, level = "subplot",
     dens_m2 = stems_total / area_subplot_m2,
