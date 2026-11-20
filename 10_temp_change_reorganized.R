@@ -594,9 +594,8 @@ intensity_class_summary_EU_CZ <- intensity_class_summary_percent %>%
 
 intensity_class_summary_EU_CZ
 
-#### make a plot to illustrate management for all samples
+#### management intensity plot - EU + CZ make a plot to illustrate management for all samples -------------------------
 
-# ---- settings -------------------------------------------------------------
 # yellow -> red, low -> high intensity (ColorBrewer YlOrRd, 5 classes)
 col_intensity <- setNames(
   c("#FFFFB2", "#FECC5C", "#FD8D3C", "#F03B20", "#BD0026"),
@@ -639,13 +638,13 @@ p_manag_intensity_EU_CZ <- ggplot(plot_manag_intensity,
 
 p_manag_intensity_EU_CZ
 
-ggsave("outFigs/mng_intensity_all_countries.png", p_manag_intensity_EU_CZ,
-       width = 7, height = 6, dpi = 300, bg = 'white')
+#ggsave("outFigs/mng_intensity_all_countries.png", p_manag_intensity_EU_CZ,
+ #      width = 7, height = 6, dpi = 300, bg = 'white')
 
 
 # management per country 
 
-## ---- 1) intensity classes per country (and year for Czechia) ---------------
+## ---- 1) intensity classes per country (and year for Czechia) 
 mng_by_country <- df_master_mng_intensity %>%
   mutate(
     # Czechia has two surveys -> separate bars; other countries have one record
@@ -688,7 +687,7 @@ country_order <- mng_by_country %>%
 mng_by_country <- mng_by_country %>%
   mutate(country_n = factor(country_n, levels = country_order))
 
-## ---- 2) plot: one panel per activity, one bar per country ------------------
+#### ---- 2) plot: one panel per activity, one bar per country ------------------
 p_manag_intensity_country <- ggplot(
   mng_by_country,
   aes(x = share, y = country_n, fill = fct_rev(intensity_class))) +
@@ -859,10 +858,10 @@ field_sub_summ <- dat_regen %>%
 # is this step needed?
 nrow(field_sub_summ) # 5460
 
-field_sub_summ_cleaned <- field_sub_summ %>%
-  group_by(plot, subplot, year) %>%
-  summarise(across(where(is.numeric), safe_max), .groups = "drop")
-nrow(field_sub_summ_cleaned) #5460
+#field_sub_summ_cleaned <- field_sub_summ %>%
+#  group_by(plot, subplot, year) %>%
+#  summarise(across(where(is.numeric), safe_max), .groups = "drop")
+#nrow(field_sub_summ_cleaned) #5460
 
 ## 3e. Plot summary table (pooled across subplots)
 plot_metrics_pooled <- dat_regen %>%
@@ -1089,9 +1088,10 @@ plot_df_AEF <- df_plot_clean %>%
 
 
 # 4. Species composition & beta diversity -------------------------
-
+# remove mature treees!!
 ## 4a. Stem share per species per year
 df <- dat_overlap %>%
+  dplyr::filter(vegtype != 'mature') |> 
   mutate(n = coalesce(n, 0L)) %>%
   filter(!is.na(species) & species != "")
 
@@ -1256,321 +1256,8 @@ data.table::fwrite(dat_regen,   "outData/dat_full_species_all_countries.csv")
 #mng_wide
 data.table::fwrite(mng_wide,   "outData/mng_intensity_year_CZ.csv")
 
+# check if i need to stop here?
 
-
-# 6. Figures -----------------------------------------------------
-
-## 6a. Species composition (stem share + occurrence)
-top10_by_year_clean <- top10_by_year %>%
-  dplyr::select(year, species, share) %>%
-  tidyr::complete(year, species = species_levels, fill = list(share = 0)) %>%
-  mutate(species = factor(species, levels = species_levels),
-         year    = factor(year))
-
-p_bar <- top10_by_year_clean %>%
-  ggplot(aes(x = share, y = species, fill = species, alpha = year)) +
-  geom_col(position = position_dodge(width = 0.7), width = 0.6,
-           aes(colour = factor(year))) +
-  scale_x_continuous(labels = label_number(accuracy = 1, suffix = ""),
-                     expand = expansion(mult = c(0.02, 0.05))) +
-  scale_y_discrete(limits = species_levels, labels = species_labels, drop = FALSE) +
-  scale_colour_manual(values = c("2023" = "grey50", "2025" = "black"), guide = "none") +
-  scale_fill_manual(values = species_colors, guide = "none") +
-  scale_alpha_manual(name = "Survey year",
-                     values  = c("2023" = 0.45, "2025" = 1.00),
-                     guide   = "none",
-                     breaks  = c("2025", "2023")) +
-  labs(x = "Stems share [%]", y = "") +
-  theme_classic2(base_size = 10) +
-  theme(axis.text.y   = element_text(face = "italic", size = 8),
-        plot.margin   = margin(t = 12, r = 5, b = 5, l = 5))
-
-p_occurence <- species_occurence %>%
-  filter(species %in% v_top_species) %>%
-  mutate(species = factor(species, levels = species_levels)) %>%
-  ggplot(aes(x = share_of_plots, y = species,
-             fill = species, alpha = factor(year))) +
-  geom_col(position = position_dodge(width = 0.7), width = 0.6,
-           aes(colour = factor(year))) +
-  scale_x_continuous(labels = scales::label_number(accuracy = 1),
-                     expand = expansion(mult = c(0.05, 0.05))) +
-  scale_fill_manual(values = species_colors, guide = "none") +
-  scale_alpha_manual(name = "Survey year",
-                     values = c("2025" = 1, "2023" = 0.45),
-                     breaks = c("2025", "2023")) +
-  scale_colour_manual(name = "Survey year",
-                      values = c("2025" = "black", "2023" = "grey50"),
-                      breaks = c("2025", "2023")) +
-  labs(x = "Species occurence [%]", y = NULL) +
-  theme_classic(base_size = 10) +
-  theme(axis.text.y        = element_blank(),
-        legend.position    = c(0.98, 0.02),
-        legend.justification = c(1, 0),
-        legend.key         = element_rect(fill = NA),
-        legend.title       = element_text(size = 9),
-        legend.text        = element_text(size = 8),
-        legend.key.width   = unit(1, "lines"),
-        legend.key.height  = unit(0.4, "lines"),
-        plot.margin        = margin(t = 12, r = 5, b = 5, l = 5))
-
-p_species_composition <- ggarrange(
-  p_bar, p_occurence,
-  ncol = 2, common.legend = FALSE, align = "h",
-  widths = c(1.5, 1),
-  labels = c("[a]", "[b]"),
-  font.label = list(size = 10, face = "plain"),
-  label.x = 0.02, label.y = 1.01
-)
-
-## 6b. Management intensity plot (simpler stacked bar)
-fill_colors <- brewer.pal(length(intensity_levels), "YlOrRd")
-
-p_management_intensity_plot_simpler <- mng_shifted %>%
-  filter(activity != "logging_trail_intensity") %>%
-  droplevels() %>%
-  ggplot(aes(x = proportion, y = activity, fill = intensity_class_plot)) +
-  geom_col(width = 0.4, color = "black") +
-  scale_fill_manual(values = fill_colors,
-                    name   = "Management intensity\nclass",
-                    breaks = intensity_levels) +
-  scale_y_discrete(labels = activity_intens_labels) +
-  scale_x_continuous(labels = abs, name = "Plots share [%]") +
-  ylab("") +
-  theme_classic2() +
-  theme(legend.position = "right", axis.text.y = element_text(size = 10))
-
-p_management_bin_plot <- mng_sub_conv %>%
-  filter(activity != "logging_trail_intensity") %>%
-  droplevels() %>%
-  ggplot(aes(x = proportion_plot, y = activity, fill = intensity_binary)) +
-  geom_col(width = 0.2, color = "black") +
-  scale_fill_manual(values = c("no" = "forestgreen", "yes" = "red")) +
-  geom_vline(xintercept = 0, color = "grey", linewidth = 0.8, lty = "dashed") +
-  scale_y_discrete(labels = activity_intens_labels) +
-  scale_x_continuous(labels = abs, name = "Plots share [%]") +
-  annotate("text", x = -60, y = 4.5, label = "Not Applied", hjust = 0, size = 2.5, fontface = "bold") +
-  annotate("text", x =  80, y = 4.5, label = "Applied",     hjust = 1, size = 2.5, fontface = "bold") +
-  ylab("") +
-  theme_classic2() +
-  theme(legend.position = "none",
-        axis.title = element_text(size = 8),
-        axis.text  = element_text(size = 8))
-
-## 6c. Disturbance history
-plot_context_chars <- dat_regen %>%
-  dplyr::select(plot, year, status, disturbance_year, forest_year,
-                disturbance_length, time_snc_full_disturbance, time_snc_part_disturbance,
-                planting_intensity, clear_intensity, grndwrk_intensity,
-                logging_trail_intensity, anti_browsing_intensity) %>%
-  distinct() %>%
-  mutate(disturbance_year = case_when(disturbance_year < 2018 ~ 2018,
-                                      disturbance_year > 2022 ~ 2022,
-                                      TRUE ~ disturbance_year),
-         time_since_disturbance = year - disturbance_year)
-
-summary_disturbance_year <- plot_context_chars %>%
-  count(disturbance_year, name = "n") %>%
-  mutate(share = round(100 * n / sum(n), 1))
-
-summary_time_since <- plot_context_chars %>%
-  count(time_since_disturbance, name = "n") %>%
-  mutate(share = round(100 * n / sum(n), 1))
-
-p_hist_dist_year <- plot_context_chars %>%
-  count(disturbance_year) %>%
-  ggplot(aes(x = disturbance_year, y = n)) +
-  geom_col(fill = "grey80", color = "black", width = 0.8) +
-  scale_x_continuous(breaks = seq(2018, 2022, 2)) +
-  labs(x = "Disturbance Year\n", y = "Number of Plots [#]") +
-  theme_classic2() +
-  theme(axis.text = element_text(size = 8), axis.title = element_text(size = 8))
-
-p_hist_time_since_dist <- plot_context_chars %>%
-  count(time_since_disturbance) %>%
-  ggplot(aes(x = time_since_disturbance, y = n)) +
-  geom_col(fill = "grey80", color = "black", width = 0.8) +
-  labs(x = "Time since disturbance\n[years]", y = "Number of Plots [#]") +
-  theme_classic2() +
-  theme(axis.text = element_text(size = 8), axis.title = element_text(size = 8))
-
-p_combined_disturb_fig <- ggarrange(
-  p_hist_dist_year, p_hist_time_since_dist,
-  labels = c("[a]", "[b]"),
-  font.label = list(size = 10, face = "plain"),
-  widths = c(0.9, 1.1), ncol = 2, nrow = 1
-)
-
-p_combined_management_intens <- ggarrange(
-  p_combined_disturb_fig,
-  p_management_intensity_plot_simpler,
-  labels = c(" ", "[c]"),
-  font.label = list(size = 10, face = "plain"),
-  ncol = 1, nrow = 2,
-  heights = c(1.2, 1.2)
-)
-
-## 6d. Cross-scale violin distributions
-response_vars <- c("mean_hgt", "cv_hgt", "effective_numbers", "sp_richness")
-discrete_vars_plot <- c("Species richness\n[#]", "Species diversity\n[Effective #]")
-
-both_levels_long <- both_levels_re2 %>%
-  pivot_longer(cols = all_of(response_vars), names_to = "variable", values_to = "value")
-
-both_levels_long_capped <- both_levels_long %>%
-  group_by(variable) %>%
-  mutate(value_capped = ifelse(value > quantile(value, 0.95, na.rm = TRUE),
-                               quantile(value, 0.95, na.rm = TRUE), value)) %>%
-  ungroup() %>%
-  mutate(value_capped = ifelse(variable == "cv_hgt", value_capped * 100, value_capped),
-         variable = factor(variable, levels = c("mean_hgt", "cv_hgt",
-                                                "effective_numbers", "sp_richness")),
-         variable = recode(variable,
-                           effective_numbers = "Species diversity\n[Effective #]",
-                           sp_richness       = "Species richness\n[#]",
-                           mean_hgt          = "Mean height\n[m]",
-                           cv_hgt            = "Height variability\n[CV, %]"),
-         is_discrete = variable %in% discrete_vars_plot)
-
-facet_ymins <- both_levels_long_capped %>%
-  distinct(variable) %>%
-  mutate(ymin = c(-0.5, -20, -1.8, -0.9), ymax = 0)
-
-wilcox_results <- both_levels_long_capped %>%
-  group_by(variable) %>%
-  summarise(test = list(wilcox.test(value_capped ~ level, data = cur_data())),
-            .groups = "drop") %>%
-  mutate(tidied = map(test, broom::tidy)) %>%
-  unnest(tidied) %>%
-  mutate(p.value   = round(p.value, 4),
-         p.adj     = round(p.adjust(p.value, method = "BH"), 4),
-         p.display = ifelse(p.value < 0.001, "< 0.001", round(p.value, 3))) %>%
-  select(variable, p.value, p.adj, p.display)
-
-label_positions <- both_levels_long_capped %>%
-  group_by(variable) %>%
-  summarise(y = max(value_capped, na.rm = TRUE) * 1.20)
-
-wilcox_plot_labels <- wilcox_results %>%
-  left_join(label_positions, by = "variable")
-
-p_violin <- ggplot() +
-  gghalves::geom_half_violin(
-    data = both_levels_long_capped %>% filter(!is_discrete),
-    aes(x = level, y = value_capped, fill = level),
-    side = "l", color = NA, trim = FALSE, scale = "width"
-  ) +
-  gghalves::geom_half_violin(
-    data = both_levels_long_capped %>% filter(is_discrete),
-    aes(x = level, y = value_capped, fill = level),
-    side = "l", color = NA, trim = FALSE, scale = "width", adjust = 2
-  ) +
-  geom_boxplot(data = both_levels_long_capped,
-               aes(x = level, y = value_capped),
-               width = 0.1, outlier.shape = NA, color = "black") +
-  geom_rect(data = facet_ymins, inherit.aes = FALSE,
-            aes(xmin = -Inf, xmax = Inf, ymin = ymin, ymax = ymax),
-            fill = "white", color = NA) +
-  stat_summary(data = both_levels_long_capped,
-               aes(x = level, y = value_capped),
-               fun = mean, geom = "point",
-               shape = 21, size = 2, fill = "red", color = "black") +
-  scale_fill_manual(values = c("subplot" = "grey50", "plot" = "grey80")) +
-  geom_text(data = wilcox_plot_labels, inherit.aes = FALSE,
-            aes(x = 1.5, y = y, label = p.display), size = 3) +
-  facet_wrap(~ variable, scales = "free_y", ncol = 4, nrow = 1) +
-  theme_classic(base_size = 10) +
-  labs(x = NULL, y = NULL, fill = "Level") +
-  theme(legend.position = "none",
-        strip.text  = element_text(size = 9, face = "plain"),
-        axis.text.x = element_text(size = 8),
-        axis.text.y = element_text(size = 8))
-
-summary_stats_violin <- both_levels_long_capped %>%
-  group_by(variable, level) %>%
-  summarise(n      = n(),
-            mean   = mean(value_capped, na.rm = TRUE),
-            median = median(value_capped, na.rm = TRUE),
-            Q1     = quantile(value_capped, 0.25, na.rm = TRUE),
-            Q3     = quantile(value_capped, 0.75, na.rm = TRUE),
-            IQR    = IQR(value_capped, na.rm = TRUE),
-            .groups = "drop") %>%
-  arrange(variable, level)
-
-## 6e. Time since disturbance x scale (panel)
-ylim_hgt  <- c(0.2, 2.0)
-ylim_cv   <- c(10, 85)
-ylim_eff  <- c(1, 12)
-ylim_rich <- c(0.8, 7)
-
-y_time_hgt  <- ylim_hgt[2]  * 0.98
-y_time_cv   <- ylim_cv[2]   * 0.98
-y_time_eff  <- ylim_eff[2]  * 0.98
-y_time_rich <- ylim_rich[2] * 0.98
-
-p_hgt <- pp(gam_mean_hgt_both,
-            terms   = c("time_snc_full_disturbance[0:7]", "level"),
-            ylab    = "Mean height [m]",
-            annot   = "Time:\np = 0.004",
-            annot_y = y_time_hgt) + coord_cartesian(ylim = ylim_hgt)
-
-p_cv_pos <- pp(gam_cv_hgt_pos_both,
-               terms   = c("time_snc_full_disturbance[0:7]", "level"),
-               ylab    = "CV [%]",
-               scale_y = 100,
-               annot   = "Time:\np = 0.668",
-               annot_y = y_time_cv) + coord_cartesian(ylim = ylim_cv)
-
-p_eff <- pp(gam_eff_both,
-            terms   = c("time_snc_full_disturbance[0:7]", "level"),
-            xlab    = "Time since disturbance\n(years)",
-            ylab    = "Effective species [#]",
-            annot   = "Time:\np = 0.452",
-            annot_y = y_time_eff) + coord_cartesian(ylim = ylim_eff)
-
-p_rich <- pp(gam_rich_both,
-             terms   = c("time_snc_full_disturbance[0:7]", "level"),
-             xlab    = "Time since disturbance\n(years)",
-             ylab    = "Species richness [#]",
-             annot   = "Time:\np = 0.896",
-             annot_y = y_time_rich) + coord_cartesian(ylim = ylim_rich)
-
-p_inset_hgt  <- pp_inset_model(gam_mean_hgt_both,   scale_y = 1,   p_lab = "Scale:\np < 0.001", annot_y = y_time_hgt)
-p_inset_cv   <- pp_inset_model(gam_cv_hgt_pos_both, scale_y = 100, p_lab = "Scale:\np < 0.001", annot_y = y_time_cv)
-p_inset_eff  <- pp_inset_model(gam_eff_both,        scale_y = 1,   p_lab = "Scale:\np < 0.001", annot_y = y_time_eff)
-p_inset_rich <- pp_inset_model(gam_rich_both,       scale_y = 1,   p_lab = "Scale:\np < 0.001", annot_y = y_time_rich)
-
-pair_hgt  <- (p_hgt  + p_inset_hgt)  + plot_layout(widths = c(2.6, 1)) + plot_annotation(title = "[a]")
-pair_cv   <- (p_cv_pos + p_inset_cv) + plot_layout(widths = c(2.6, 1)) + plot_annotation(title = "[b]")
-pair_eff  <- (p_eff  + p_inset_eff)  + plot_layout(widths = c(2.6, 1)) + plot_annotation(title = "[c]")
-pair_rich <- (p_rich + p_inset_rich) + plot_layout(widths = c(2.6, 1)) + plot_annotation(title = "[d]")
-
-p_final <- (pair_hgt | pair_cv) / (pair_eff | pair_rich) +
-  plot_layout(guides = "collect") &
-  theme(legend.position = "bottom")
-
-## 6f. Management effect (% change 0 -> 1)
-p_model_response <- ggplot(
-  model_intensity_all_df_pct_mng,
-  aes(x = response, y = estimate_pct, fill = response)
-) +
-  geom_hline(yintercept = 0, color = "gray40", linewidth = 0.5) +
-  geom_col(width = 0.7, color = NA) +
-  geom_errorbar(aes(ymin = lower_pct, ymax = upper_pct),
-                width = 0.15, linewidth = 0.5, color = "grey30") +
-  geom_text(aes(label    = p_label,
-                y        = upper_pct + 12,
-                fontface = ifelse(p.value < 0.05, "bold", "plain")),
-            size = 2.5) +
-  facet_wrap(~ term, ncol = 3) +
-  scale_fill_brewer(palette = "Dark2") +
-  labs(x = "", y = "Effect on response [%]") +
-  theme_classic(base_size = 8) +
-  theme(legend.position    = "none",
-        strip.text         = element_text(size = 8),
-        strip.background   = element_rect(fill = "white", color = "black", linewidth = 0.6),
-        axis.text.x        = element_text(angle = 30, hjust = 1),
-        panel.border       = element_rect(color = "black", fill = NA, linewidth = 0.6),
-        panel.grid.major.y = element_line(color = "gray90", linewidth = 0.3))
 
 ## 6g. Spruce share by management
 p_spruce_shares_boxplot <- ggarrange(
