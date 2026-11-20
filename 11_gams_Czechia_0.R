@@ -1,6 +1,7 @@
 
 # ------------------------------------
 # Temporal analysis: Czechia
+# only regeneration layer
 # ------------------------------------
 
 
@@ -61,16 +62,16 @@ sub_df_cz <- fread("outData/sub_df_AEF_all_countries.csv") %>%
     region       = factor(region)
   )
 
-# data with individual species per subplot and plots each species,
+# data with individual species per subplot and plots each species, the mature trees are already removed 
 # contains ALL plots: overlapping and no overlapping ones
-dat_full <- fread("outData/dat_full_species_all_countries.csv") %>%
+dat_regen <- fread("outData/dat_regen_species_all_countries.czv") %>%
   filter(country_name == "Czechia") %>%
   mutate(
     plot      = factor(plot)
   )
 
 
-dat_full <- dat_full %>% 
+dat_regen <- dat_regen %>% 
   mutate(
     time_since_cap = case_when(
       time_snc_full_disturbance == 0  ~ 1L,
@@ -100,31 +101,31 @@ mng_year <-  fread("outData/mng_intensity_year_CZ.csv")
 # Clean up input data -----------------------
 
 # add a unique plot and subplot id per year - so i can easily calculate how many unique plots i have
-dat_full <- dat_full %>% 
+dat_regen <- dat_regen %>% 
   mutate(plot_year = paste0(plot, year, '_'),
          subplot_year = paste0(subplot, year, '_'))
 
 
 # how many lines? - no empty subplots?
-dat_full %>%
+dat_regen %>%
   filter(!is.na(n)) %>% 
  # head()
   count(year, name = "n_lines")
   
   
   # distinct subplots in 2025
-  dat_full %>%
+  dat_regen %>%
     filter(year == 2025) %>%
     summarise(n_subplots_distinct = n_distinct(subplot))
   
-  dat_full %>%
+  dat_regen %>%
     filter(year == 2025) %>%
     summarise(n_plots_distinct = n_distinct(plot))
   
 
 
 # select only overlapping plots
-dat_overlap <- dat_full %>%
+dat_overlap <- dat_regen %>%
   filter(status == "both")
 
 plots_per_year <- dat_overlap %>%
@@ -163,8 +164,8 @@ drought_value_species <- dat_overlap %>%
 n_overlap_plots    <- length(plots_with_both)  #  125
 n_overlap_subplots <- length(unique(dat_overlap$subplot))  #  1250
 
-n_total_plots   <- length(unique(dat_full$plot_year))  #  333
-n_subplots_total <-length(unique(dat_full$subplot_year))  # 1665
+n_total_plots   <- length(unique(dat_regen$plot_year))  #  333
+n_subplots_total <-length(unique(dat_regen$subplot_year))  # 1665
 
 print(n_total_plots)
 print(n_subplots_total)
@@ -191,7 +192,7 @@ mng_year_wide_clean <- mng_year_long_all %>%
 # Data overview: landscape ------------------
 ## ALL plots ----------------------
 # get master table, having all unique plots and subplots - even teh empty ones
-dat_master_subplot <- dat_full %>% 
+dat_master_subplot <- dat_regen %>% 
   dplyr::select(plot, subplot, year, status) %>% 
   distinct()
 
@@ -200,14 +201,14 @@ table(dat_master_subplot$status)
 
 
 ## ── Total stems and plots: overall and per year ───────────────────────────
-n_trees_total <- sum(dat_full$n, na.rm = T)
+n_trees_total <- sum(dat_regen$n, na.rm = T)
 n_trees_overlap <- sum(dat_overlap$n, na.rm = T)
 
 n_trees_total
 n_trees_overlap
 
 # per year
-trees_per_year <- dat_full %>%
+trees_per_year <- dat_regen %>%
   group_by(year) %>%
   summarise(
     total_stems    = sum(n, na.rm = T),
@@ -838,7 +839,7 @@ classify_dom_func_v2 <- function(share_spruce, share_drought_sens,
 
 # ── Rebuild base stem table with new classification ───────────────────────────
 
-dat_full_func <- dat_full %>%
+dat_regen_func <- dat_regen %>%
   left_join(
     species_functional_v2 %>% select(species, func_group_drought),
     by = "species"
@@ -862,7 +863,7 @@ func_stems_base_v2 <- dat_overlap_recoded2 %>%
   compute_func_shares_v2()
 
 # from all sites -> for time plots
-func_stems_base_full <- dat_full_func %>%
+func_stems_base_full <- dat_regen_func %>%
   # filter(status == "both") %>%
   mutate(func_group_drought = replace_na(as.character(func_group_drought), 
                                          "other")) %>%
@@ -932,7 +933,7 @@ p_bar_TSD
 
 
 # ── 2. Aggregate stems per plot × TSD × drought group ────────────────────────
-func_tsd_stems <- dat_full_func %>%
+func_tsd_stems <- dat_regen_func %>%
   filter(!is.na(n), n > 0) %>%
   group_by(plot, time_since_cap, func_group_drought) %>%
   summarise(stems = sum(n, na.rm = TRUE), .groups = "drop") %>%
@@ -1969,7 +1970,7 @@ plot_df_cz %>%
 # but we need to add binary management from dat_overlap
 
 # get binary management per subplot
-mng_subplot_binary <- dat_full %>% # from full data, not only overlaps
+mng_subplot_binary <- dat_regen %>% # from full data, not only overlaps
   #filter(status == "both") %>%
   distinct(plot, subplot, year, planting, anti_browsing, grndwrk) %>%
   rename(
@@ -1982,7 +1983,7 @@ mng_subplot_binary <- dat_full %>% # from full data, not only overlaps
 
 # ── Step 2: join binary management to subplot rows in both_levels_cz ──────────
 # NOTE on missing data: 5 of 1665 subplot rows (plot 26_134, year 2025) have
-# no raw planting/anti_browsing/grndwrk record in dat_full (NA in field plot -now it reads it from 
+# no raw planting/anti_browsing/grndwrk record in dat_regen (NA in field plot -now it reads it from 
 # management intensityand binarizes it. For 26_134 this
 # resolves to 0 for all three variables, consistent with its recorded
 # intensity of 0.
@@ -2030,8 +2031,8 @@ both_levels_crossscale %>%
   arrange(desc(n))
 
 
-# does dat_full even have subplot rows for this plot/year?
-dat_full %>%
+# does dat_regen even have subplot rows for this plot/year?
+dat_regen %>%
   filter(plot == "26_134") %>%
   distinct(plot, subplot, year, planting, planting_intensity)
 
@@ -2079,7 +2080,7 @@ car::leveneTest(mean_hgt ~ factor(year), data = both_levels_crossscale[level == 
 ##  Share adapted at plot level -----------
 
 # Test share adapted
-func_stems_base_all <- dat_full_func %>%
+func_stems_base_all <- dat_regen_func %>%
   mutate(func_group_drought = replace_na(as.character(func_group_drought), 
                                          "other")) %>%
   group_by(plot, year, time_snc_full_disturbance, func_group_drought) %>%
