@@ -8,7 +8,7 @@
 # Sections:
 #   0. Setup
 #   1. Data ingestion & QC
-#   2. Management data cleaning
+#   2. Management data cleaning, remove matue trees from CZ
 #   3. Derived variables (IV, CWM, spruce, subplot/plot tables)
 #   4. Species composition & beta diversity
 #   5. Models (GAMs)
@@ -1233,7 +1233,7 @@ data.table::fwrite(both_levels_re2, "outData/both_levels_re2_all_countries.csv")
 data.table::fwrite(plot_df_AEF2,    "outData/plot_df_AEF2_all_countries.csv")
 data.table::fwrite(sub_df_AEF,      "outData/sub_df_AEF_all_countries.csv")
 data.table::fwrite(beta_plotyear,   "outData/beta_plotyear_all_countries.csv")
-data.table::fwrite(dat_regen,        "outData/dat_regen_species_all_countries.csv")
+data.table::fwrite(dat_regen,       "outData/dat_regen_species_all_countries.csv")
 
 # mature trees on EU level - 2023
 data.table::fwrite(dat_counts_mature_species23, 'outData/mature_trees_count_EU_23.csv') # export Mature trees position at 2023 data
