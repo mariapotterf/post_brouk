@@ -49,13 +49,10 @@ dat_overlap <- fread('outData/full_table_23_25.csv') # contacis data acros 10 Eu
 dat_counts_mature_species23 <- fread("C:/Users/potterf/OneDrive - CZU v Praze/Dokumenty/2023_PanEuropean/r_paneurop/outData/sub_plots_counts_DBH.csv") |> 
   dplyr::filter(VegType == "Mature" & count > 0)
 
-#fwrite(dat_counts_mature_species23, 'outData/mature_trees_count_EU_23.csv') # export Mature trees position at 2023 data
-
 # and export from 2025 data 
 dat_counts_mature_species25 <- dat_overlap |> 
   dplyr::filter(vegtype == "mature" & n > 0)
 
-#fwrite(dat_counts_mature_species25, 'outData/mature_trees_count_EU_25.csv') # export Mature trees position at 2025 data (only czechia)
 
 # get a mastertable about plots and subplots for 23 data - keep all teh empty plots and subplots
 dat_master23 <- fread("C:/Users/potterf/OneDrive - CZU v Praze/Dokumenty/2023_PanEuropean/r_paneurop/outData/sub_plots_counts_DBH.csv") |> 
@@ -79,22 +76,7 @@ n_plots_total    <- length(unique(dat_master_subplot$plot))
 n_subplots_total <- length(unique(dat_master_subplot$subplot))
 
 cat("Plots:", n_plots_total, "| Subplots:", n_subplots_total, "\n")
-# 
-# # filter only regeneration from both datasets (from 2023 it is aleady meroved, for consistency remove also from 2025 data)-----------------
-# dat_regen <- dat_overlap |> 
-#   filter(vegtype != 'mature')
-# 
-# ## Quick counts
-# total_trees_per_year <- dat_regen %>%
-#   group_by(year) %>%
-#   summarise(total_trees = sum(n, na.rm = TRUE), .groups = "drop")
-# 
-# tree_summary <- dat_regen %>%
-#   group_by(year, seral_stage) %>%
-#   summarise(n_trees_recovery = sum(n, na.rm = TRUE), .groups = "drop") %>%
-#   left_join(total_trees_per_year) %>%
-#   mutate(share = n_trees_recovery / total_trees * 100)
-# 
+
 
 # Get subplot& plot xy
 dat_sub_xy <- dat_master_subplot %>%
@@ -505,7 +487,7 @@ print(crosswalk_all3)
 df_mng_sub_cum_out <- df_mng_sub_cum %>%
   select(-ends_with("_intensity"))
 
-#fwrite(df_mng_sub_cum_out, "outDataShare/Karim_AEF/cleaned/subplot_cumul_management_20260727.csv")
+
 
 
 ### Management intensity summary (for figures) ------------------------------
@@ -1246,187 +1228,24 @@ both_levels_re2 %>%
 
 # 5. Export EU level data ----------------------------------
 
-# ── Save objects for CZ-only analysis ──────────────────────────
-data.table::fwrite(both_levels_re2, "outData/both_levels_re2_all_countries.csv")
+# ── Save objects for EU& CZ analysis input data 
+data.table::fwrite(both_levels_re2, "outData/both_levels_re2_all_countries.csv")  # mature stand is already removed
 data.table::fwrite(plot_df_AEF2,    "outData/plot_df_AEF2_all_countries.csv")
 data.table::fwrite(sub_df_AEF,      "outData/sub_df_AEF_all_countries.csv")
 data.table::fwrite(beta_plotyear,   "outData/beta_plotyear_all_countries.csv")
-data.table::fwrite(dat_regen,   "outData/dat_full_species_all_countries.csv")
+data.table::fwrite(dat_regen,        "outData/dat_regen_species_all_countries.csv")
+
+# mature trees on EU level - 2023
+data.table::fwrite(dat_counts_mature_species23, 'outData/mature_trees_count_EU_23.csv') # export Mature trees position at 2023 data
+data.table::fwrite(dat_counts_mature_species25, 'outData/mature_trees_count_EU_25.csv') # export Mature trees position at 2025 data (only czechia)
+
+# export for Karim - types of management
+data.table::fwrite(df_mng_sub_cum_out, "outDataShare/Karim_AEF/cleaned/subplot_cumul_management_20260727.csv")
 
 #mng_wide
 data.table::fwrite(mng_wide,   "outData/mng_intensity_year_CZ.csv")
 
-# check if i need to stop here?
-
-
-## 6g. Spruce share by management
-p_spruce_shares_boxplot <- ggarrange(
-  both_levels_re2 %>% filter(level == "plot") %>%
-    ggplot(aes(x = factor(planting_intensity), y = spruce_share * 100,
-               fill = factor(planting_intensity))) +
-    geom_boxplot(notch = FALSE, outlier.shape = NA) +
-    geom_jitter(alpha = 0.5, size = 0.5) +
-    stat_compare_means(method = "kruskal.test", label.x = 2,
-                       label.y = 1.05 * max(both_levels_re2$spruce_share * 100, na.rm = TRUE)) +
-    stat_summary(fun = mean, geom = "point", shape = 21, size = 2.5, fill = "red", color = "white") +
-    labs(x = "Planting Intensity\n", y = "Spruce share [%]") +
-    theme_classic2() + theme(legend.position = "none"),
-
-  both_levels_re2 %>% filter(level == "plot") %>%
-    ggplot(aes(x = factor(anti_browsing_intensity), y = spruce_share * 100,
-               fill = factor(anti_browsing_intensity))) +
-    geom_boxplot(notch = FALSE, outlier.shape = NA) +
-    geom_jitter(alpha = 0.5, size = 0.5) +
-    stat_compare_means(method = "kruskal.test", label.x = 2,
-                       label.y = 1.05 * max(both_levels_re2$spruce_share * 100, na.rm = TRUE)) +
-    stat_summary(fun = mean, geom = "point", shape = 21, size = 2.5, fill = "red", color = "white") +
-    labs(x = "Browsing protection\nintensity", y = "Spruce share [%]") +
-    theme_classic2() + theme(legend.position = "none"),
-
-  labels = c("[a]", "[b]"), ncol = 2, align = "v",
-  font.label = list(face = "plain")
-)
-
-## 6h. Height by seral stage x management (heatmap)
-dat_clean <- dat_regen %>%
-  as_tibble() %>%
-  dplyr::filter(!is.na(hgt_est), !is.na(n), n > 0)
-
-height_species_mng_yr <- dat_clean %>%
-  dplyr::group_by(year, species, planting_intensity, anti_browsing_intensity) %>%
-  dplyr::summarise(total_stems          = sum(n, na.rm = TRUE),
-                   mean_height_weighted = weighted.mean(hgt_est, w = n, na.rm = TRUE),
-                   .groups = "drop") %>%
-  dplyr::mutate(seral_group = dplyr::if_else(species %in% earlyspecs_laura, "early", "late"))
-
-height_seral_mng_year <- height_species_mng_yr %>%
-  dplyr::group_by(year, seral_group, planting_intensity, anti_browsing_intensity) %>%
-  dplyr::summarise(mean_h = weighted.mean(mean_height_weighted, w = total_stems, na.rm = TRUE),
-                   stems  = sum(total_stems, na.rm = TRUE),
-                   .groups = "drop") %>%
-  dplyr::filter(stems >= 3)
-
-p_height_seral_mng <- ggplot(height_seral_mng_year,
-       aes(x = planting_intensity, y = anti_browsing_intensity, fill = mean_h)) +
-  geom_tile(color = "grey80") +
-  facet_grid(seral_group ~ year) +
-  scale_fill_viridis_c(limits = c(0, 2.5), option = "E",
-                       direction = -1, end = 0.95, name = "Mean height (m)") +
-  geom_text(aes(label = round(mean_h, 2)), color = "white", size = 2.5, fontface = "bold") +
-  coord_equal() +
-  theme_classic() +
-  labs(x = "Planting intensity", y = "Anti-browsing intensity") +
-  theme(legend.position  = "bottom",
-        strip.background = element_blank(),
-        strip.text       = element_text(face = "bold"))
-
-
-# 7. Tables & export ---------------------------------------------
-
-## 7a. Save figures
-ggsave("outFigsTest/p_species_composition.png",
-       p_species_composition, width = 7, height = 3, dpi = 300)
-
-ggsave("outFigsTest/p_violin.png",
-       p_violin, width = 7, height = 2.5, dpi = 300)
-ggsave("outFigsTest/p_violin.svg",
-       p_violin, width = 7, height = 2.5, dpi = 300)
-
-ggsave("outFigsTest/p_time_scale.png",
-       p_final, width = 6, height = 5, dpi = 300, bg = "white")
-
-ggsave("outFigsTest/p_model_response.png",
-       p_model_response, width = 7, height = 5, dpi = 300)
-
-ggsave("outFigsTest/p_management_intensity_plot_simpler.png",# - this one cuts
-       p_management_intensity_plot_simpler, width = 5, height = 2.1, dpi = 300)
-
-ggsave("outFigsTest/mng_intensity_plot.png",
-       p_management_intensity_plot_simpler, width = 5, height = 2.1, dpi = 300)
-
-ggsave("outFigsTest/p_combined_disturb_fig.png",
-       p_combined_disturb_fig, width = 5, height = 2.5, dpi = 300)
-
-ggsave("outFigsTest/p_combined_management_intens.png",
-       p_combined_management_intens, width = 6, height = 5, dpi = 300)
-
-ggsave("outFigsTest/spruce_share_boxplots.png",
-       p_spruce_shares_boxplot, width = 7, height = 3.2, dpi = 300)
-
-ggsave("outFigsTest/density_plot.png",
-       p_height_seral_mng, width = 6, height = 4, dpi = 300)
-
-## 7b. Model summary table -> Word
-clean_term  <- function(x) x %>%
-  str_replace_all("[:()`,]", "_") %>%
-  str_replace_all("__+", "_") %>%
-  str_remove_all("^_|_$")
-
-p_to_signif <- function(p) case_when(
-  is.na(p)   ~ NA_character_,
-  p <= 0.001 ~ "***",
-  p <= 0.01  ~ "**",
-  p <= 0.05  ~ "*",
-  p <= 0.1   ~ ".",
-  TRUE       ~ "n.s."
-)
-
-format_pval <- function(p) ifelse(is.na(p), NA, formatC(p, format = "f", digits = 3))
-
-extract_gam_summary <- function(model, model_name) {
-  s        <- summary(model)
-  param    <- as.data.frame(s$p.table)
-  pval_col <- grep("Pr\\(>.*\\)", colnames(param), value = TRUE)
-  param    <- rownames_to_column(param, "term")
-
-  intercept_val <- param %>%
-    filter(term == "(Intercept)") %>%
-    pull(Estimate) %>%
-    exp()
-
-  param_clean <- param %>%
-    filter(term != "(Intercept)") %>%
-    select(term, p.value = all_of(pval_col))
-
-  smooth <- if (!is.null(s$s.table)) {
-    as.data.frame(s$s.table) %>%
-      rownames_to_column("term") %>%
-      select(term, p.value = `p-value`)
-  } else {
-    tibble(term = character(), p.value = numeric())
-  }
-
-  all_terms <- bind_rows(param_clean, smooth) %>%
-    mutate(term_clean = clean_term(term),
-           signif     = p_to_signif(p.value),
-           pval_fmt   = format_pval(p.value),
-           model      = model_name)
-
-  model_metrics <- tibble(
-    model              = model_name,
-    response_intercept = intercept_val,
-    r_squared          = s$r.sq,
-    deviance_explained = s$dev.expl,
-    n_samples          = s$n
-  )
-
-  list(pvalues = all_terms, metrics = model_metrics)
-}
-
-results <- map2(fin.models, names(fin.models), extract_gam_summary)
-
-pvals_fmt <- map_dfr(results, "pvalues") %>%
-  select(model, term_clean, pval_fmt) %>%
-  pivot_wider(names_from = term_clean, values_from = pval_fmt, names_prefix = "p_")
-
-metrics_df    <- bind_rows(map(results, "metrics"))
-final_results <- left_join(metrics_df, pvals_fmt, by = "model")
-
-tab_df(final_results,
-       title = "Model Summary Table",
-       file  = "outTable/models_summary_final_results.doc")
-
-## 7c. Spatial export for collaborators -------------------------------------
+## 6. Spatial export for collaborators -------------------------------------
 plot_sf_AEF <- plot_df_AEF %>%
   sf::st_as_sf(coords = c("x", "y"), crs = 3035, remove = FALSE)
 
