@@ -745,8 +745,10 @@ drought_labels <- c(
 
 drought_class_title = "Drought tolerance\nclasses"
 
-drought_cl_levels <- c("Norway_spruce", "less_drought_tolerant",
-                       "intermediate", "more_drought_tolerant",
+drought_cl_levels <- c("Norway_spruce", 
+                       "less_drought_tolerant",
+                       "intermediate", 
+                       "more_drought_tolerant",
                        "no_regeneration")
 
 
@@ -844,8 +846,10 @@ compute_func_shares_v2 <- function(df) {
 }
 
 # ── classify_dom_func for new groups ───────────────────────────────────
-classify_dom_func_v2 <- function(share_spruce, share_drought_sens,
-                                 share_intermediate, share_drought_tol,
+classify_dom_func_v2 <- function(share_spruce, 
+                                 share_drought_sens,
+                                 share_intermediate, 
+                                 share_drought_tol,
                                  total_stems) {
   case_when(
     total_stems == 0 ~ "no_regeneration",
@@ -1120,9 +1124,9 @@ func_bar_data <- func_stems_base_v2 %>%
   filter(!is.na(year)) %>%
   group_by(year) %>%
   summarise(
-    Norway_spruce     = sum(Norway_spruce,     na.rm = TRUE),
-    less_drought_tolerant = sum(less_drought_tolerant, na.rm = TRUE),
-    intermediate      = sum(intermediate,      na.rm = TRUE),
+    Norway_spruce          = sum(Norway_spruce,     na.rm = TRUE),
+    less_drought_tolerant  = sum(less_drought_tolerant, na.rm = TRUE),
+    intermediate           = sum(intermediate,      na.rm = TRUE),
     more_drought_tolerant  = sum(more_drought_tolerant,  na.rm = TRUE),
     .groups = "drop"
   ) %>%
@@ -1349,16 +1353,16 @@ func_bar_data_merged
 
 
 
-#pdf("outFigsCZ/p_fig1_combined_corel.pdf", width = 7, height = 6)
+pdf("outFigsCZ/p_fig1_combined_corel.pdf", width = 7, height = 6)
 print(p_fig1_combined)
-#dev.off()
+dev.off()
 
 
 
-# png("outFigsCZ/p_fig1_combined_corel.png", width = 7, height = 6,
-#     units = 'in', res = 300)
+png("outFigsCZ/p_fig1_combined_corel.png", width = 7, height = 6,
+   units = 'in', res = 300)
 print(p_fig1_combined)
-#dev.off()
+dev.off()
 
 
 ### alternatrive: counts in only 2 classes: climate sensitive and climate adapted -----
