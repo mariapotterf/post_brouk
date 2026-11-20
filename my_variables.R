@@ -316,7 +316,7 @@ species_class <- tibble::tribble(
 
 
 # divide on functionnal groups
-species_functional <- tribble(
+df_species_functional <- tribble(
   ~species, ~func_group,              ~rationale,
   # ── Spontaneous pioneers: low shade tolerance, rarely planted ──────────────
   "besp",   "spontaneous_pioneer",    "light-demanding, wind-dispersed, rarely planted",
