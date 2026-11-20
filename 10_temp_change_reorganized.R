@@ -358,15 +358,15 @@ n_stems_regen_czechia
 
 
 # including mature trees
-n_stems_all_layers_czechia <- dat_overlap %>%
+n_stems_all_layers_czechia <- dat_overlap_mng_upd_cntries %>%
   dplyr::filter(country_name == "Czechia") %>%
   group_by(country_name) %>%
   summarise(n_stems = sum(n, na.rm = TRUE), .groups = "drop")
 n_stems_all_layers_czechia 
-# 5074
+# 5088 - difference is 14 (!) trees 
 
 
-### identify cumulative management type fpor Karim - to correspond to Johanness  --------------------------------------------
+### identify cumulative management type for Karim - to correspond to Johanness  --------------------------------------------
 # Subplot-level cumulative management classification — three schemes
 # for EU level estimation !!!!
 # 
