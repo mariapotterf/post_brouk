@@ -62,9 +62,15 @@ sub_df_cz <- fread("outData/sub_df_AEF_all_countries.csv") %>%
     region       = factor(region)
   )
 
+
+nrow(both_levels_cz)
+nrow(plot_df_cz)
+nrow(sub_df_cz)
+
+
 # data with individual species per subplot and plots each species, the mature trees are already removed 
 # contains ALL plots: overlapping and no overlapping ones
-dat_regen <- fread("outData/dat_regen_species_all_countries.czv") %>%
+dat_regen <- fread("outData/dat_regen_species_all_countries.csv") %>%
   filter(country_name == "Czechia") %>%
   mutate(
     plot      = factor(plot)
@@ -82,17 +88,9 @@ dat_regen <- dat_regen %>%
     )
   ) 
 
-# cap the time since disturbnace values
-dat_overlap <- dat_overlap %>% 
-  mutate(
-    time_since_cap = case_when(
-      time_snc_full_disturbance == 0  ~ 1L,
-      time_snc_full_disturbance == 7  ~ 6L,
-      time_snc_full_disturbance == 11 ~ 6L,
-      time_snc_full_disturbance == 13 ~ 6L,
-      TRUE ~ time_snc_full_disturbance
-    )
-  ) 
+# select only overlapping plots
+dat_overlap <- dat_regen %>%
+  filter(status == "both")
 
 
 # get management values by year - planting is teh most important
@@ -122,11 +120,14 @@ dat_regen %>%
     filter(year == 2025) %>%
     summarise(n_plots_distinct = n_distinct(plot))
   
+  # counts of distincts plots
+  dat_regen %>%
+     summarise(n_plots_distinct = n_distinct(plot_year))
+  
+  dat_regen %>%
+    summarise(n_subplots_distinct = n_distinct(subplot_year))
+  
 
-
-# select only overlapping plots
-dat_overlap <- dat_regen %>%
-  filter(status == "both")
 
 plots_per_year <- dat_overlap %>%
   distinct(plot, year) %>%
@@ -215,7 +216,12 @@ trees_per_year <- dat_regen %>%
     .groups = "drop"
   )
 
-
+# > trees_per_year 
+# # A tibble: 2 × 2
+# year total_stems
+# <int>       <int>
+#   1  2023        2107
+#   2  2025        2967
 
 
 
@@ -554,7 +560,7 @@ p_species_alluvial <-
   )
   
 
-# p_species_alluvial
+p_species_alluvial
 
 
 ### Summary table  -----------------------
@@ -637,8 +643,8 @@ species_table_wide %>%
   align(align = "right", j = 2:8, part = "all") %>%
   align(align = "left",  j = 1,   part = "all") %>%
   hline(i = 11) %>%
-  autofit() #%>%
-#  save_as_docx(path = "outTable/species_table.docx")
+  autofit() %>%
+  save_as_docx(path = "outTable/species_table.docx")
 
 
 
@@ -646,29 +652,29 @@ species_table_wide %>%
 
 
 
-### Drought tolerance classes ------------------------------
+### Drought tolerance classes - only for overlapping plots?? ------------------------------
 
 
 # Recode TSD outliers — applied once, used everywhere
 dat_overlap_recoded <- dat_overlap %>%
-  mutate(
-    time_since_cap = case_when(
-      time_snc_full_disturbance == 0  ~ 1L,
-      time_snc_full_disturbance == 7  ~ 6L,
-      time_snc_full_disturbance == 11 ~ 6L,
-      time_snc_full_disturbance == 13 ~ 6L,
-      TRUE ~ time_snc_full_disturbance
-    )
-  ) %>%
-  left_join(species_functional %>% select(species, func_group), by = "species") %>%
+  # mutate(
+  #   time_since_cap = case_when(
+  #     time_snc_full_disturbance == 0  ~ 1L,
+  #     time_snc_full_disturbance == 7  ~ 6L,
+  #     time_snc_full_disturbance == 11 ~ 6L,
+  #     time_snc_full_disturbance == 13 ~ 6L,
+  #     TRUE ~ time_snc_full_disturbance
+  #   )
+  # ) %>%
+  left_join(df_species_functional %>% select(species, func_group), by = "species") %>%
   mutate(
     n          = if_else(is.na(n), 0L, n),
     func_group = replace_na(func_group, "other")
   )
 
 
-# Get species traits -------------------------
-species_traits <- dat_overlap_recoded %>%
+# Get species traits of overlapping & all plots from regen -------------------------
+species_traits_overlap <- dat_overlap_recoded %>%
   filter(!is.na(species), species != "",
          !is.na(Drought_tolerance)) %>%
   group_by(species) %>%
@@ -680,28 +686,45 @@ species_traits <- dat_overlap_recoded %>%
   ) %>%
   arrange(drought_tol)
 
-# ── Look at the full distribution first ───────────────────────────────────────
-print(species_traits, n = Inf)
-summary(species_traits$drought_tol)
-hist(species_traits$drought_tol, breaks = 15,
+
+species_traits_regen <- dat_regen %>%
+  filter(!is.na(species), species != "",
+         !is.na(Drought_tolerance)) %>%
+  group_by(species) %>%
+  summarise(
+    drought_tol = mean(Drought_tolerance, na.rm = TRUE),
+    shade_tol   = mean(Shade_tolerance,   na.rm = TRUE),
+    #sd_drought  = sd(Drought_tolerance,   na.rm = TRUE),   # should be 0 or NA (trait is constant per species)
+    stems       = sum(n, na.rm = TRUE),
+    n_plots     = n_distinct(plot[!is.na(n) & n > 0]),
+    .groups = "drop"
+  ) %>%
+  arrange(drought_tol)
+
+
+
+# ── Look at the overall distribution first 
+print(species_traits_overlap, n = Inf)
+summary(species_traits_overlap$drought_tol)
+hist(species_traits_overlap$drought_tol, breaks = 15,
      main = "Species drought tolerance (Niinemets)",
      xlab = "Drought tolerance (higher = more tolerant)")
 
-
-# ── Data-driven functional classification using Niinemets drought tolerance ───
-species_functional_v2 <- species_traits %>%
+# !!!
+# ── Data-driven functional classification using Niinemets drought tolerance 
+species_functional_v2 <- species_traits_overlap %>%
   mutate(
     func_group_drought = case_when(
       # Norway spruce gets its own group — pre-disturbance dominant,
       # ecologically distinct regardless of trait value
       species == "piab"        ~ "Norway_spruce",
-      drought_tol < 2.2        ~ "drought_sensitive",   # clear gap before frex
-      drought_tol > 3.3        ~ "drought_tolerant",    # clear gap after osca
+      drought_tol < 2.2        ~ "less_drought_tolerant",   # clear gap before frex
+      drought_tol > 3.3        ~ "more_drought_tolerant",    # clear gap after osca
       TRUE                     ~ "intermediate"
     ),
     func_group_drought = factor(func_group_drought,
-                                levels = c("Norway_spruce", "drought_sensitive",
-                                           "intermediate", "drought_tolerant"))
+                                levels = c("Norway_spruce", "less_drought_tolerant",
+                                           "intermediate", "more_drought_tolerant"))
   )
 
 # verify — check the assignment
@@ -712,46 +735,46 @@ species_functional_v2 %>%
 
 # ── Update the trait space plot with group colors ─────────────────────────────
 drought_labels <- c(
-  "Norway_spruce"     = "Norway spruce",
-  "drought_sensitive" = "Drought-sensitive",
-  "intermediate"      = "Intermediate",
-  "drought_tolerant"  = "Drought-tolerant",
-  "no_regeneration"   = "No regeneration"
+  "Norway_spruce"          = "Norway spruce",
+  "less_drought_tolerant"  = "Less drought tolerant",
+  "intermediate"           = "Intermediate",
+  "more_drought_tolerant"  = "More drought tolerant",
+  "no_regeneration"        = "No regeneration"
 )
 
 
 drought_class_title = "Drought tolerance\nclasses"
 
-drought_cl_levels <- c("Norway_spruce", "drought_sensitive",
-                       "intermediate", "drought_tolerant",
+drought_cl_levels <- c("Norway_spruce", "less_drought_tolerant",
+                       "intermediate", "more_drought_tolerant",
                        "no_regeneration")
 
 
 
 
 drought_colors <- c(
-  "Norway_spruce"     = "#1a5c1a",   # dark forest green — matches piab in species fig
-  "drought_sensitive" = "#a8d9a8",   # light green — low drought, shade-tolerant
-  "intermediate"      = "#f4a736",   # warm orange — matches mid species colors
-  "drought_tolerant"  = "#d73027"#,   # deep red — high drought, matches Abies/rare end
- # "no_regeneration"   = "#d9d9d9"    # grey
+  "Norway_spruce"          = "#1a5c1a",   # dark forest green — matches piab in species fig
+  "less_drought_tolerant"  = "#a8d9a8",   # light green — low drought, shade-tolerant
+  "intermediate"           = "#f4a736",   # warm orange — matches mid species colors
+  "more_drought_tolerant"  = "#d73027"#,   # deep red — high drought, matches Abies/rare end
+ # "no_regeneration"       = "#d9d9d9"    # grey
 )
 
 drought_colors3 <- c(
- # "Norway_spruce"     = "#1a5c1a",   # dark forest green — matches piab in species fig
-  "drought_sensitive" = "#1a5c1a",   # light green — low drought, shade-tolerant
-  "intermediate"      = "#f4a736",   # warm orange — matches mid species colors
-  "drought_tolerant"  = "#d73027"#,   # deep red — high drought, matches Abies/rare end
+ # "Norway_spruce"         = "#1a5c1a",   # dark forest green — matches piab in species fig
+  "less_drought_tolerant"  = "#1a5c1a",   # light green — low drought, shade-tolerant
+  "intermediate"           = "#f4a736",   # warm orange — matches mid species colors
+  "more_drought_tolerant"  = "#d73027"#,   # deep red — high drought, matches Abies/rare end
   # "no_regeneration"   = "#d9d9d9"    # grey
 )
 
 
 drought_colors_grey <- c(
-  "Norway_spruce"     = "#1a5c1a",   # dark forest green — matches piab in species fig
-  "drought_sensitive" = "#a8d9a8",   # light green — low drought, shade-tolerant
-  "intermediate"      = "#f4a736",   # warm orange — matches mid species colors
-  "drought_tolerant"  = "#d73027",   # deep red — high drought, matches Abies/rare end
-  "no_regeneration"   = "#d9d9d9"    # grey
+  "Norway_spruce"           = "#1a5c1a",   # dark forest green — matches piab in species fig
+  "less_drought_tolerant"   = "#a8d9a8",   # light green — low drought, shade-tolerant
+  "intermediate"            = "#f4a736",   # warm orange — matches mid species colors
+  "more_drought_tolerant"   = "#d73027",   # deep red — high drought, matches Abies/rare end
+  "no_regeneration"         = "#d9d9d9"    # grey
 )
 
 
@@ -810,13 +833,13 @@ hist(dat_overlap_recoded2$Drought_tolerance)
 compute_func_shares_v2 <- function(df) {
   df %>%
     mutate(
-      total_stems          = Norway_spruce + drought_sensitive + 
-        intermediate + drought_tolerant + other,
-      share_spruce         = if_else(total_stems == 0, 0, Norway_spruce    / total_stems),
-      share_drought_sens   = if_else(total_stems == 0, 0, drought_sensitive / total_stems),
-      share_intermediate   = if_else(total_stems == 0, 0, intermediate      / total_stems),
-      share_drought_tol    = if_else(total_stems == 0, 0, drought_tolerant  / total_stems),
-      share_other          = if_else(total_stems == 0, 0, other             / total_stems)
+      total_stems          = Norway_spruce + less_drought_tolerant + 
+        intermediate + more_drought_tolerant + other,
+      share_spruce         = if_else(total_stems == 0, 0, Norway_spruce          / total_stems),
+      share_drought_sens   = if_else(total_stems == 0, 0, less_drought_tolerant  / total_stems),
+      share_intermediate   = if_else(total_stems == 0, 0, intermediate           / total_stems),
+      share_drought_tol    = if_else(total_stems == 0, 0, more_drought_tolerant  / total_stems),
+      share_other          = if_else(total_stems == 0, 0, other                  / total_stems)
     )
 }
 
@@ -829,10 +852,10 @@ classify_dom_func_v2 <- function(share_spruce, share_drought_sens,
     share_spruce       == pmax(share_spruce, share_drought_sens,
                                share_intermediate, share_drought_tol) ~ "Norway_spruce",
     share_drought_tol  == pmax(share_spruce, share_drought_sens,
-                               share_intermediate, share_drought_tol) ~ "drought_tolerant",
+                               share_intermediate, share_drought_tol) ~ "more_drought_tolerant",
     share_intermediate == pmax(share_spruce, share_drought_sens,
                                share_intermediate, share_drought_tol) ~ "intermediate",
-    TRUE                                                               ~ "drought_sensitive"
+    TRUE                                                               ~ "less_drought_tolerant"
   )
 }
 
@@ -1073,7 +1096,7 @@ p_alluvial_species_drought <- ggarrange(p_species_alluvial,
 
 # verify levels are codes not display labels
 levels(func_alluvial_v2$func_2023)
-# should show: "Norway_spruce" "drought_sensitive" "intermediate" "drought_tolerant" "no_regeneration"
+# should show: "Norway_spruce" "less_drought_tolerant" "intermediate" "more_drought_tolerant" "no_regeneration"
 
 
 p_combined_func <- (p_func_alluvial_v2 | p_bar_TSD) +
@@ -1098,15 +1121,15 @@ func_bar_data <- func_stems_base_v2 %>%
   group_by(year) %>%
   summarise(
     Norway_spruce     = sum(Norway_spruce,     na.rm = TRUE),
-    drought_sensitive = sum(drought_sensitive, na.rm = TRUE),
+    less_drought_tolerant = sum(less_drought_tolerant, na.rm = TRUE),
     intermediate      = sum(intermediate,      na.rm = TRUE),
-    drought_tolerant  = sum(drought_tolerant,  na.rm = TRUE),
+    more_drought_tolerant  = sum(more_drought_tolerant,  na.rm = TRUE),
     .groups = "drop"
   ) %>%
-  mutate(total = rowSums(across(c(Norway_spruce, drought_sensitive,
-                                  intermediate, drought_tolerant))),
-         across(c(Norway_spruce, drought_sensitive,
-                  intermediate, drought_tolerant),
+  mutate(total = rowSums(across(c(Norway_spruce, less_drought_tolerant,
+                                  intermediate, more_drought_tolerant))),
+         across(c(Norway_spruce, less_drought_tolerant,
+                  intermediate, more_drought_tolerant),
                 ~ .x / total * 100)) %>%
   select(-total) %>%
   pivot_longer(cols      = -year,
@@ -1131,14 +1154,14 @@ func_bar_data <- func_bar_data %>%
 
 func_bar_data_merged <- func_bar_data %>%
   mutate(group = case_when(
-    as.character(group) == "Norway_spruce" ~ "drought_sensitive",
+    as.character(group) == "Norway_spruce" ~ "less_drought_tolerant",
     TRUE ~ as.character(group)
   )) %>%
   group_by(year, group) %>%
   summarise(share = sum(share), .groups = "drop") %>%
-  mutate(group = factor(group, levels = c("drought_tolerant", 
+  mutate(group = factor(group, levels = c("more_drought_tolerant", 
                                           "intermediate", 
-                                          "drought_sensitive")))
+                                          "less_drought_tolerant")))
 
 
 p_bar_drought <- ggplot(func_bar_data_merged,
@@ -1167,9 +1190,9 @@ p_bar_drought <- ggplot(func_bar_data_merged,
   #   labels = drought_labels
   # ) +
   scale_y_discrete(labels = c(
-    "drought_sensitive" = "Drought-sensitive\n(incl. Norway spruce)",
-    "intermediate"      = "Intermediate",
-    "drought_tolerant"  = "Drought-tolerant"
+    "less_drought_tolerant"  = "Less drought-tolerant\n(incl. Norway spruce)",
+    "intermediate"           = "Intermediate",
+    "more_drought_tolerant"  = "More drought-tolerant"
   )) +
   labs(x = "Stem share [%]", y = NULL) +
   theme_paper() +
@@ -1185,36 +1208,36 @@ p_bar_drought
 # p occurence drought
 func_occurence_data <- func_stems_base_v2 %>%
   filter(!is.na(year)) %>%
-  # merge Norway spruce into drought_sensitive before occurrence flags
-  mutate(drought_sensitive = drought_sensitive + Norway_spruce) %>%
+  # merge Norway spruce into less_drought_tolerant before occurrence flags
+  mutate(less_drought_tolerant = less_drought_tolerant + Norway_spruce) %>%
   
   mutate(
   #  Norway_spruce_occ     = Norway_spruce     > 0,
-    drought_sensitive_occ = drought_sensitive > 0,
+    less_drought_tolerant_occ = less_drought_tolerant > 0,
     intermediate_occ      = intermediate      > 0,
-    drought_tolerant_occ  = drought_tolerant  > 0
+    more_drought_tolerant_occ  = more_drought_tolerant  > 0
   ) %>%
   group_by(year) %>%
   summarise(
    # Norway_spruce     = sum(Norway_spruce_occ,     na.rm = TRUE),
-    drought_sensitive = sum(drought_sensitive_occ, na.rm = TRUE),
+    less_drought_tolerant = sum(less_drought_tolerant_occ, na.rm = TRUE),
     intermediate      = sum(intermediate_occ,      na.rm = TRUE),
-    drought_tolerant  = sum(drought_tolerant_occ,  na.rm = TRUE),
+    more_drought_tolerant  = sum(more_drought_tolerant_occ,  na.rm = TRUE),
     n_plots           = n(),
     .groups = "drop"
   ) %>%
   mutate(across(c(#Norway_spruce, 
-                  drought_sensitive,
-                  intermediate, drought_tolerant),
+                  less_drought_tolerant,
+                  intermediate, more_drought_tolerant),
                 ~ .x / n_plots * 100)) %>%
   select(-n_plots) %>%
   pivot_longer(cols     = -year,
                names_to  = "group",
                values_to = "share_plots") %>%
   mutate(
-    group = factor(group, levels = c("drought_tolerant",
+    group = factor(group, levels = c("more_drought_tolerant",
                                      "intermediate",
-                                     "drought_sensitive")),
+                                     "less_drought_tolerant")),
     year  = factor(year)
   )
 
@@ -1250,9 +1273,9 @@ p_occurence_drought <- ggplot(func_occurence_data,
   ) +
   #scale_y_discrete(labels = drought_labels) +
   scale_y_discrete(labels = c(
-    "drought_sensitive" = "Drought-sensitive\n(incl. Norway spruce)",
+    "less_drought_tolerant" = "Less drought-tolerant\n(incl. Norway spruce)",
     "intermediate"      = "Intermediate",
-    "drought_tolerant"  = "Drought-tolerant"
+    "more_drought_tolerant"  = "More drought-tolerant"
   )) +
   labs(x = "Plot share [%]", y = NULL) +
   theme_paper() +
@@ -1354,8 +1377,8 @@ climate_colors2 <- c(
 )
 
 climate_labels2 <- c(
-  "climate_sensitive" = "Climate-sensitive\n(incl. Norway spruce)",
-  "climate_adapted"   = "Climate-adapted\n(intermediate + drought-tolerant)"
+  "climate_sensitive" = "Less drought-tolerant\n(incl. Norway spruce)",
+  "climate_adapted"   = "More drought-tolerant\n"
 )
 
 # ── [c] Stem share, binary ─────────────────────────────────────────────────
@@ -1404,13 +1427,13 @@ p_bar_drought2
 # ── [d] Plot occurrence, binary (not mutually exclusive) ──────────────────
 func_occurence_data2 <- func_stems_base_v2 %>%
   mutate(year_f = as.character(year)) |> 
-  select(plot, year_f, Norway_spruce, drought_sensitive, intermediate, drought_tolerant) %>%
-  pivot_longer(cols = c(Norway_spruce, drought_sensitive, intermediate, drought_tolerant),
+  select(plot, year_f, Norway_spruce, less_drought_tolerant, intermediate, more_drought_tolerant) %>%
+  pivot_longer(cols = c(Norway_spruce, less_drought_tolerant, intermediate, more_drought_tolerant),
                names_to = "func_group_drought", values_to = "stems") %>%
   mutate(
     group = case_when(
-      func_group_drought %in% c("Norway_spruce", "drought_sensitive") ~ "climate_sensitive",
-      func_group_drought %in% c("intermediate", "drought_tolerant")   ~ "climate_adapted"
+      func_group_drought %in% c("Norway_spruce", "less_drought_tolerant") ~ "climate_sensitive",
+      func_group_drought %in% c("intermediate", "more_drought_tolerant")   ~ "climate_adapted"
     ),
     present = stems > 0
   ) %>%
