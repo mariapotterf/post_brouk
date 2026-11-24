@@ -2,7 +2,8 @@
 
 #             Temporal change in species composition 
 #                          and structure
-
+#                     add pre-disturbnace history (stem density and species composition from manually derigved tree identification)
+#
 
 # read data: 
 # - field data from 2023 & 2025
@@ -752,7 +753,6 @@ dat_subplot_mng2 <- dat_subplot_mng %>%
 
 
 ### export important tables ---------------
-
 fwrite(dat_subplot_mng2, 'outData/full_table_23_25.csv')          # data covering all countries, including CZ in 2023
 
 # subplots history - 2025 - for Miso
