@@ -1228,8 +1228,6 @@ mean(vegdist(mat, "bray"))                               # 0.717
 
 
 
-
-
 # calculate n community level
 comm_sub <- dat_regen %>%
   mutate(n = coalesce(n, 0L)) %>%
@@ -1280,8 +1278,33 @@ beta_plotyear <- comm_sub %>%
 ## Add beta to AEF table
 eps <- 0.001
 plot_df_AEF2 <- plot_df_AEF %>%
-  left_join(beta_plotyear) %>%
-  mutate(beta_jaccard_mean = pmin(pmax(beta_jaccard_mean, eps), 1 - eps))
+  left_join(beta_plotyear, by = c("plot", "year")) %>%
+  mutate(across(c(beta_jaccard_mean, beta_bray_mean),
+                ~ pmin(pmax(.x, eps), 1 - eps)))
+
+
+# how do different betas behave over space?
+df_beta <- plot_df_AEF2 %>%
+  filter(!is.na(beta_jaccard_mean), !is.na(beta_bray_mean))
+
+rho <- cor(df_beta$beta_jaccard_mean, df_beta$beta_bray_mean, method = "spearman")
+
+p_beta_xy <- ggplot(df_beta, aes(x = beta_jaccard_mean, y = beta_bray_mean)) +
+  geom_abline(slope = 1, intercept = 0, linetype = 2, colour = "grey50") +   # 1:1 line
+  geom_point(aes(colour = factor(n_subplots_nonempty)),
+             alpha = 0.6, size = 1.8, position = position_jitter(width = 0.01, height = 0.01)) +
+  geom_smooth(method = "loess", se = FALSE, colour = "black", linewidth = 0.6) +
+  scale_colour_viridis_d(name = "Non-empty\nsubplots") +
+  coord_equal(xlim = c(0, 1), ylim = c(0, 1)) +
+  annotate("text", x = 0.02, y = 0.98, hjust = 0, vjust = 1,
+           label = sprintf("Spearman rho = %.2f\nn = %d", rho, nrow(df_beta))) +
+  labs(x = "Jaccard dissimilarity (species identity)",
+       y = "Bray-Curtis dissimilarity (identity + abundance)") +
+  theme_classic(base_size = 11)
+
+p_beta_xy
+
+
 
 ## Spearman correlations (quick checks)
 cor.test(plot_df_AEF2$time_snc_full_disturbance, plot_df_AEF2$beta_jaccard_mean, method = "spearman")
