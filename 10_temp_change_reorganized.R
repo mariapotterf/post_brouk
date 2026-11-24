@@ -75,6 +75,11 @@ table(dat_master_subplot$status)
 n_plots_total    <- length(unique(dat_master_subplot$plot))
 n_subplots_total <- length(unique(dat_master_subplot$subplot))
 
+
+n_plots_total
+n_subplots_total
+
+
 cat("Plots:", n_plots_total, "| Subplots:", n_subplots_total, "\n")
 
 
@@ -336,7 +341,7 @@ n_stems_regen_czechia <- dat_regen %>%
   group_by(country_name) %>%
   summarise(n_stems = sum(n, na.rm = TRUE), .groups = "drop")
 n_stems_regen_czechia 
-# 5074
+# 5074 -> 5090 after including 26_134
 
 
 # including mature trees
@@ -345,7 +350,7 @@ n_stems_all_layers_czechia <- dat_overlap_mng_upd_cntries %>%
   group_by(country_name) %>%
   summarise(n_stems = sum(n, na.rm = TRUE), .groups = "drop")
 n_stems_all_layers_czechia 
-# 5088 - difference is 14 (!) trees 
+# 5088 - difference is 29 (!) trees 
 
 
 ### identify cumulative management type for Karim - to correspond to Johanness  --------------------------------------------
@@ -490,7 +495,7 @@ df_mng_sub_cum_out <- df_mng_sub_cum %>%
 
 
 
-### Management intensity summary (for figures) ------------------------------
+### Management intensity summary (for figures, EU + CZK level) ------------------------------
 df_master_mng_intensity <- dat_regen %>%
   distinct(plot, country_name,
            year,
@@ -621,7 +626,7 @@ p_manag_intensity_EU_CZ <- ggplot(plot_manag_intensity,
 p_manag_intensity_EU_CZ
 
 #ggsave("outFigs/mng_intensity_all_countries.png", p_manag_intensity_EU_CZ,
- #      width = 7, height = 6, dpi = 300, bg = 'white')
+#       width = 7, height = 5, dpi = 300, bg = 'white')
 
 
 # management per country 
@@ -688,7 +693,7 @@ p_manag_intensity_country <- ggplot(
 
 p_manag_intensity_country
 
-# ggsave("outFigs/mng_intensity_by_country_EU_CZ.png", p_manag_intensity_country,
+#ggsave("outFigs/mng_intensity_by_country_EU_CZ.png", p_manag_intensity_country,
 #        width = 13, height = 6, dpi = 300)
 
 
@@ -838,7 +843,7 @@ field_sub_summ <- dat_regen %>%
   left_join(cwm_subplot)
 
 # is this step needed?
-nrow(field_sub_summ) # 5460
+nrow(field_sub_summ) # 5460 - > 5480
 
 #field_sub_summ_cleaned <- field_sub_summ %>%
 #  group_by(plot, subplot, year) %>%
@@ -850,6 +855,7 @@ plot_metrics_pooled <- dat_regen %>%
   mutate(n = coalesce(n, 0L)) %>%
   group_by(plot, year) %>%
   summarise(
+    n_subplots_plot = n_distinct(subplot),     # account that i can have 4 or 5 subplots per plot ()
     stems_total       = sum(n, na.rm = TRUE),
     sp_richness       = if (stems_total > 0) n_distinct(species[n > 0]) else 0,
     shannon_sp        = if (stems_total > 0) vegan::diversity(tapply(n, species, sum), index = "shannon") else 0,  # <- changed
@@ -921,10 +927,17 @@ sub_df <- #field_sub_summ_cleaned %>%
 
 plot_df <- plot_metrics_pooled %>%
   transmute(
-    ID      = plot, plot_id = plot, year, level = "plot",
-    dens_m2 = stems_total / area_plot_m2,
-    cv_hgt, mean_hgt, sp_richness, shannon_sp, evenness_sp,
-    effective_numbers, w = stems_total
+    ID      = plot, 
+    plot_id = plot, year, 
+    level = "plot",
+    dens_m2 = stems_total / (n_subplots_plot * 4),   # number of subplots per plot + 4 m2
+    cv_hgt, 
+    mean_hgt, 
+    sp_richness, 
+    shannon_sp, 
+    evenness_sp,
+    effective_numbers, 
+    w = stems_total
   ) %>%
   mutate(dens_ha  = dens_m2 * 10000,
          mean_hgt = replace_na(mean_hgt, 0)) %>%
@@ -1008,7 +1021,7 @@ both_levels_re2 %>%
 # n n_plots
 # <int>   <int>
 #   1     1      83
-# 2     2     125
+# 2     2     126
 
 
 # plots and subplots per year in Czechia
