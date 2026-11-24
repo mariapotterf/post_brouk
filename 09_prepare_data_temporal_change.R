@@ -58,12 +58,52 @@ traits_full<- traits_full %>%
 dat23_subplot    <- data.table::fread("outData/subplot_full_2023_allcountries.csv")   # subplot-level table
 dat23_sf         <- sf::st_read("outData/sf_context_2023_allcountries.gpkg")          # subplot spatial data
 
+# some mature trees data have n = NA, but they have filed in species and DBH class -?> replace n = NA by n = 1; this is on 4% of wows ( less subplots)
+# before - check
+dat23_subplot[!is.na(species) & nzchar(species) & !is.na(dbh) & nzchar(dbh) & is.na(n), .N]   # 192
+
+# replace n = NA with n = 1 where species and dbh are filled - sems to be corrected for data used for iLand
+dat23_subplot <- dat23_subplot[!is.na(species) & nzchar(species) &
+                !is.na(dbh) & nzchar(dbh) & is.na(n),
+              n := 1L]
+
+# after: should be 0
+dat23_subplot[!is.na(species) & nzchar(species) & !is.na(dbh) & nzchar(dbh) & is.na(n), .N] # 0
+
+
 # Select and rename
 dat23_sf_min <- dat23_sf %>%
   dplyr::select(subplot = ID, plot = cluster)
 
 crs(dat23_sf_min)
 
+
+dat23_subplot |>
+  dplyr::filter(cluster == "26_134") |>
+  tibble::as_tibble() |>
+  #View()
+  print(n = Inf, width = Inf)   # width = Inf shows all columns instead of wrapping
+
+dat23_subplot |>
+  dplyr::filter(ID == "11_11_106_2") |>
+  tibble::as_tibble() |>
+  select(ID, cluster, vegtype,species,  n, hgt, dbh) |> 
+  head()
+ # View()
+  #print(n = Inf, width = Inf)   # width = Inf shows all columns instead of wrapping
+
+
+# how often does this happens? - that i have mature tree present, but it is recorded as n is NA, while i have species and dbh filled?
+
+dat23_subplot[!is.na(species) & nzchar(species) &
+                !is.na(dbh) & nzchar(dbh) & is.na(n)]
+
+
+#11_11_106_2
+
+dat23_subplot[cluster == "15_104"]
+
+dat23_subplot %>% filter(vegtype == "mature", is.na(n), nzchar(dbh)) %>% count(cluster, ID, species, dbh)
 
 ## read data from 2025 ---------------- EPSG: EPSG:4326 - WGS 84
 dat25_subplot    <- data.table::fread("outData/subplot_full_2025.csv")   # subplot-level table
@@ -162,7 +202,7 @@ dat_DW <- dat_DW %>%
   mutate(country_name = case_when(
     country == 11 ~ "DE",  # Germany
     country == 12 ~ "PL",  # Poland
-    country == 13 ~ "CZ",  # Czech Republic
+    country == 13 ~ "CZ",  # Czechia
     country == 14 ~ "AT",  # Austria
     country == 15 ~ "SK",  # Slovakia
     country == 16 ~ "SI",  # Slovenia
@@ -339,15 +379,17 @@ dat25_subplot_sub <- dat25_expanded %>%
   select(all_of(target_cols))
 
 #  remove the erroneous subplots, if i have 6 subplots in cluster: 
+# visually selected which ones were duplicated
 
 # plots to check :
 # 15_102 ???  - kept 6
+# 15_104 - remove, has only 1 subplot
 # 15_124
 # 15_145
 # 26_101
 # 26_142
 # --- 2025: 
-# 48 - 6 -> remove 375_T2_AH_20250827
+# 48  - 6 -> remove 375_T2_AH_20250827
 # 117 - 6 -> 306_T3_JL_20250717
 # 125 - 6 -> 424_T4_TP_20250827            
 # 147 - 6 -> 539_T4_TP_20250827            
@@ -364,20 +406,36 @@ dat25_subplot_sub <- dat25_expanded %>%
 
 # bind field data from both years:
 dat_subplots <- bind_rows(dat23_subplot_sub, dat25_subplot_sub)
+nrow(dat_subplots)
+# chcek why they awere bad? - 15_104 had only 1 subplot -> remove, keep 26_134 (was colected in 23 and 25, but only 4 subplots in 2023)
+
+dat_subplots |> 
+  dplyr::filter(plot %in% bad_plots) |> 
+  dplyr::filter(n >0)
 
 
+# selected visually - we had 6 subplots and some were overlapping/were not completed -> remove
 bad_subplots <- c("306_T3_JL_20250717",
                   "424_T4_TP_20250827", 
                   "539_T4_TP_20250827",
                   "644_T4_TP_20250827",
                   "741_T4_TP_20250827",
-                  "13_15_102_5","13_15_124_2",
-                  "13_15_145_4","13_26_101_2","13_26_142_1") 
+                  "13_15_102_5",
+                  "13_15_124_2",
+                  "13_15_145_4",
+                  "13_26_101_2",
+                  "13_26_142_1") 
 
 dat_subplots <- dat_subplots[!(subplot %in% bad_subplots)]
 
+
+
+
+
 # remove whole plots (robust to numeric/character mix)
-bad_plots <- c("15_104", "26_134")
+bad_plots <- c("15_104"#, # has only 1 subplots, hence remove 
+               #"26_134"
+               )
 
 dat_subplots <- dat_subplots %>%
   dplyr::filter(!as.character(plot) %in% bad_plots)
@@ -388,10 +446,24 @@ n_subplots <- dat_subplots %>%
   count(plot, name = "n_subplots") #%>%
 #arrange(plot)
 
-# combine years 2023 and 2025
+# 5 plots that have 4 subplots in total 
+
+# only 5 subplots
+# combine years 2023 and 2025, keep ones that have 4 or 5 subplots
+dat_subplots_5 <- dat_subplots %>% 
+  left_join(n_subplots) %>% 
+  dplyr::filter(n_subplots == 5)  # select plots that have only 5 subplots
+
+
+dat_subplots_4_5 <- dat_subplots %>% 
+  left_join(n_subplots) %>% 
+  dplyr::filter(n_subplots %in% 4:5)  # select plots that have also 4 subplots - 
+
+
+# combine years 2023 and 2025, keep ones that have 4 or 5 subplots
 dat_subplots <- dat_subplots %>% 
   left_join(n_subplots) %>% 
-  dplyr::filter(n_subplots == 5)
+  dplyr::filter(n_subplots %in% 4:5)  # select plots that have also 4 subplots - 
 
 
 ## Tree-based pre-disturbance history (vector layers) ------------------------
