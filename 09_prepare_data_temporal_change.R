@@ -97,8 +97,7 @@ dat23_subplot |>
 # how often does this happens? - that i have mature tree present, but it is recorded as n is NA, while i have species and dbh filled?
 
 dat23_subplot[!is.na(species) & nzchar(species) &
-                !is.na(dbh) & nzchar(dbh) & is.na(n)]
-
+                !is.na(dbh) & nzchar(dbh) & is.na(n)] # in 100 records!!! 
 
 #11_11_106_2
 
@@ -112,11 +111,22 @@ dat25_sf         <- sf::st_read("outData/subplot_with_clusters_2025.gpkg")      
 
 # Select and rename
 dat25_sf_min <- dat25_sf %>%
-  dplyr::select(plot_key, cluster,plot_id)
+  dplyr::select(plot_key, cluster, plot_id)
 
 crs(dat25_sf_min)
 
 length(unique(dat25_subplot$plot_key))  # 1009
+
+# CHECK first: mature (or any) rows with a DBH class but no count
+dat25_subplot[!is.na(dbh) & nzchar(as.character(dbh)) & is.na(count), .N, by = VegType]
+
+# FIX: a recorded DBH class means at least one tree
+dat25_subplot <- dat25_subplot[!is.na(dbh) & nzchar(as.character(dbh)) & is.na(count), count := 1L]
+
+# CHECK again: should be 0
+dat25_subplot[!is.na(dbh) & nzchar(as.character(dbh)) & is.na(count), .N]
+
+
 
 ### unify reference system: to 3035 ----------------------------------------------
 # sanity: see EPSG codes (NA means it’s not explicitly tagged with an EPSG)
