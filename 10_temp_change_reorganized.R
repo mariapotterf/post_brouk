@@ -1,6 +1,6 @@
 # ============================================================
 # Forest regeneration: capture temporal change in Czechia 
-#         between 2023-2025
+#             between 2023-2025
 # ============================================================
 
 
@@ -8,13 +8,12 @@
 
 # Sections:
 #   0. Setup
-#   1. Data ingestion & QC
+#   1. Data ingestion
 #   2. Management data cleaning, remove matue trees from CZ
-#   3. Derived variables (IV, CWM, spruce, subplot/plot tables)
+#   3. Derived variables (IV, CWM, spruce, subplot/plot tables) - per subplot and plot
 #   4. Species composition & beta diversity
-#   5. Models (GAMs)
-#   6. Figures
-#   7. Tables & export
+#   5. Figures - EU + CZK
+#   6. Export tables on subplot and plot scales for CZK
 # ============================================================
 
 
@@ -44,6 +43,7 @@ source('my_variables.R')
 
 # 1. Data ingestion & QC -----------------------------------------
 # data is on subplot level, on individual species and 3 vertical layers
+# mature trees are removed from EU data, present only in CZK data in 2025 -> need to be removed
 dat_overlap <- fread('outData/full_table_23_25.csv') # contacis data acros 10 Eu countries, CZ is collected 2x times
 
 # mature trees were already removed from2023 estimation - can be useful for some other metrics? look them up again just to keep the databases
@@ -694,8 +694,8 @@ p_manag_intensity_country <- ggplot(
 
 p_manag_intensity_country
 
-#ggsave("outFigs/mng_intensity_by_country_EU_CZ.png", p_manag_intensity_country,
-#        width = 13, height = 6, dpi = 300)
+ggsave("outFigs/mng_intensity_by_country_EU_CZ.png", p_manag_intensity_country,
+        width = 13, height = 6, dpi = 300)
 
 
 # 3. Derived variables -------------------------------------------
@@ -756,56 +756,85 @@ iv_leaf_sub_wide <- iv_leaf_sub %>%
 wvar <- "n"   # weight by stem counts; alternatives: "basal_area_cm2" or "hgt_est"
 
 cwm_subplot <- dat_regen %>%
-  mutate(w = wfun(.data[[wvar]])) %>%
-  filter(w > 0) %>%
+  filter(!is.na(n), n >= 1, species != "ots1") %>%
+  #mutate(w = wfun(.data[[wvar]])) %>%
+  #filter(w > 0) %>%
   group_by(plot, subplot, year, time_snc_full_disturbance) %>%
   summarise(
-    stems_with_traits = sum(w[!is.na(Shade_tolerance) & !is.na(Drought_tolerance)], na.rm = TRUE),
-    stems_total       = sum(w, na.rm = TRUE),
-    CWM_shade   = ifelse(stems_with_traits > 0,
-                         sum(w * Shade_tolerance,  na.rm = TRUE) / stems_with_traits, NA_real_),
-    CWM_drought = ifelse(stems_with_traits > 0,
-                         sum(w * Drought_tolerance, na.rm = TRUE) / stems_with_traits, NA_real_),
-    trait_coverage = stems_with_traits / pmax(stems_total, 1e-9),
+    #stems_with_traits = sum(w[!is.na(Shade_tolerance) & !is.na(Drought_tolerance)], na.rm = TRUE),
+    #stems_total       = sum(w, na.rm = TRUE),
+    CWM_shade   = weighted.mean(Shade_tolerance,   n, na.rm = TRUE),
+    CWM_drought = weighted.mean(Drought_tolerance, n, na.rm = TRUE),
+    
+    # CWM_shade   = ifelse(stems_with_traits > 0,
+    #                      sum(w * Shade_tolerance,  na.rm = TRUE) / stems_with_traits, NA_real_),
+    # CWM_drought = ifelse(stems_with_traits > 0,
+    #                      sum(w * Drought_tolerance, na.rm = TRUE) / stems_with_traits, NA_real_),
+    # trait_coverage = stems_with_traits / pmax(stems_total, 1e-9),
     .groups = "drop"
   ) %>%
-  select(-stems_total, -stems_with_traits, -trait_coverage)
+  mutate(across(c(CWM_shade, CWM_drought), ~ ifelse(is.nan(.x), NA_real_, .x)))
 
 cwm_plot <- dat_regen %>%
-  filter(species != "ots1") %>%
-  mutate(w = wfun(.data[[wvar]])) %>%
-  filter(w > 0) %>%
+  filter(!is.na(n), n >= 1, species != "ots1") %>%
   group_by(plot, year, time_snc_full_disturbance) %>%
   summarise(
-    stems_with_traits = sum(w[!is.na(Shade_tolerance) & !is.na(Drought_tolerance)], na.rm = TRUE),
-    stems_total       = sum(w, na.rm = TRUE),
-    CWM_shade   = ifelse(stems_with_traits > 0,
-                         sum(w * Shade_tolerance,  na.rm = TRUE) / stems_with_traits, NA_real_),
-    CWM_drought = ifelse(stems_with_traits > 0,
-                         sum(w * Drought_tolerance, na.rm = TRUE) / stems_with_traits, NA_real_),
-    trait_coverage = stems_with_traits / pmax(stems_total, 1e-9),
+    CWM_shade   = weighted.mean(Shade_tolerance,   n, na.rm = TRUE),
+    CWM_drought = weighted.mean(Drought_tolerance, n, na.rm = TRUE),
     .groups = "drop"
   ) %>%
-  select(-stems_total, -stems_with_traits, -trait_coverage)
+  mutate(across(c(CWM_shade, CWM_drought), ~ ifelse(is.nan(.x), NA_real_, .x)))
+
 
 ## 3c. Spruce share
+# spruce_share_plot <- dat_regen %>%
+#   filter(!is.na(n)) %>%
+#   group_by(plot, year) %>%
+#   summarise(total_stems  = n(),
+#             spruce_stems = sum(species == "piab"),
+#             spruce_share = spruce_stems / total_stems,
+#             .groups = "drop") %>%
+#   select(plot, year, spruce_share)
+# 
+# spruce_share_sub <- dat_regen %>%
+#   filter(!is.na(n)) %>%
+#   group_by(plot, subplot, year) %>%
+#   summarise(total_stems  = n(),
+#             spruce_stems = sum(species == "piab"),
+#             spruce_share = spruce_stems / total_stems,
+#             .groups = "drop") %>%
+#   select(plot, subplot, year, spruce_share)
+
 spruce_share_plot <- dat_regen %>%
-  filter(!is.na(n)) %>%
+  filter(!is.na(n), n > 0) %>%
   group_by(plot, year) %>%
-  summarise(total_stems  = n(),
-            spruce_stems = sum(species == "piab"),
+  summarise(total_stems  = sum(n),
+            spruce_stems = sum(n[species == "piab"]), # corrected - calculate sum of stem that are piab, instead of sum of rows!
             spruce_share = spruce_stems / total_stems,
-            .groups = "drop") %>%
-  select(plot, year, spruce_share)
+            .groups = "drop") #%>%
+  #dplyr::select(plot, year, spruce_share)
 
 spruce_share_sub <- dat_regen %>%
-  filter(!is.na(n)) %>%
+  filter(!is.na(n), n > 0) %>%
   group_by(plot, subplot, year) %>%
-  summarise(total_stems  = n(),
-            spruce_stems = sum(species == "piab"),
+  summarise(total_stems  = sum(n),
+            spruce_stems = sum(n[species == "piab"]),  # corrected - calculate sum of stem that are piab, instead of sum of rows!
             spruce_share = spruce_stems / total_stems,
             .groups = "drop") %>%
-  select(plot, subplot, year, spruce_share)
+  dplyr::select(plot, subplot, year, spruce_share)
+
+
+# chceks if teh shares are correct - sums of spruce shares per plot vs sum of rows that contains spruce
+dat_regen |> 
+  filter(plot == "42" & !is.na(n)) |> 
+  select(species, plot, vegtype, n, hgt) |> 
+  summarize(total_stems = sum(n),
+            spruce_rows = sum(species == "piab"),     # counts number of rows  with piab
+            spruce_stems = sum(n[species == "piab"]), # counst number of stems of piab across rows
+            spruce_share = spruce_stems / total_stems)
+
+
+
 
 ## 3d. Subplot summary table
 field_sub_summ <- dat_regen %>%
