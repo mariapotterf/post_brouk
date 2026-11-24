@@ -1,5 +1,6 @@
 # ============================================================
-# Forest regeneration: temporal change analysis 2023-2025
+# Forest regeneration: capture temporal change in Czechia 
+#         between 2023-2025
 # ============================================================
 
 
