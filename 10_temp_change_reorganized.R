@@ -1204,6 +1204,33 @@ species_occurence <- df_stem_dens_species %>%
   mutate(share_of_plots = n_plots / total_plots * 100)
 
 ## 4d. Beta diversity (Jaccard within-plot turnover)
+# Jaccard similarity J = (species shared by two subplots) / (all species in either subplot):
+#   0 = no species shared, 1 = identical species composition.
+# We use the Jaccard DISSIMILARITY = 1 - J:
+#   0 = identical composition (no differences), 1 = no species in common (all different).
+# vegan::vegdist(..., method = "jaccard", binary = TRUE) returns the dissimilarity directly,
+# so no extra "1 - x" step is needed in the code.
+
+# dummay example
+dd <- data.frame(plot = rep(1,8),
+                 sub = c(1,1,2,2,3,4,4,5),
+                 n = c(1,1,2,1,2,2,2,NA),
+                 sp = c("a", "b","a","b","b","c","d", NA))
+
+dd
+
+comm <- dd %>% mutate(n = coalesce(n, 0)) %>% filter(!is.na(sp), sp != "") %>%
+  group_by(plot, sub, sp) %>% summarise(n = sum(n), .groups = "drop") %>%
+  pivot_wider(names_from = sp, values_from = n, values_fill = 0)
+mat <- comm %>% select(-plot, -sub) %>% as.data.frame()
+mean(vegdist((mat > 0) * 1, "jaccard", binary = TRUE))   # 0.667
+mean(vegdist(mat, "bray"))                               # 0.717
+
+
+
+
+
+# calculate n community level
 comm_sub <- dat_regen %>%
   mutate(n = coalesce(n, 0L)) %>%
   filter(!is.na(species), species != "") %>%
@@ -1212,6 +1239,7 @@ comm_sub <- dat_regen %>%
   tidyr::pivot_wider(names_from = species, values_from = n, values_fill = 0)
 
 beta_within_plotyear <- function(df_plotyear) {
+  key  <- df_plotyear %>% dplyr::distinct(plot, year)    # include plots with empty subplots aw well
   meta <- df_plotyear %>% dplyr::select(plot, year, subplot)
   mat  <- df_plotyear %>% dplyr::select(-plot, -year, -subplot) %>% as.data.frame()
   keep <- rowSums(mat) > 0
@@ -1220,31 +1248,28 @@ beta_within_plotyear <- function(df_plotyear) {
   n_sub <- nrow(mat)
 
   if (n_sub < 2) {
-    return(tibble::tibble(
-      plot = unique(meta$plot), year = unique(meta$year),
+    return(dplyr::bind_cols(key, tibble::tibble(
       n_subplots_nonempty = n_sub,
-      beta_jaccard_mean = NA_real_, beta_bray_mean = NA_real_,
+      beta_jaccard_mean = NA_real_, 
+      beta_bray_mean = NA_real_,
       alpha_rich_mean   = if (n_sub == 1) sum(mat[1, ] > 0) else NA_real_,
       gamma_rich        = if (n_sub == 1) sum(colSums(mat) > 0) else NA_real_,
-      beta_whittaker    = NA_real_
-    ))
+      beta_whittaker    = NA_real_)))
   }
-
+  
   mat_pa <- (mat > 0) * 1
   d_jac  <- vegan::vegdist(mat_pa, method = "jaccard", binary = TRUE)
   d_bray <- vegan::vegdist(mat,    method = "bray")
   alpha  <- rowSums(mat_pa)
   gamma  <- sum(colSums(mat_pa) > 0)
-
-  tibble::tibble(
-    plot = unique(meta$plot), year = unique(meta$year),
+  dplyr::bind_cols(key, tibble::tibble(
     n_subplots_nonempty = n_sub,
     beta_jaccard_mean   = mean(as.numeric(d_jac),  na.rm = TRUE),
     beta_bray_mean      = mean(as.numeric(d_bray), na.rm = TRUE),
     alpha_rich_mean     = mean(alpha),
     gamma_rich          = gamma,
-    beta_whittaker      = gamma / mean(alpha)
-  )
+    beta_whittaker      = gamma / mean(alpha))
+    )
 }
 
 beta_plotyear <- comm_sub %>%
