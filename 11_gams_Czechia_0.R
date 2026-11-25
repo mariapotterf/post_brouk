@@ -232,13 +232,13 @@ trees_per_year <- dat_regen %>%
 
 
 ## Overlapping plots  -------------------------
-### Species composition --------------------------------------------------
+### Fig.1 Species composition: --------------------------------------------------
 
 ### Get summary across all stems and study sites  
 # 0) Safe counts (treat NA counts as 0)
 df <- dat_overlap %>%
   mutate(n = coalesce(n, 0L)) %>%
-  filter(!is.na(species) & species != "")
+  filter(!is.na(species) & !(species %in% c("", "ots1")))
 
 
 # find species with the highest share of stems per year
@@ -679,7 +679,7 @@ dat_overlap_recoded <- dat_overlap %>%
   )
 
 
-# Get species traits of overlapping & all plots from regen -------------------------
+### Get species traits of overlapping & all plots from regen -------------------------
 species_traits_overlap <- dat_overlap_recoded %>%
   filter(!is.na(species), species != "",
          !is.na(Drought_tolerance)) %>%
@@ -739,7 +739,7 @@ species_functional_v2 %>%
   arrange(func_group_drought, drought_tol) %>%
   print(n = Inf)
 
-# ── Update the trait space plot with group colors ─────────────────────────────
+#### ── Update the trait space plot with group colors 
 drought_labels <- c(
   "Norway_spruce"          = "Norway spruce",
   "less_drought_tolerant"  = "Less drought-tolerant",
@@ -787,7 +787,7 @@ drought_colors_grey <- c(
 
 
 
-top11_species <- unique(top10_by_year$species)  # gives your 11 species across both years
+top11_species <- unique(top10_by_year$species)  # gives 11 species across both years
 
 species_functional_v2 <- species_functional_v2 %>%
   mutate(is_top11 = species %in% top11_species)
@@ -828,7 +828,7 @@ ggsave("outFigsCZ/fig_drought_shade_species_niinemets.png",
        width = 7, height = 4, dpi = 300, bg = 'white')
 
 
-# ── Join new classification ───────────────────────────────────────────────────
+# ── Join new classification 
 dat_overlap_recoded2 <- dat_overlap_recoded %>%
   left_join(
     species_functional_v2 %>% select(species, func_group_drought),
@@ -843,7 +843,7 @@ hist(dat_overlap_recoded2$Drought_tolerance)
 
 # Functional groups based on drought tolerance
 
-# ── Update compute_func_shares for new group names ────────────────────────────
+# ── Update compute_func_shares for new group names 
 compute_func_shares_v2 <- function(df) {
   df %>%
     mutate(
@@ -857,7 +857,7 @@ compute_func_shares_v2 <- function(df) {
     )
 }
 
-# ── classify_dom_func for new groups ───────────────────────────────────
+# ── classify_dom_func for new groups
 classify_dom_func_v2 <- function(share_spruce, 
                                  share_drought_sens,
                                  share_intermediate, 
@@ -876,7 +876,7 @@ classify_dom_func_v2 <- function(share_spruce,
 }
 
 
-# ── Rebuild base stem table with new classification ───────────────────────────
+# ── Rebuild base stem table with new classification 
 
 dat_regen_func <- dat_regen %>%
   left_join(
@@ -971,7 +971,7 @@ p_bar_TSD <- ggplot(func_tsd_bar_v2,
 p_bar_TSD
 
 
-# ── 2. Aggregate stems per plot × TSD × drought group ────────────────────────
+# ── 2. Aggregate stems per plot × TSD × drought group 
 func_tsd_stems <- dat_regen_func %>%
   filter(!is.na(n), n > 0) %>%
   group_by(plot, time_since_cap, func_group_drought) %>%
@@ -987,7 +987,7 @@ func_tsd_stems <- dat_regen_func %>%
                                      levels = drought_cl_levels)) 
 
 
-# ── 3. Plot ───────────────────────────────────────────────────────────────────
+# ── 3. Plot 
 p_bar_TSD_stems_share <- ggplot(func_tsd_stems,
                           aes(x = time_since_cap,
                               y = share,
@@ -1036,7 +1036,7 @@ dev.off()
 
 
 
-##  Functional group alluvial: drought classification 2023 → 2025 --------------
+##  Functional group alluvial: drought classification 2023 → 2025 
 func_alluvial_v2 <- func_stems_base_v2 %>%
   mutate(
     dom_func = classify_dom_func_v2(share_spruce, share_drought_sens,
@@ -1132,7 +1132,7 @@ dev.off()
 
 
 
-# # ── Data ──────────────────────────────────────────────────────────────────────
+# # ── Data 
 func_bar_data <- func_stems_base_v2 %>%
   filter(!is.na(year)) %>%
   group_by(year) %>%
@@ -1157,7 +1157,7 @@ func_bar_data <- func_stems_base_v2 %>%
     year  = factor(year)
   )
 
-# ── Plot ──────────────────────────────────────────────────────────────────────
+# ── Plot 
 
 # get order from 2025 stem shares
 drought_group_order <- func_bar_data %>%
@@ -1258,7 +1258,6 @@ func_occurence_data <- func_stems_base_v2 %>%
     year  = factor(year)
   )
 
-# ── Plot ──────────────────────────────────────────────────────────────────────
 
 
 # # apply to both plots
@@ -1382,10 +1381,10 @@ print(p_fig1_combined)
 dev.off()
 
 
-### alternatrive: counts in only 2 classes: climate sensitive and climate adapted -----
+##### alternatrive: counts in only 2 classes: climate sensitive and climate adapted -----
 # (qusp, fasy are intermediate, but considered as climate adapted in Czechia)
 
-##### ── Binary reclassification: climate_sensitive vs climate_adapted ─────────────
+##### ── Binary reclassification: climate_sensitive vs climate_adapted
 # climate_sensitive = Norway spruce + drought-sensitive (score < 2.2)
 # climate_adapted   = intermediate  + drought-tolerant  (score > 2.2)
 # same grouping already used for share_more_tolerant in the GAMM (climate_adapt block)
@@ -1403,7 +1402,7 @@ climate_labels2 <- c(
   "climate_adapted"   = "More drought-tolerant\n"
 )
 
-# ── [c] Stem share, binary ─────────────────────────────────────────────────
+# ── [c] Stem share, binary 
 func_bar_data2 <- func_stems_base_v2 %>%
   mutate(
     share_climate_sensitive = share_spruce + share_drought_sens,
@@ -1446,7 +1445,7 @@ p_bar_drought2 <- ggplot(func_bar_data2,
 
 p_bar_drought2
 
-# ── [d] Plot occurrence, binary (not mutually exclusive) ──────────────────
+# ── [d] Plot occurrence, binary (not mutually exclusive) 
 func_occurence_data2 <- func_stems_base_v2 %>%
   mutate(year_f = as.character(year)) |> 
   select(plot, year_f, Norway_spruce, less_drought_tolerant, intermediate, more_drought_tolerant) %>%
@@ -1517,7 +1516,7 @@ p_combined_drought2
 
 
 
-### ── Climate adaptation score per plot -----------------
+### ── Climate adaptation score per plot 
 # higher = more climate adapted
 # use 2025 composition as the outcome (current state)
 
@@ -1538,10 +1537,10 @@ df_climate_adapt <- func_stems_base_v2 %>%
     planted = planting_intensity > 0
   )
 
-### ── Test: is climate adaptation higher on planted plots? ─────────────────────
+### ── Test: is climate adaptation higher on planted plots?
 wilcox.test(share_more_tolerant ~ planted, data = df_climate_adapt)
 
-# ── Summary ───────────────────────────────────────────────────────────────────
+# ── Summary 
 df_climate_adapt %>%
   group_by(planted) %>%
   summarise(
@@ -1578,7 +1577,9 @@ fill_colors <- brewer.pal(length(intensity_levels), "YlOrRd")
 
 df_mng_sub <- dat_overlap %>% 
   #dplyr::filter(year == "2023") %>% # keep management oionly frm 2023 for consistency
-  distinct(plot, subplot,year,
+  distinct(plot, 
+           subplot,
+           year,
            clear,
            grndwrk,
            logging_trail,
