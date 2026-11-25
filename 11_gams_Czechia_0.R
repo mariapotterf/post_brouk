@@ -148,6 +148,22 @@ plots_with_both <- dat_overlap %>%
 
 length(plots_with_both)
 
+
+# plots re-surveyed in both years AND with exactly 5 subplots in both years
+plots_with_both_5 <- dat_overlap %>%
+  filter(status == "both") %>%
+  distinct(plot, year, n_subplots) %>%
+  group_by(plot) %>%
+  filter(n_distinct(year) == 2, all(n_subplots == 5)) %>%
+  ungroup() %>%
+  pull(plot) %>% as.character() %>% unique()
+
+length(plots_with_both_5)                                 # plots used
+length(plots_with_both) - length(plots_with_both_5)       # re-surveyed plots dropped
+
+
+
+
 # Master list of overlapping plots × both years
 plot_year_master <- tibble(
   plot = rep(plots_with_both, each = 2),
@@ -716,7 +732,7 @@ hist(species_traits_overlap$drought_tol, breaks = 15,
      main = "Species drought tolerance (Niinemets)",
      xlab = "Drought tolerance (higher = more tolerant)")
 
-# !!!
+
 # ── Data-driven functional classification using Niinemets drought tolerance 
 species_functional_v2 <- species_traits_overlap %>%
   mutate(
@@ -2004,6 +2020,145 @@ plot_df_cz %>%
     median_jaccard = median(beta_jaccard_mean, na.rm = TRUE)
   )
 
+# Compare how plots changed between 2023 and 2025 -----------------------------------
+
+# variables to show (names = columns in plot_df_cz, values = panel titles)
+vars_to_compare_23_25 <- c(
+                 dens_ha           = "Stem density [stems/ha]",
+                 sp_richness       = "Species richness [#]",
+                 effective_numbers = "Effective species [#]",
+                 mean_hgt          = "Mean height [m]",
+                 cv_hgt_pos        = "CV of height [-]",
+                 
+                 spruce_share      = "Norway spruce share [-]",
+                 CWM_drought       = "CWM drought tolerance",
+                 CWM_shade         = "CWM shade tolerance",
+                 beta_bray_mean    = "Beta diversity (Bray-Curtis)",
+                 beta_jaccard_mean = "Beta diversity (Jaccard)")
+
+
+# make a table to compare selected inndicators over time. remove the plots and pairs that have in any values NA (eg are empty)
+# as then the wilcox paired test fails.
+df_vars_time_compare <- plot_df_cz %>%
+  filter(plot %in% plots_with_both_5) %>%
+  mutate(across(c(mean_hgt, cv_hgt_pos, effective_numbers),
+                ~ if_else(dens_ha == 0, NA_real_, .x))) %>%
+  select(plot, year_f, all_of(names(vars_to_compare_23_25))) %>%
+  pivot_longer(-c(plot, year_f), names_to = "var", values_to = "value") %>%
+  group_by(plot, var) %>%
+  filter(n() == 2, !any(is.na(value))) %>%
+  ungroup() %>%
+  arrange(var, year_f, plot) %>%
+  mutate(var = factor(var, levels = names(vars_to_compare_23_25),
+                    labels = vars_to_compare_23_25))
+
+p_time_compare_vars <- ggplot(df_vars_time_compare,
+                         aes(year_f, 
+                             value, 
+                             fill = year_f)) +
+  geom_boxplot(width = 0.5, 
+               outlier.shape = NA, 
+               alpha = 0.6) +
+  geom_line(aes(group = plot), 
+            colour = "grey40", 
+            alpha = 0.25, 
+            linewidth = 0.3) +
+  geom_point(size = 0.9, alpha = 0.6) +
+  ggpubr::stat_compare_means(method = "wilcox.test", paired = TRUE,
+                             label = "p.format", 
+                             label.x.npc = "centre",
+                             label.y.npc = "top", vjust = 1, size = 3) +
+  facet_wrap(~ var, scales = "free_y", nrow = 2) +
+  scale_fill_manual(values = c("2023" = "grey80", "2025" = "grey40"), guide = "none") +
+  scale_y_continuous(expand = expansion(mult = c(0.05, 0.15))) +   # room for the p-value
+  labs(x = "Year of inventory", y = NULL) +
+  theme_paper()
+p_time_compare_vars
+
+
+# compare species turnover between plots and years 
+
+ggsave("outFigsCZ/p_time_compare_vars.png",
+       p_time_compare_vars,
+       width = 7, height = 3.5, device = "png", bg = "white")
+
+# have i found the same plots bwteen years?
+df_pair_rho <- df_vars_time_compare %>%
+  pivot_wider(names_from = year_f, values_from = value, names_prefix = "y") %>%
+  group_by(var) %>%
+  summarise(n = n(), rho = cor(y2023, y2025, method = "spearman"), .groups = "drop")
+df_pair_rho
+
+p_correlation_plots_over_years <- df_vars_time_compare %>%
+  pivot_wider(names_from = year_f, values_from = value, names_prefix = "y") %>%
+  ggplot(aes(y2023, y2025)) +
+  geom_abline(colour = "red") +
+  geom_point(alpha = 0.5, size = 1) +
+  geom_label(data = df_pair_rho %>% 
+               mutate(lab = paste0("rho = ", 
+                                   sprintf("%.2f", rho), "\nn = ", n)),
+             aes(x = -Inf, 
+                 y = Inf, 
+                 label = lab),
+             hjust = -0.05, 
+             vjust = 1.1, 
+             size = 3,
+             fill = "white", alpha = 0.85, linewidth = 0,
+             inherit.aes = FALSE) +
+  facet_wrap(~ var, scales = "free") +
+  labs(x = "2023", y = "2025") +
+  theme_paper()
+
+ggsave("outFigsCZ/p_correlation_plots_over_years.png",
+       p_correlation_plots_over_years,
+       width = 7, height = 7, device = "png", bg = "white")
+
+# see species turnover - between years 
+
+# 1) stems per plot x species x year (only species that really occur)
+df_species_stems_plot_year <- dat_overlap %>%
+  mutate(plot = as.character(plot),
+         n    = coalesce(n, 0L)) %>%
+  filter(plot %in% plots_with_both_5,
+         !is.na(species), !(species %in% c("", "ots1"))) %>%
+  group_by(plot, year, species) %>%
+  summarise(stems = sum(n), .groups = "drop") %>%
+  filter(stems > 0)
+
+# 2) one row per plot x species with stems in both years (0 = absent)
+df_species_change_plot <- df_species_stems_plot_year %>%
+  pivot_wider(names_from = year, 
+              values_from = stems,
+              names_prefix = "stems_", 
+              values_fill = 0)
+
+# 3) turnover summary per plot (plots without any species in both years are kept, with 0)
+df_turnover_per_plot <- tibble(plot = plots_with_both_5) %>%
+  left_join(
+    df_species_change_plot %>%
+      group_by(plot) %>%
+      summarise(n_species_2023   = sum(stems_2023 > 0),
+                n_species_2025   = sum(stems_2025 > 0),
+                n_species_kept   = sum(stems_2023 > 0 & stems_2025 > 0),
+                n_species_gained = sum(stems_2023 == 0 & stems_2025 > 0),
+                n_species_lost   = sum(stems_2023 > 0 & stems_2025 == 0),
+                .groups = "drop"),
+    by = "plot") %>%
+  mutate(across(starts_with("n_species"), ~ coalesce(.x, 0L)),
+         n_species_total       = n_species_kept + n_species_gained + n_species_lost,
+         jaccard_dissimilarity = if_else(n_species_total == 0, NA_real_,
+                                         (n_species_gained + n_species_lost) / n_species_total))
+
+# checks
+nrow(df_turnover_per_plot)                                   # = length(plots_with_both_5)
+summary(df_turnover_per_plot)
+sum(df_turnover_per_plot$n_species_total == 0)               # plots with no species in either year
+
+
+
+
+
+
 #  Models (GAMs) -----------------------------------------------
 # All GAMs: REML, random effect s(plot_id, bs="re")
 # Families: tw(log) continuous, nb(log) counts, binomial(logit) binary
@@ -2027,8 +2182,8 @@ mng_subplot_binary <- dat_regen %>% # from full data, not only overlaps
   rename(
     plot_id           = plot,
     planting_bin      = planting,
-    anti_browsing_bin = anti_browsing,
-    grndwrk_bin       = grndwrk
+    anti_browsing_bin = anti_browsing#,
+   # grndwrk_bin       = grndwrk
   ) %>%
   mutate(plot_id = factor(plot_id))
 
@@ -2057,13 +2212,13 @@ both_levels_crossscale <- both_levels_cz %>%
       level == "subplot" & is.na(anti_browsing_bin)  ~ as.numeric(anti_browsing_intensity > 0),
       level == "plot"                                 ~ anti_browsing_intensity,
       TRUE                                            ~ anti_browsing_intensity
-    ),
-    grndwrk_pred = case_when(
-      level == "subplot" & !is.na(grndwrk_bin) ~ as.numeric(grndwrk_bin),
-      level == "subplot" & is.na(grndwrk_bin)  ~ as.numeric(grndwrk_intensity > 0),
-      level == "plot"                           ~ grndwrk_intensity,
-      TRUE                                      ~ grndwrk_intensity
-    )
+    )#,
+  #  grndwrk_pred = case_when(
+  #    level == "subplot" & !is.na(grndwrk_bin) ~ as.numeric(grndwrk_bin),
+  #    level == "subplot" & is.na(grndwrk_bin)  ~ as.numeric(grndwrk_intensity > 0),
+  #    level == "plot"                           ~ grndwrk_intensity,
+   #   TRUE                                      ~ grndwrk_intensity
+   # )
   )
 # any missing management??
 both_levels_crossscale %>%
@@ -2223,11 +2378,11 @@ cor.test(~ planting_pred + browsing_pred,
 # -> Yes, I should include browsing on cross scale analysis!!
 
 
-# ── Refit with ML for fair AIC comparison ────────────────────────────────────
+# ── Refit with ML for fair AIC comparison : at cross-levels ────────────────────────────────────
 compare_mng_aic <- function(response, data, family, k_tsd = 4) {
   
   base_formula <- as.formula(paste0(
-    response, " ~ grndwrk_pred + year_f + level +",
+    response, " ~ year_f + level +",    # grndwrk_pred - remove ground work from predictors
     "s(time_snc_full_disturbance, k =", k_tsd, ") +",
     "s(plot_id, bs = 're')"
   ))
@@ -2258,27 +2413,27 @@ compare_mng_aic <- function(response, data, family, k_tsd = 4) {
 }
 
 ### ── Run for each response Plot and subplot level ─────────────────────────────────────────────────────
-# aic_results_cross <- bind_rows(
-#   compare_mng_aic("mean_hgt",        
-#                   both_levels_crossscale %>% filter(mean_hgt < 6),
-#                   tw(link = "log"), k_tsd = 4),
-#   compare_mng_aic("cv_hgt_pos",      
-#                   both_levels_crossscale,
-#                   tw(link = "log"), k_tsd = 7),
-#   compare_mng_aic("effective_numbers",
-#                   both_levels_crossscale,
-#                   tw(link = "log"), k_tsd = 3),
-#   compare_mng_aic("sp_richness",     
-#                   both_levels_crossscale,
-#                   nb(link = "log"),  k_tsd = 7)
-# )
+aic_results_cross <- bind_rows(
+  compare_mng_aic("mean_hgt",
+                  both_levels_crossscale %>% filter(mean_hgt < 6),
+                  tw(link = "log"), k_tsd = 4),
+  compare_mng_aic("cv_hgt_pos",
+                  both_levels_crossscale,
+                  tw(link = "log"), k_tsd = 7),
+  compare_mng_aic("effective_numbers",
+                  both_levels_crossscale,
+                  tw(link = "log"), k_tsd = 3),
+  compare_mng_aic("sp_richness",
+                  both_levels_crossscale,
+                  nb(link = "log"),  k_tsd = 7)
+)
 
-# aic_results_cross %>%
-#   select(response, model, AIC, delta_AIC, best) %>%
-#   print(n = Inf)
+aic_results_cross %>%
+  select(response, model, AIC, delta_AIC, best) %>%
+  print(n = Inf)
 # 
 #   distinct()
-# 
+
 #####  AIC comparison - plot level ---------------------
 compare_mng_aic_plot <- function(response, data, family, k_tsd = 4) {
     base_formula <- as.formula(paste0(
@@ -2287,23 +2442,25 @@ compare_mng_aic_plot <- function(response, data, family, k_tsd = 4) {
       "s(plot_id, bs = 're')"
     ))
     
-    m_inter  <- gam(update(base_formula, . ~ . + planting_intensity * anti_browsing_intensity + grndwrk_intensity),
+    m_inter  <- gam(update(base_formula, . ~ . + planting_intensity * anti_browsing_intensity ),
                     data = data, family = family, method = "ML")
-    m_both   <- gam(update(base_formula, . ~ . + planting_intensity + anti_browsing_intensity + grndwrk_intensity),
+    m_both   <- gam(update(base_formula, . ~ . + planting_intensity + anti_browsing_intensity ),
                     data = data, family = family, method = "ML")
-    m_plant  <- gam(update(base_formula, . ~ . + planting_intensity + grndwrk_intensity),
+    m_plant  <- gam(update(base_formula, . ~ . + planting_intensity ),
                     data = data, family = family, method = "ML")
-    m_browse <- gam(update(base_formula, . ~ . + anti_browsing_intensity + grndwrk_intensity),
+    m_browse <- gam(update(base_formula, . ~ . + anti_browsing_intensity ),
                     data = data, family = family, method = "ML")
-    m_grndwrk <- gam(update(base_formula, . ~ . + grndwrk_intensity),
-                     data = data, family = family, method = "ML")
-    m_none   <- gam(base_formula, data = data, family = family, method = "ML")
+    # m_grndwrk <- gam(update(base_formula, . ~ . ),
+    #                  data = data, family = family, method = "ML")
+     m_none   <- gam(base_formula, data = data, family = family, method = "ML")
     
     tibble(
       model = c("interaction", "both", "plant_only", 
-                "browse_only", "grndwrk_only", "none"),
+                "browse_only", #"grndwrk_only", 
+                "none"),
       AIC   = c(AIC(m_inter), AIC(m_both), AIC(m_plant),
-                AIC(m_browse), AIC(m_grndwrk), AIC(m_none))
+                AIC(m_browse), #AIC(m_grndwrk), 
+                AIC(m_none))
     ) %>%
       mutate(
         delta_AIC = AIC - min(AIC),
@@ -2313,14 +2470,41 @@ compare_mng_aic_plot <- function(response, data, family, k_tsd = 4) {
   }
 # run
 # AIC for all three plot-level responses
-# aic_adapted <- compare_mng_aic_plot("share_more_tolerant_adj",  share_more_tolerant_plot, betar(),   k_tsd = 4)
-# aic_spruce  <- compare_mng_aic_plot("spruce_share_adj",   spruce_share_plot,  betar(),   k_tsd = 4)
-# aic_beta    <- compare_mng_aic_plot("beta_jaccard_mean",  plot_df_cz,         gaussian(), k_tsd = 3)
+aic_adapted      <- compare_mng_aic_plot("share_more_tolerant_adj",  share_more_tolerant_plot, betar(),   k_tsd = 4)
+aic_spruce       <- compare_mng_aic_plot("spruce_share_adj",   spruce_share_plot,  betar(),   k_tsd = 4)
+aic_beta         <- compare_mng_aic_plot("beta_jaccard_mean",  plot_df_cz,         gaussian(), k_tsd = 3)
+aic_beta_bray    <- compare_mng_aic_plot("beta_bray_mean",  plot_df_cz,  gaussian(), k_tsd = 3)
+
+
+
+
+
 #   
-# aic_adapted
-# aic_spruce
-# aic_beta
+aic_adapted
+aic_spruce
+aic_beta
+aic_beta_bray
 # 
+
+# check where warnings occur? check one by ones one by one
+options(warn = 1)
+aic_check_hgt  <- compare_mng_aic("mean_hgt", 
+                                  both_levels_crossscale %>% filter(mean_hgt < 6), tw(link = "log"), k_tsd = 4)
+aic_check_cv   <- compare_mng_aic("cv_hgt_pos", 
+                                  both_levels_crossscale, tw(link = "log"), k_tsd = 7)
+aic_check_eff  <- compare_mng_aic("effective_numbers", both_levels_crossscale, tw(link = "log"), k_tsd = 3)
+aic_check_rich <- compare_mng_aic("sp_richness", both_levels_crossscale, nb(link = "log"), k_tsd = 7)
+
+# richness is running into issues - check to lower teh k value
+aic_check_rich_k7 <- compare_mng_aic("sp_richness", both_levels_crossscale, nb(link = "log"), k_tsd = 7)
+aic_check_rich_k4 <- compare_mng_aic("sp_richness", both_levels_crossscale, nb(link = "log"), k_tsd = 4)
+
+aic_check_rich_k7 %>% select(model, AIC, delta_AIC, warning_msg)
+aic_check_rich_k4 %>% select(model, AIC, delta_AIC, warning_msg)
+
+options(warn = 0)
+
+
 
 
 summary(gam_adapted_final)
