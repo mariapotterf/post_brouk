@@ -146,6 +146,7 @@ plots_with_both <- dat_overlap %>%
   filter(n == 2) %>%
   pull(plot)
 
+length(plots_with_both)
 
 # Master list of overlapping plots × both years
 plot_year_master <- tibble(
@@ -170,6 +171,11 @@ n_subplots_total <-length(unique(dat_regen$subplot_year))  # 1665
 
 print(n_total_plots)
 print(n_subplots_total)
+
+
+# plot "26_134" was collected in 2023 but had only 4 subplots, not 5, so i have removed it
+#mng_year %>% filter(plot == "26_134")
+#dat_regen %>% filter(plot == "26_134")
 
 # convert management by year into long format
 mng_year_long_all <- mng_year %>%
@@ -563,8 +569,8 @@ p_species_alluvial <-
 p_species_alluvial
 
 
-### Summary table  -----------------------
-# ── bind top species + other ───────────────────────────────────────────────
+### Summary table species shares per year -----------------------
+#### ── bind top species + other 
 species_table <- 
   species_stem_share_year_other %>%
   filter(species_other %in% v_top_species_other) %>%
@@ -577,7 +583,7 @@ species_table <-
   rename(share_stems = share ) %>%
   mutate(species = factor(species_other, levels = rev(v_top_species_other)))
 
-# ── wide format, order by stems_2025, other last ──────────────────────────
+#### ── wide format, order by stems_2025, other last 
 species_table_wide <- 
   species_table %>%
     select(-total_trees) %>% 
@@ -591,7 +597,7 @@ species_table_wide <-
   select(-is_other)
 
 
-# ── format and export ─────────────────────────────────────────────────────
+##### ── format and export 
 
 species_table_wide %>%
   mutate(species_other = recode(as.character(species_other),
@@ -736,9 +742,9 @@ species_functional_v2 %>%
 # ── Update the trait space plot with group colors ─────────────────────────────
 drought_labels <- c(
   "Norway_spruce"          = "Norway spruce",
-  "less_drought_tolerant"  = "Less drought tolerant",
+  "less_drought_tolerant"  = "Less drought-tolerant",
   "intermediate"           = "Intermediate",
-  "more_drought_tolerant"  = "More drought tolerant",
+  "more_drought_tolerant"  = "More drought-tolerant",
   "no_regeneration"        = "No regeneration"
 )
 
@@ -786,9 +792,12 @@ top11_species <- unique(top10_by_year$species)  # gives your 11 species across b
 species_functional_v2 <- species_functional_v2 %>%
   mutate(is_top11 = species %in% top11_species)
 
-p_function_drought <- ggplot(species_functional_v2,
-                             aes(x = drought_tol, y = shade_tol,
-                                 color = func_group_drought, label = species)) +
+p_function_drought <- 
+  ggplot(species_functional_v2,
+                             aes(x = drought_tol, 
+                                 y = shade_tol,
+                                 color = func_group_drought, 
+                                 label = species)) +
   geom_point(aes(size = is_top11, alpha = is_top11)) +
   ggrepel::geom_text_repel(
     data = . %>% filter(is_top11),
@@ -814,6 +823,9 @@ p_function_drought <- ggplot(species_functional_v2,
 
 p_function_drought
 
+ggsave("outFigsCZ/fig_drought_shade_species_niinemets.png", 
+       p_function_drought,
+       width = 7, height = 4, dpi = 300, bg = 'white')
 
 
 # ── Join new classification ───────────────────────────────────────────────────
@@ -1011,14 +1023,14 @@ p_tsd_merged <- ggarrange( p_bar_TSD_stems_share,
 p_tsd_merged
 
 
-# pdf("outFigsCZ/p_tsd_merged_corel.pdf", width = 7, height = 3)
-# print(p_tsd_merged)
-# dev.off()
+pdf("outFigsCZ/p_tsd_merged_corel.pdf", width = 7, height = 3)
+print(p_tsd_merged)
+dev.off()
 # 
-# png("outFigsCZ/p_tsd_merged_corel.png", width = 7, height = 3, 
-#     units = "in", res = 300)
-# print(p_tsd_merged)
-# dev.off()
+png("outFigsCZ/p_tsd_merged_corel.png", width = 7, height = 3,
+    units = "in", res = 300)
+print(p_tsd_merged)
+dev.off()
 
 
 
@@ -1074,7 +1086,7 @@ p_func_alluvial_v2 <- ggplot(func_alluvial_v2,
     axis.line.x     = element_blank(),
     axis.ticks.x    = element_blank(),
     legend.position = "right",
-    legend.text     = element_text(face = "italic"),
+    legend.text     = element_text(face = "plain"),
     legend.margin   = margin(0, 0, 0, -10),  # pull legend left
     plot.margin     = margin(5, 0, 5, 5)     # reduce right margin
   )
@@ -1090,11 +1102,11 @@ p_alluvial_species_drought <- ggarrange(p_species_alluvial,
                                                    face = "plain"))
 
 
-# png("outFigsCZ/p_alluvial_species_drought_corel.png",
-#     width = 7, height = 3,
-#     units = "in", res = 300)
-# print(p_alluvial_species_drought)
-# dev.off()
+png("outFigsCZ/p_alluvial_species_drought_corel.png",
+    width = 7, height = 3,
+    units = "in", res = 300)
+print(p_alluvial_species_drought)
+dev.off()
 
 
 
@@ -1103,8 +1115,9 @@ levels(func_alluvial_v2$func_2023)
 # should show: "Norway_spruce" "less_drought_tolerant" "intermediate" "more_drought_tolerant" "no_regeneration"
 
 
-p_combined_func <- (p_func_alluvial_v2 | p_bar_TSD) +
-  plot_layout(widths = c(1.2, 1), heights = c(1.2,1)) +
+p_combined_func <- (p_func_alluvial_v2 + theme(legend.position = "none") | p_bar_TSD) +
+  plot_layout(widths = c(2, 1.5), 
+              heights = c(1.2,1)) +
   plot_annotation(tag_levels = list(c("[a]", "[b]")))# &
 p_combined_func
 
@@ -1112,9 +1125,9 @@ p_combined_func
 # export again
 # 
 # 
-# pdf("outFigsCZ/p_combined_func_corel.pdf", width = 7, height = 3.5)
-# print(p_combined_func)
-# dev.off()
+pdf("outFigsCZ/p_combined_func_corel.pdf", width = 7, height = 3.5)
+print(p_combined_func)
+dev.off()
 
 
 
@@ -1328,10 +1341,14 @@ p_occurence <- p_occurence + coord_cartesian(xlim = c(0, 85))
 p_occurence_drought <- p_occurence_drought + coord_cartesian(xlim = c(0, 85))
 
 # add visual lines
-p_bar               <- p_bar               + theme(panel.grid.major.x = element_line(color = "grey90", linewidth = 0.3))
-p_occurence         <- p_occurence         + theme(panel.grid.major.x = element_line(color = "grey90", linewidth = 0.3))
-p_bar_drought       <- p_bar_drought       + theme(panel.grid.major.x = element_line(color = "grey90", linewidth = 0.3))
-p_occurence_drought <- p_occurence_drought + theme(panel.grid.major.x = element_line(color = "grey90", linewidth = 0.3))
+p_bar               <- p_bar               + 
+  theme(panel.grid.major.x = element_line(color = "grey90", linewidth = 0.3))
+p_occurence         <- p_occurence         + 
+  theme(panel.grid.major.x = element_line(color = "grey90", linewidth = 0.3))
+p_bar_drought       <- p_bar_drought       + 
+  theme(panel.grid.major.x = element_line(color = "grey90", linewidth = 0.3))
+p_occurence_drought <- p_occurence_drought + 
+  theme(panel.grid.major.x = element_line(color = "grey90", linewidth = 0.3))
 
 
 p_fig1_combined <- 
@@ -1371,9 +1388,10 @@ dev.off()
 ##### ── Binary reclassification: climate_sensitive vs climate_adapted ─────────────
 # climate_sensitive = Norway spruce + drought-sensitive (score < 2.2)
 # climate_adapted   = intermediate  + drought-tolerant  (score > 2.2)
-# same grouping already used for share_adapted in the GAMM (climate_adapt block)
+# same grouping already used for share_more_tolerant in the GAMM (climate_adapt block)
 
-climate_group_order <- c("climate_sensitive", "climate_adapted")
+climate_group_order <- c("climate_sensitive", # less drought-tolerant
+                         "climate_adapted")    # more drought-tolerant
 
 climate_colors2 <- c(
   "climate_sensitive" = "#1a5c1a",   # keep the spruce/sensitive dark green
@@ -1503,12 +1521,12 @@ p_combined_drought2
 # higher = more climate adapted
 # use 2025 composition as the outcome (current state)
 
-climate_adapt <- func_stems_base_v2 %>%
+df_climate_adapt <- func_stems_base_v2 %>%
   filter(year == 2025) %>%
   mutate(
-    # climate adapted = drought tolerant + intermediate
+    # climate adapted = drought-tolerant + intermediate
     # climate maladapted = Picea abies + drought sensitive
-    share_adapted    = share_drought_tol + share_intermediate,
+    share_more_tolerant    = share_drought_tol + share_intermediate,
     share_maladapted = share_spruce + share_drought_sens
   ) %>%
   left_join(
@@ -1520,32 +1538,32 @@ climate_adapt <- func_stems_base_v2 %>%
     planted = planting_intensity > 0
   )
 
-# ── Test: is climate adaptation higher on planted plots? ─────────────────────
-wilcox.test(share_adapted ~ planted, data = climate_adapt)
+### ── Test: is climate adaptation higher on planted plots? ─────────────────────
+wilcox.test(share_more_tolerant ~ planted, data = df_climate_adapt)
 
 # ── Summary ───────────────────────────────────────────────────────────────────
-climate_adapt %>%
+df_climate_adapt %>%
   group_by(planted) %>%
   summarise(
     n                 = n(),
-    mean_adapted      = round(mean(share_adapted,    na.rm = TRUE), 2),
+    mean_adapted      = round(mean(share_more_tolerant,    na.rm = TRUE), 2),
     mean_maladapted   = round(mean(share_maladapted, na.rm = TRUE), 2),
     mean_spruce       = round(mean(share_spruce,     na.rm = TRUE), 2),
     .groups = "drop"
   )
 
 # ── Continuous: planting intensity ~ share adapted ────────────────────────────
-cor.test(~ planting_intensity + share_adapted,
-         data = climate_adapt, method = "spearman")
+cor.test(~ planting_intensity + share_more_tolerant,
+         data = df_climate_adapt, method = "spearman")
 
 # ── Visualize ─────────────────────────────────────────────────────────────────
-ggplot(climate_adapt,
-       aes(x = planting_intensity, y = share_adapted)) +
+ggplot(df_climate_adapt,
+       aes(x = planting_intensity, y = share_more_tolerant)) +
   geom_point(alpha = 0.5, size = 1.8) +
   geom_smooth(method = "lm", se = TRUE, color = "#1a5c1a") +
   geom_hline(yintercept = 0.5, linetype = "dashed", color = "grey50") +
   labs(x = "Planting intensity ",
-       y = "Share of climate-adapted stems\n(drought-tolerant + intermediate)") +
+       y = "Share of more droght-tolerant stems\n(drought-tolerant + intermediate)") +
   theme_classic()
 
 
@@ -1619,9 +1637,9 @@ mng_sub_conv <-  mng_sub_props %>%
 #library(forcats)
 
 activity_labels <- c(
-  "clear" = "Salvage logging",
-  "grndwrk" = "Soil\npreparation", # "Groundwork", #
-  "planting" = "Planting",
+  "clear"         = "Salvage logging",
+  "grndwrk"       = "Soil\npreparation", # "Groundwork", #
+  "planting"      = "Planting",
   "anti_browsing" = "Browsing\nprotection",
   "logging_trail" = "Logging trail"
 )
@@ -1876,6 +1894,11 @@ p_management_intensity_plot_simpler <-
 
 p_management_intensity_plot_simpler
 
+ggsave("outFigsCZ/p_management_intensity_plot_simpler.png",
+       p_management_intensity_plot_simpler,
+       width = 7, height = 3.5, device = "png", bg = "white")
+
+
 
 # Summarize counts per class
 intensity_class_summary_counts <- mng_intensity_props %>%
@@ -1989,7 +2012,7 @@ plot_df_cz %>%
 
 ## ── Prepare cross-scale data  --------------- ─
 # subplot level: use subplot binary management
-# plot level: use plot intensity management
+# plot level:    use plot intensity management
 # both in one dataset with level as factor
 
 # ── Step 1: get subplot-level response variables + binary management ──────────
@@ -2058,6 +2081,9 @@ both_levels_crossscale %>%
   arrange(desc(n))
 
 
+both_levels_crossscale |> 
+  dplyr::filter(plot_id == "26_134")
+
 # does dat_regen even have subplot rows for this plot/year?
 dat_regen %>%
   filter(plot == "26_134") %>%
@@ -2119,13 +2145,13 @@ func_stems_base_all <- dat_regen_func %>%
 
 
 # calculate climate adaptation on plot level (as having 1-2 species per subplot level will be not representative for community level)
-share_adapted_plot <- func_stems_base_all %>%
+share_more_tolerant_plot <- func_stems_base_all %>%
   mutate(
-    share_adapted    = share_drought_tol + share_intermediate,
+    share_more_tolerant    = share_drought_tol + share_intermediate,
     share_maladapted = share_spruce + share_drought_sens
   ) %>%
   select(plot, year, time_snc_full_disturbance, 
-         share_adapted, share_maladapted, share_spruce) %>%
+         share_more_tolerant, share_maladapted, share_spruce) %>%
   mutate(
     plot_id = factor(plot),
     year_f  = factor(year)
@@ -2139,10 +2165,10 @@ share_adapted_plot <- func_stems_base_all %>%
     by = c("plot_id", "year")
   ) %>% 
   mutate(  # bound between 0-1
-    share_adapted_adj = case_when(
-      share_adapted == 0 ~ 0.001,
-      share_adapted == 1 ~ 0.999,
-      TRUE               ~ share_adapted
+    share_more_tolerant_adj = case_when(
+      share_more_tolerant == 0 ~ 0.001,
+      share_more_tolerant == 1 ~ 0.999,
+      TRUE               ~ share_more_tolerant
     )
   )
 
@@ -2286,7 +2312,7 @@ compare_mng_aic_plot <- function(response, data, family, k_tsd = 4) {
   }
 # run
 # AIC for all three plot-level responses
-# aic_adapted <- compare_mng_aic_plot("share_adapted_adj",  share_adapted_plot, betar(),   k_tsd = 4)
+# aic_adapted <- compare_mng_aic_plot("share_more_tolerant_adj",  share_more_tolerant_plot, betar(),   k_tsd = 4)
 # aic_spruce  <- compare_mng_aic_plot("spruce_share_adj",   spruce_share_plot,  betar(),   k_tsd = 4)
 # aic_beta    <- compare_mng_aic_plot("beta_jaccard_mean",  plot_df_cz,         gaussian(), k_tsd = 3)
 #   
@@ -2514,12 +2540,12 @@ appraise(gam_spruce)
 
 
 gam_adapted <- gam(
-  share_adapted_adj ~
+  share_more_tolerant_adj ~
     planting_intensity + anti_browsing_intensity +
     s(time_snc_full_disturbance, k = 4) +
     grndwrk_intensity + year_f +
     s(plot_id, bs = "re"),
-  data   = share_adapted_plot,
+  data   = share_more_tolerant_plot,
   family = betar(),          # built into mgcv
   method = "REML"
 )
@@ -3468,7 +3494,7 @@ tab_df(aic_cross_table,
 
 ### ── AIC table: plot-level adapted model ------─────
 aic_adapted_table <- compare_mng_aic_plot(
-  "share_adapted_adj", share_adapted_plot, betar(), k_tsd = 4
+  "share_more_tolerant_adj", share_more_tolerant_plot, betar(), k_tsd = 4
 ) %>%
   mutate(
     model = recode(model,
