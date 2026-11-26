@@ -2615,7 +2615,6 @@ summary(m_beta_bray)
 summary(m_beta_bray_clamped)
 summary(m_beta_bray_clamped_cov)
 
-
 # diversty is affected by the number of non empty subplots per plot - YES - hence, include teh number of 
 # non empty subplots per plot in my model
 broom::tidy(m_beta_bray, parametric = TRUE) %>% filter(term == "planting_intensity")
@@ -2679,8 +2678,6 @@ fin.models.all <- list(
 
 lapply(fin.models.all, summary)
 
-
-gratia::appraise(fin.models.all$beta)        # Jaccard
 gratia::appraise(fin.models.all$beta_bray)   # Bray
 
 plot_df_cz %>% summarise(across(c(beta_jaccard_mean, beta_bray_mean),
@@ -2751,60 +2748,66 @@ print(autocorr_all, n = Inf)
 # all models by adding detected clusters to see wheather the summary will change. 
 # having some degree of spatial autocorrelation can be accepted - the estimates are teh dsame, just CI can be wider
 
-refit_with_cluster <- function(model, family_obj) {
+refit_with_spatial_smooth <- function(model, family_obj, k_spatial = 20) {
   dat <- model$model
   dat$plot_id_chr <- as.character(dat$plot_id)
   
   dat <- dat %>%
-    left_join(plot_coords %>% select(plot_id, cluster_id),
-              by = c("plot_id_chr" = "plot_id")) %>%
+    left_join(plot_coords %>% transmute(plot_id_chr = as.character(plot_id), x, y),
+              by = "plot_id_chr") %>%
     select(-plot_id_chr)
   
-  if (sum(is.na(dat$cluster_id)) > 0) {
-    warning("Unmatched plot_id in cluster join -- check before trusting this refit.")
-  }
+  if (sum(is.na(dat$x)) > 0) warning("Unmatched plot_id in coordinate join -- check.")
   
-  new_formula <- update(formula(model), . ~ . + cluster_id)
+  new_formula <- update(
+    formula(model),
+    stats::as.formula(paste0(". ~ . + s(x, y, bs = 'tp', k = ", k_spatial, ")"))
+  )
   mgcv::gam(new_formula, data = dat, family = family_obj, method = "REML")
 }
 
-models_with_cluster <- list(
-  hgt    = refit_with_cluster(fin.models.all$hgt,    tw(link = "log")),
-  cvpos  = refit_with_cluster(fin.models.all$cvpos,  tw(link = "log")),
-  eff    = refit_with_cluster(fin.models.all$eff,    tw(link = "log")),
-  rich   = refit_with_cluster(fin.models.all$rich,   nb(link = "log")),
-  beta   = refit_with_cluster(fin.models.all$beta,   gaussian()),
-  adapt  = refit_with_cluster(fin.models.all$adapt,  betar()),
-  spruce = refit_with_cluster(fin.models.all$spruce, betar())
+models_with_spatial <- list(
+  hgt       = refit_with_spatial_smooth(fin.models.all$hgt,       tw(link = "log")),
+  cvpos     = refit_with_spatial_smooth(fin.models.all$cvpos,     tw(link = "log")),
+  eff       = refit_with_spatial_smooth(fin.models.all$eff,       tw(link = "log")),
+  rich      = refit_with_spatial_smooth(fin.models.all$rich,      nb(link = "log")),
+  beta_bray = refit_with_spatial_smooth(fin.models.all$beta_bray, betar()),
+  adapt     = refit_with_spatial_smooth(fin.models.all$adapt,     betar()),
+  spruce    = refit_with_spatial_smooth(fin.models.all$spruce,    betar())
 )
 
-lapply(models_with_cluster, summary)2
 
-# compare original models with clustered ones
+#### compare original models with spatial-smooth models ------------------
 
-compare_all_terms <- function(name) {
+compare_all_terms_spatial <- function(name) {
   orig <- broom::tidy(fin.models.all[[name]], parametric = TRUE) %>%
     mutate(model = name, version = "original")
   
-  cl <- broom::tidy(models_with_cluster[[name]], parametric = TRUE) %>%
-    mutate(model = name, version = "with_cluster")
+  sp <- broom::tidy(models_with_spatial[[name]], parametric = TRUE) %>%
+    mutate(model = name, version = "with_spatial")
   
-  bind_rows(orig, cl)
+  bind_rows(orig, sp)
 }
 
-cluster_sensitivity <- purrr::map_dfr(names(fin.models.all), compare_all_terms) %>%
+spatial_sensitivity <- purrr::map_dfr(names(fin.models.all), compare_all_terms_spatial) %>%
   select(model, version, term, estimate, std.error, p.value) %>%
   arrange(model, term, version)
 
-print(cluster_sensitivity, n = Inf)
-
-
-cluster_sensitivity_wide <- cluster_sensitivity %>%
+spatial_sensitivity_wide <- spatial_sensitivity %>%
   select(model, term, version, estimate, p.value) %>%
   pivot_wider(names_from = version, values_from = c(estimate, p.value)) %>%
+  mutate(
+    estimate_change_pct = 100 * (estimate_with_spatial - estimate_original) / abs(estimate_original),
+    sign_flipped        = sign(estimate_with_spatial) != sign(estimate_original),
+    sig_original        = p.value_original < 0.05,
+    sig_with_spatial    = p.value_with_spatial < 0.05
+  ) %>%
   arrange(model, term)
 
-print(cluster_sensitivity_wide, n = Inf)
+print(spatial_sensitivity_wide, n = Inf)
+
+# only the management terms
+spatial_sensitivity_wide %>% filter(grepl("planting|browsing", term)) %>% print(n = Inf)
 
 
 # 1. Confirm plot_coords really has one row per plot, not per plot-year
