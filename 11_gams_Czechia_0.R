@@ -2349,6 +2349,11 @@ spruce_share_plot <- both_levels_cz %>%
   ) %>%
   filter(!is.na(spruce_share_adj))
 
+# clamp beta values to fall between 0.001-0.999 (instead of 0 and 1)
+df_beta_bray_model <- plot_df_cz %>%
+  filter(!is.na(beta_bray_mean)) %>%
+  mutate(beta_bray_clamped = pmin(pmax(beta_bray_mean, 0.001), 0.999))
+
 
 
 ## collinearity check -----------------------
@@ -2402,8 +2407,11 @@ compare_mng_aic <- function(response, data, family, k_tsd = 4) {
     response = response,
     model    = c("both", "interaction", "plant_only", 
                  "browse_only", "none"),
-    AIC      = c(AIC(m_both), AIC(m_inter), AIC(m_plant),
-                 AIC(m_browse), AIC(m_none)),
+    AIC      = c(AIC(m_both), 
+                 AIC(m_inter), 
+                 AIC(m_plant),
+                 AIC(m_browse), 
+                 AIC(m_none)),
   ) %>%
     mutate(
       delta_AIC = AIC - min(AIC),
@@ -2473,10 +2481,7 @@ compare_mng_aic_plot <- function(response, data, family, k_tsd = 4) {
 aic_adapted      <- compare_mng_aic_plot("share_more_tolerant_adj",  share_more_tolerant_plot, betar(),   k_tsd = 4)
 aic_spruce       <- compare_mng_aic_plot("spruce_share_adj",   spruce_share_plot,  betar(),   k_tsd = 4)
 aic_beta         <- compare_mng_aic_plot("beta_jaccard_mean",  plot_df_cz,         gaussian(), k_tsd = 3)
-aic_beta_bray    <- compare_mng_aic_plot("beta_bray_mean",  plot_df_cz,  gaussian(), k_tsd = 3)
-
-
-
+aic_beta_bray    <- compare_mng_aic_plot("beta_bray_clamped ",  df_beta_bray_model,  betar(), k_tsd = 3)
 
 
 #   
@@ -2488,164 +2493,19 @@ aic_beta_bray
 
 # check where warnings occur? check one by ones one by one
 options(warn = 1)
-aic_check_hgt  <- compare_mng_aic("mean_hgt", 
-                                  both_levels_crossscale %>% filter(mean_hgt < 6), tw(link = "log"), k_tsd = 4)
-aic_check_cv   <- compare_mng_aic("cv_hgt_pos", 
-                                  both_levels_crossscale, tw(link = "log"), k_tsd = 7)
-aic_check_eff  <- compare_mng_aic("effective_numbers", both_levels_crossscale, tw(link = "log"), k_tsd = 3)
-aic_check_rich <- compare_mng_aic("sp_richness", both_levels_crossscale, nb(link = "log"), k_tsd = 7)
-
-# richness is running into issues - check to lower teh k value
-aic_check_rich_k7 <- compare_mng_aic("sp_richness", both_levels_crossscale, nb(link = "log"), k_tsd = 7)
-aic_check_rich_k4 <- compare_mng_aic("sp_richness", both_levels_crossscale, nb(link = "log"), k_tsd = 4)
-
-aic_check_rich_k7 %>% select(model, AIC, delta_AIC, warning_msg)
-aic_check_rich_k4 %>% select(model, AIC, delta_AIC, warning_msg)
-
-options(warn = 0)
-
-
-
-
-summary(gam_adapted_final)
-gratia::draw(gam_adapted_final, select = 1)
-
-
-
-
-
-summary(gam_spruce)
-gam.check(gam_spruce)
-gratia::draw(gam_spruce, select = 1)
-
-# aurtocorrelation check
-spruce_resid <- spruce_share_plot %>%
-  mutate(resid_dev = residuals(gam_spruce, type = "deviance"))
-
-spruce_wide <- spruce_resid %>%
-  select(plot_id, year_f, resid_dev) %>%
-  pivot_wider(names_from = year_f, values_from = resid_dev, names_prefix = "yr_") %>%
-  filter(!is.na(yr_2023), !is.na(yr_2025))
-
-nrow(spruce_wide)
-cor.test(spruce_wide$yr_2023, spruce_wide$yr_2025)
-
-
-raw_wide <- spruce_share_plot %>%
-  select(plot_id, year_f, spruce_share_adj) %>%
-  pivot_wider(names_from = year_f, values_from = spruce_share_adj, names_prefix = "yr_") %>%
-  filter(!is.na(yr_2023), !is.na(yr_2025))
-
-nrow(raw_wide)
-cor.test(raw_wide$yr_2023, raw_wide$yr_2025)
-
-
-
-plot_coords <- plot_df_cz %>%
-  mutate(plot_id = as.character(plot_id)) %>%
-  group_by(plot_id) %>%
-  summarise(x = mean(x, na.rm = TRUE), y = mean(y, na.rm = TRUE), .groups = "drop")
-
-nrow(plot_coords)  # should now be 208
-
-spruce_resid_xy <- spruce_resid %>%
-  mutate(plot_id = as.character(plot_id)) %>%
-  group_by(plot_id) %>%
-  summarise(resid_dev = mean(resid_dev, na.rm = TRUE), .groups = "drop") %>%
-  inner_join(plot_coords, by = "plot_id")
-
-nrow(spruce_resid_xy)  # should be close to 208
-
-coords_mat <- as.matrix(spruce_resid_xy[, c("x", "y")])
-nb <- spdep::knn2nb(spdep::knearneigh(coords_mat, k = 8))
-lw <- spdep::nb2listw(nb, style = "W")
-spdep::moran.test(spruce_resid_xy$resid_dev, lw)
-
-library(DHARMa)
-
-sim_spruce <- simulateResiduals(gam_spruce, n = 1000, plot = FALSE)
-testDispersion(sim_spruce)
-testUniformity(sim_spruce)
-
-plot_id_used <- as.character(gam_spruce$model$plot_id)
-length(plot_id_used)  # should be 327, matching the model's n
-
-sim_agg_spruce <- recalculateResiduals(sim_spruce, group = plot_id_used)
-
-coords_agg_spruce <- tibble(plot_id = sort(unique(plot_id_used))) %>%
-  left_join(
-    plot_df_cz %>% mutate(plot_id = as.character(plot_id)) %>%
-      group_by(plot_id) %>% summarise(x = mean(x, na.rm = TRUE), y = mean(y, na.rm = TRUE), .groups = "drop"),
-    by = "plot_id"
-  )
-
-nrow(coords_agg_spruce) == length(sim_agg_spruce$scaledResiduals)  # sanity check -- should be TRUE
-sum(is.na(coords_agg_spruce$x))  # should be 0
-
-testSpatialAutocorrelation(sim_agg_spruce, x = coords_agg_spruce$x, y = coords_agg_spruce$y, plot = FALSE)
-# we found small autocorrelation - my data are clustered in teh 4 clusters
-
-coords_mat_all <- as.matrix(plot_coords[, c("x", "y")])
-nb_all   <- spdep::knn2nb(spdep::knearneigh(coords_mat_all, k = 8))
-comp_all <- spdep::n.comp.nb(nb_all)
-comp_all$nc  # should print 4
-
-plot_coords$cluster_id <- factor(comp_all$comp.id)
-
-
-spruce_share_plot_cl <- spruce_share_plot %>%
-  mutate(plot_id_chr = as.character(plot_id)) %>%
-  left_join(plot_coords %>% select(plot_id, cluster_id),
-            by = c("plot_id_chr" = "plot_id")) %>%
-  select(-plot_id_chr)
-
-
-sum(is.na(spruce_share_plot_cl$cluster_id))  # should be 0
-
-gam_spruce_cl <- gam(
-  spruce_share_adj ~
-    planting_intensity + anti_browsing_intensity +
-    s(time_snc_full_disturbance, k = 4) +
-    grndwrk_intensity + year_f + cluster_id +
-    s(plot_id, bs = "re"),
-  data   = spruce_share_plot_cl,
-  family = betar(),
-  method = "REML"
-)
-
-summary(gam_spruce_cl)
-summary(gam_spruce)
-
-# test autocorrelation again
-spruce_resid_cl <- spruce_share_plot_cl %>%
-  mutate(resid_dev = residuals(gam_spruce_cl, type = "deviance"),
-         plot_id = as.character(plot_id)) %>%
-  group_by(plot_id) %>%
-  summarise(resid_dev = mean(resid_dev, na.rm = TRUE), .groups = "drop") %>%
-  inner_join(plot_coords, by = "plot_id")
-
-nrow(spruce_resid_cl)  # should be 208
-
-coords_mat <- as.matrix(spruce_resid_cl[, c("x", "y")])
-nb <- spdep::knn2nb(spdep::knearneigh(coords_mat, k = 8))
-lw <- spdep::nb2listw(nb, style = "W")
-spdep::moran.test(spruce_resid_cl$resid_dev, lw)
-
-
-# ── Effect size: planting 0 vs 1 ─────────────────────────────────────────────
-emmeans(gam_spruce, ~ planting_intensity,
-        at   = list(planting_intensity = c(0, 1)),
-        type = "response") %>%
-  summary(infer = TRUE)
-
-
-
-# ── Effect size at planting 0 vs 1 ───────────────────────────────────────────
-emmeans(gam_adapted_final, ~ planting_intensity,
-        at   = list(planting_intensity = c(0, 1)),
-        type = "response") %>%
-  summary(infer = TRUE)
-
+# aic_check_hgt  <- compare_mng_aic("mean_hgt", 
+#                                   both_levels_crossscale %>% filter(mean_hgt < 6), tw(link = "log"), k_tsd = 4)
+# aic_check_cv   <- compare_mng_aic("cv_hgt_pos", 
+#                                   both_levels_crossscale, tw(link = "log"), k_tsd = 7)
+# aic_check_eff  <- compare_mng_aic("effective_numbers", both_levels_crossscale, tw(link = "log"), k_tsd = 3)
+# aic_check_rich <- compare_mng_aic("sp_richness", both_levels_crossscale, nb(link = "log"), k_tsd = 7)
+# 
+# # richness is running into issues - check to lower teh k value
+# aic_check_rich_k7 <- compare_mng_aic("sp_richness", both_levels_crossscale, nb(link = "log"), k_tsd = 7)
+# aic_check_rich_k4 <- compare_mng_aic("sp_richness", both_levels_crossscale, nb(link = "log"), k_tsd = 4)
+# 
+# aic_check_rich_k7 %>% select(model, AIC, delta_AIC, warning_msg)
+# aic_check_rich_k4 %>% select(model, AIC, delta_AIC, warning_msg)
 
 
 
@@ -2654,7 +2514,8 @@ gam_mean_hgt_cross <- gam(
   mean_hgt ~
     planting_pred * browsing_pred +
     s(time_snc_full_disturbance, k = 4) +
-    grndwrk_pred + year_f + level +
+    #grndwrk_pred + 
+    year_f + level +
     s(plot_id, bs = "re"),
   data   = both_levels_crossscale %>% filter(mean_hgt < 6),
   family = tw(link = "log"),
@@ -2667,7 +2528,8 @@ gam_cv_hgt_pos_cross <- gam(
   cv_hgt_pos ~
     planting_pred * browsing_pred +
     s(time_snc_full_disturbance, k = 7) +
-    grndwrk_pred + year_f + level +
+    #grndwrk_pred + 
+    year_f + level +
     s(plot_id, bs = "re"),
   data   = both_levels_crossscale,
   family = tw(link = "log"),
@@ -2678,7 +2540,8 @@ gam_eff_cross <- gam(
   effective_numbers ~
     planting_pred * browsing_pred +
     s(time_snc_full_disturbance, k = 3) +
-    grndwrk_pred + year_f + level +
+    #grndwrk_pred + 
+    year_f + level +
     s(plot_id, bs = "re"),
   data   = both_levels_crossscale,
   family = tw(link = "log"),
@@ -2689,7 +2552,8 @@ gam_rich_cross <- gam(
   sp_richness ~
     planting_pred * browsing_pred +
     s(time_snc_full_disturbance, k = 7) +
-    grndwrk_pred + year_f + level +
+    #grndwrk_pred + 
+    year_f + level +
     s(plot_id, bs = "re"),
   data   = both_levels_crossscale,
   family = nb(link = "log"),
@@ -2702,18 +2566,79 @@ m_beta_add <- mgcv::gam(
   beta_jaccard_mean ~
     time_snc_full_disturbance +
     planting_intensity + anti_browsing_intensity +
-    grndwrk_intensity + year_f +
+    #grndwrk_intensity + 
+    year_f +
     s(plot_id, bs = "re"),
   data   = plot_df_cz,
   method = "REML"
 )
+
+## Plot level: Beta diversity (Jaccard)
+m_beta_bray <- mgcv::gam(
+  beta_bray_mean  ~
+    time_snc_full_disturbance +
+    planting_intensity + anti_browsing_intensity +
+    #grndwrk_intensity + 
+    year_f +
+    s(plot_id, bs = "re"),
+  data   = df_beta_bray_model,
+  family = betar(),
+  method = "REML"
+)
+
+m_beta_bray_clamped <- mgcv::gam(
+  beta_bray_clamped  ~
+    time_snc_full_disturbance +
+    planting_intensity + anti_browsing_intensity +
+    #grndwrk_intensity + 
+    year_f +
+    s(plot_id, bs = "re"),
+  data   = df_beta_bray_model,
+  family = betar(),
+  method = "REML"
+)
+
+m_beta_bray_clamped_cov <- mgcv::gam(
+  beta_bray_clamped  ~
+    time_snc_full_disturbance +
+    planting_intensity + anti_browsing_intensity +
+    #grndwrk_intensity + 
+    n_subplots_nonempty +
+    year_f +
+    s(plot_id, bs = "re"),
+  data   = df_beta_bray_model,
+  family = betar(),
+  method = "REML"
+)
+
+summary(m_beta_bray)
+summary(m_beta_bray_clamped)
+summary(m_beta_bray_clamped_cov)
+
+
+# diversty is affected by the number of non empty subplots per plot - YES - hence, include teh number of 
+# non empty subplots per plot in my model
+broom::tidy(m_beta_bray, parametric = TRUE) %>% filter(term == "planting_intensity")
+broom::tidy(m_beta_bray_clamped, parametric = TRUE) %>% filter(term == "planting_intensity")
+broom::tidy(m_beta_bray_clamped_cov, parametric = TRUE) %>% filter(term == "planting_intensity")
+
+cor.test(~ planting_intensity + n_subplots_nonempty, data = df_beta_bray_model, method = "spearman")
+emmeans::emmeans(m_beta_bray_clamped_cov, ~ planting_intensity,
+                 at = list(planting_intensity = c(0, 1)), type = "response")
+
+
+# get confidence interval
+emm_beta_bray_planting <- emmeans::emmeans(m_beta_bray_clamped_cov, ~ planting_intensity,
+                                           at = list(planting_intensity = c(0, 1)), type = "response")
+pairs(emmeans::regrid(emm_beta_bray_planting), reverse = TRUE, infer = TRUE)
 
 
 gam_spruce <- gam(
   spruce_share_adj ~
     planting_intensity + anti_browsing_intensity +
     s(time_snc_full_disturbance, k = 4) +
-    grndwrk_intensity + year_f +
+    #grndwrk_intensity + 
+    year_f +
     s(plot_id, bs = "re"),
   data   = spruce_share_plot,
   family = betar(),
@@ -2728,7 +2653,8 @@ gam_adapted <- gam(
   share_more_tolerant_adj ~
     planting_intensity + anti_browsing_intensity +
     s(time_snc_full_disturbance, k = 4) +
-    grndwrk_intensity + year_f +
+    #grndwrk_intensity + 
+    year_f +
     s(plot_id, bs = "re"),
   data   = share_more_tolerant_plot,
   family = betar(),          # built into mgcv
@@ -2739,21 +2665,28 @@ summary(gam_adapted)
 appraise(gam_adapted)
 
 
-
-
-
 # ## Final model list
 fin.models.all <- list(
   hgt   = gam_mean_hgt_cross,
   cvpos = gam_cv_hgt_pos_cross,
   eff   = gam_eff_cross,
   rich  = gam_rich_cross,
-  beta  = m_beta_add,
+ # beta  = m_beta_add,
+  beta_bray  = m_beta_bray_clamped_cov,
   adapt = gam_adapted,  # gam_adapted_final
   spruce = gam_spruce
 )
 
 lapply(fin.models.all, summary)
+
+
+gratia::appraise(fin.models.all$beta)        # Jaccard
+gratia::appraise(fin.models.all$beta_bray)   # Bray
+
+plot_df_cz %>% summarise(across(c(beta_jaccard_mean, beta_bray_mean),
+                                list(at_0 = ~ sum(.x <= 0.001, na.rm = TRUE),
+                                     at_1 = ~ sum(.x >= 0.999, na.rm = TRUE))))
+
 
 
 ### test for spatial autocorrelation for all models ------------------------
