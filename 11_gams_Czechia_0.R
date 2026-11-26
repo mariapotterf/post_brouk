@@ -2763,7 +2763,9 @@ refit_with_spatial_smooth <- function(model, family_obj, k_spatial = 20) {
     formula(model),
     stats::as.formula(paste0(". ~ . + s(x, y, bs = 'tp', k = ", k_spatial, ")"))
   )
-  mgcv::gam(new_formula, data = dat, family = family_obj, method = "REML")
+  
+  do.call(mgcv::gam,
+          list(formula = new_formula, data = dat, family = family_obj, method = "REML"))
 }
 
 models_with_spatial <- list(
@@ -2867,9 +2869,9 @@ response_labels <- c(
   cvpos  = "CV [%]",
   eff    = "Effective species [#]",
   rich   = "Species richness [#]",
-  beta_bray   = "Bray-Curtis dissimilarity [dim.]",
-  adapt  = "More drought-tolerant share [%]",
-  spruce = "Norway spruce share [%]"
+  beta_bray   = "Bray-Curtis\ndissimilarity [dim.]",
+  adapt  = "More drought-tolerant\nshare [%]",
+  spruce = "Norway spruce\nshare [%]"
 )
 
 # ── Term labels
@@ -3090,10 +3092,10 @@ model_intensity_all_df_pct_mng %>%
 
 
 ## 6e. Time since disturbance x scale (panel)
-ylim_hgt  <- c(0.2, 2.0)
-ylim_cv   <- c(10, 85)
-ylim_eff  <- c(1, 7)
-ylim_rich <- c(1, 7)
+ylim_hgt  <- c(0, 2.5)
+ylim_cv   <- c(10, 150)
+ylim_eff  <- c(1, 6)
+ylim_rich <- c(1, 6)
 
 y_time_hgt  <- ylim_hgt[2]  * 0.98
 y_time_cv   <- ylim_cv[2]   * 0.98
@@ -3157,9 +3159,9 @@ response_colors <- c(
   "CV [%]"                      = "#92c5de",  # light blue — structural variation
   "Effective species [#]"       = "#b2abd2",  # soft purple — diversity
   "Species richness [#]"        = "#8073ac",  # deeper purple — diversity
-  "Bray-Curtis dissimilarity [dim.]"        = "#d9d9d9",  # neutral grey — turnover/composition
-  "More drought-tolerant share [%]"  = "#d73027",  # deep red — fixed
-  "Norway spruce share [%]"     = "#1a5c1a"   # dark green — fixed
+  "Bray-Curtis\ndissimilarity [dim.]"        = "#d9d9d9",  # neutral grey — turnover/composition
+  "More drought-tolerant\nshare [%]"  = "#d73027",  # deep red — fixed
+  "Norway spruce\nshare [%]"     = "#1a5c1a"   # dark green — fixed
 )
 
 
@@ -3219,8 +3221,6 @@ p_model_response
 
 # pair comparisoon between planting present/absent
 
-my_cols_planting_present_absent <- c(absent = "grey70", present = "#2e7d32")
-
 
 df_pair_bars <- emm_mng2 %>%
   filter(focal_term %in% c("planting_intensity", "anti_browsing_intensity")) %>%
@@ -3245,26 +3245,24 @@ df_pair_bars <- emm_mng2 %>%
 plot_mng_pairs_row <- function(focal_term_name, row_label, show_strip = TRUE,
                                models_to_show = unique(df_pair_bars$model)) {
   df_row   <- df_pair_bars %>% filter(focal_term == focal_term_name, model %in% models_to_show)
-  df_ptext <- df_row %>% distinct(response_lab, p_text)
+  df_ptext <- df_row %>%
+    distinct(response_lab, p_text, p.value) %>%
+    mutate(p_face = if_else(p.value < 0.05, "bold", "plain"))
   
-  ggplot(df_row, aes(intensity_f, response_plot, 
-                     fill = fill_hex
-                     #fill = intensity_f
-                     )) +
+  ggplot(df_row, aes(intensity_f, response_plot, fill = fill_hex)) +
     geom_col(width = 0.6, colour = "black", linewidth = 0.4) +
     geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), width = 0.15) +
     geom_text(aes(y = upper.CL, label = round(response_plot, 2)),
-              vjust = -0.5, size = 2.6, fontface = "bold") +
-    geom_text(data = df_ptext, aes(x = 1.5, y = Inf, label = p_text),
+              vjust = -0.5, size = 2.6, fontface = "plain") +
+    geom_text(data = df_ptext, aes(x = 1.5, y = Inf, label = p_text, fontface = p_face),
               inherit.aes = FALSE, vjust = 1.4, size = 2.6) +
     scale_fill_identity() +
-   # scale_fill_manual(values = my_cols_planting_present_absent, guide = "none") +
     scale_y_continuous(expand = expansion(mult = c(0, 0.25))) +
     facet_wrap(~ response_lab, scales = "free_y", nrow = 1) +
     labs(x = NULL, y = row_label) +
     theme_classic(base_size = 8) +
     theme(strip.background = element_blank(),
-          strip.text = if (show_strip) element_text(face = "bold", size = 8) else element_blank())
+          strip.text = if (show_strip) element_text(face = "plain", size = 8) else element_blank())
 }
 
 p_pairs_planting <- plot_mng_pairs_row("planting_intensity", "Planting",           show_strip = TRUE)
@@ -3275,7 +3273,7 @@ p_pairs_two_rows <- p_pairs_planting / p_pairs_browsing +
 p_pairs_two_rows
 
 ggsave("outFigsCZ/p_pairs_two_rows.png", p_pairs_two_rows,
-       width = 9, height = 4.5, dpi = 300, bg = "white")
+       width = 7, height = 4, dpi = 300, bg = "white")
 
 
 
@@ -3305,108 +3303,6 @@ ggsave("outFigsCZ/p_pairs_two_rows.png", p_pairs_two_rows,
 
 
 
-# plot effect sizes as betas 
-
-# START
-library(tidyverse)
-library(broom)
-
-# ── 1. Extract coefficients with CI ──────────────────────────────────────────
-focal_terms_map <- c(
-  "planting_pred"          = "planting_intensity",
-  "browsing_pred"          = "anti_browsing_intensity",
-  "grndwrk_pred"           = "grndwrk_intensity",
-  "planting_intensity"     = "planting_intensity",
-  "anti_browsing_intensity"= "anti_browsing_intensity",
-  "grndwrk_intensity"      = "grndwrk_intensity"
-)
-
-# Model families for transformation decision
-log_link_models  <- c("hgt", "cvpos", "eff", "rich")   # exp(β) → IRR / multiplier
-identity_models  <- c("beta")                            # β on response scale
-logit_models     <- c("adapt", "spruce")                 # exp(β) → OR, or marginal Δp
-
-coef_df <- map_dfr(names(fin.models.all_spatial), function(nm) {
-  broom::tidy(fin.models.all_spatial[[nm]], parametric = TRUE, conf.int = TRUE) %>%
-    filter(term %in% names(focal_terms_map)) %>%
-    mutate(
-      model      = nm,
-      focal_term = recode(term, !!!focal_terms_map)
-    )
-})
-
-# ── 2. Transform to interpretable effect size ─────────────────────────────────
-coef_df2 <- coef_df %>%
-  mutate(
-    link = case_when(
-      model %in% log_link_models  ~ "log",
-      model %in% identity_models  ~ "identity",
-      model %in% logit_models     ~ "logit"
-    ),
-    # For log-link: exponentiate → "response multiplier" (IRR/rate ratio)
-    # For identity: keep as-is (Jaccard units)
-    # For logit: exponentiate → odds ratio (or convert to Δp below)
-    effect     = case_when(link == "identity" ~ estimate,
-                           TRUE               ~ exp(estimate)),
-    effect_lo  = case_when(link == "identity" ~ conf.low,
-                           TRUE               ~ exp(conf.low)),
-    effect_hi  = case_when(link == "identity" ~ conf.high,
-                           TRUE               ~ exp(conf.high)),
-    # Human-readable: for log-link, subtract 1 → % change from baseline
-    # (now baseline-independent, because exp(β)-1 is pure multiplicative effect)
-    effect_pct      = case_when(link == "log"      ~ (effect - 1) * 100,
-                                link == "identity"  ~ effect * 100,   # Jaccard is 0-1, ×100 for readability
-                                link == "logit"     ~ (effect - 1) * 100),  # OR expressed as % change in odds
-    effect_pct_lo   = case_when(link == "log"      ~ (effect_lo - 1) * 100,
-                                link == "identity"  ~ effect_lo * 100,
-                                link == "logit"     ~ (effect_lo - 1) * 100),
-    effect_pct_hi   = case_when(link == "log"      ~ (effect_hi - 1) * 100,
-                                link == "identity"  ~ effect_hi * 100,
-                                link == "logit"     ~ (effect_hi - 1) * 100),
-    sig_col    = ifelse(p.value < 0.05, "sig", "n.s."),
-    response   = factor(recode(model, !!!response_labels),
-                        levels = c("Mean height [m]", "CV [%]",
-                                   "Effective species [#]", "Species richness [#]",
-                                   "Dissimilarity [dim.]",
-                                   "Climate-adapted share [%] ",
-                                   "Norway spruce share [%]")),
-    term_lab   = recode(focal_term, !!!term_labels),
-    p_label    = case_when(p.value < 0.001 ~ "<0.001",
-                           TRUE ~ formatC(p.value, format = "f", digits = 3)),
-    plot_only  = model %in% c("beta", "adapt", "spruce")
-  )
-
-# ── 3. Plot ───────────────────────────────────────────────────────────────────
-p_coef <- ggplot(coef_df2,
-                 aes(x = response, y = effect_pct, fill = response)) +
-  geom_hline(yintercept = 0, color = "gray40", linewidth = 0.5) +
-  geom_col(aes(color = plot_only, linewidth = plot_only), width = 0.7) +
-  scale_color_manual(values = c("TRUE" = "grey20", "FALSE" = NA),
-                     name   = "Measurement scale",
-                     labels = c("TRUE" = "Plot level", "FALSE" = "Cross-scale"),
-                     guide  = guide_legend(override.aes = list(fill = "grey70"))) +
-  scale_linewidth_manual(values = c("TRUE" = 0.6, "FALSE" = 0), guide = "none") +
-  geom_errorbar(aes(ymin = effect_pct_lo, ymax = effect_pct_hi),
-                width = 0.15, linewidth = 0.5, color = "grey30") +
-  geom_text(aes(label    = p_label,
-                y        = ifelse(effect_pct >= 0, effect_pct_hi + 5, effect_pct_lo - 5),
-                fontface = ifelse(p.value < 0.05, "bold", "plain"),
-                vjust    = ifelse(effect_pct >= 0, 0, 1)),
-            size = 2.5) +
-  facet_wrap(~ term_lab, ncol = 3) +
-  scale_fill_brewer(palette = "Dark2") +
-  labs(x = "", y = "Effect size [% change in response or % change in odds]") +
-  theme_classic(base_size = 8) +
-  theme(legend.position    = "none",
-        strip.text         = element_text(size = 8),
-        strip.background   = element_rect(fill = "white", color = "black", linewidth = 0.6),
-        axis.text.x        = element_text(angle = 30, hjust = 1),
-        panel.border       = element_rect(color = "black", fill = NA, linewidth = 0.6),
-        panel.grid.major.y = element_line(color = "gray90", linewidth = 0.3))
-
-p_coef
-
-# END
 
 
 
