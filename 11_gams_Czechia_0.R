@@ -2776,6 +2776,7 @@ models_with_spatial <- list(
   spruce    = refit_with_spatial_smooth(fin.models.all$spruce,    betar())
 )
 
+fin.models.all_spatial <- models_with_spatial
 
 #### compare original models with spatial-smooth models ------------------
 
@@ -2783,7 +2784,7 @@ compare_all_terms_spatial <- function(name) {
   orig <- broom::tidy(fin.models.all[[name]], parametric = TRUE) %>%
     mutate(model = name, version = "original")
   
-  sp <- broom::tidy(models_with_spatial[[name]], parametric = TRUE) %>%
+  sp <- broom::tidy(fin.models.all_spatial[[name]], parametric = TRUE) %>%
     mutate(model = name, version = "with_spatial")
   
   bind_rows(orig, sp)
@@ -2806,33 +2807,36 @@ spatial_sensitivity_wide <- spatial_sensitivity %>%
 
 print(spatial_sensitivity_wide, n = Inf)
 
-# only the management terms
-spatial_sensitivity_wide %>% filter(grepl("planting|browsing", term)) %>% print(n = Inf)
-
-
-# 1. Confirm plot_coords really has one row per plot, not per plot-year
-nrow(plot_coords)
-n_distinct(plot_coords$plot_id)   # both should be 208 — if not, duplicates remain
-
-# 2. Recompute NN distances and show WHICH plot pairs are closest
-coords_mat <- as.matrix(plot_coords[, c("x","y")])
-dist_mat <- as.matrix(dist(coords_mat))
-diag(dist_mat) <- NA
-
-nn_check <- tibble(
-  plot_id      = plot_coords$plot_id,
-  nearest_plot = plot_coords$plot_id[apply(dist_mat, 1, which.min)],
-  nn_dist_m    = apply(dist_mat, 1, min, na.rm = TRUE)
+# check again Morans I after including xy coordinates 
+autocorr_all_spatial <- purrr::imap_dfr(
+  models_with_spatial,
+  ~ run_autocorr_check(.x) %>% mutate(model = .y, .before = 1)
 ) %>%
-  arrange(nn_dist_m)
+  mutate(
+    flag_moran          = ifelse(moran_p < 0.05, "CHECK", "ok"),
+    flag_dispersion     = ifelse(dispersion_p < 0.05, "CHECK", "ok"),
+    flag_dharma_spatial = ifelse(dharma_spatial_p < 0.05, "CHECK", "ok")
+  )
 
-print(nn_check, n = 15)
+print(autocorr_all_spatial, n = Inf)
+
+# side by side, Moran and DHARMa spatial only
+autocorr_compare <- bind_rows(
+  autocorr_all         %>% mutate(version = "original"),
+  autocorr_all_spatial %>% mutate(version = "with_spatial")
+) %>%
+  select(model, version, moran_I, moran_p, dharma_spatial_I, dharma_spatial_p) %>%
+  arrange(model, version)
+
+print(autocorr_compare, n = Inf)
+
+
 
 
 #### quantify interaction effect  -----------------------
 
 # Get predicted values at all four combinations
-emmeans(fin.models.all$eff, 
+emmeans(fin.models.all_spatial$eff, 
         ~ planting_pred * browsing_pred,
         at = list(planting_pred  = c(0, 1),
                   browsing_pred  = c(0, 1)),
@@ -2842,7 +2846,7 @@ emmeans(fin.models.all$eff,
   select(planting_pred, browsing_pred, response, lower.CL, upper.CL)
 
 # Same for richness
-emmeans(fin.models.all$rich,
+emmeans(fin.models.all_spatial$rich,
         ~ planting_pred * browsing_pred,
         at = list(planting_pred  = c(0, 1),
                   browsing_pred  = c(0, 1)),
@@ -2854,43 +2858,45 @@ emmeans(fin.models.all$rich,
 
 
 
+# final plots ----------------------------
 
 
-
-# ── Response labels ───────────────────────────────────────────────────────────
+# ── Response labels 
 response_labels <- c(
   hgt    = "Mean height [m]",
   cvpos  = "CV [%]",
   eff    = "Effective species [#]",
   rich   = "Species richness [#]",
-  beta   = "Dissimilarity [dim.]",
-  adapt  = "Climate-adapted share [%] ",
+  beta_bray   = "Bray-Curtis dissimilarity [dim.]",
+  adapt  = "More drought-tolerant share [%]",
   spruce = "Norway spruce share [%]"
 )
 
-# ── Term labels ───────────────────────────────────────────────────────────────
+# ── Term labels
 term_labels <- c(
   planting_intensity      = "Planting",
-  anti_browsing_intensity = "Browsing\nprotection",
-  grndwrk_intensity       = "Soil\npreparation"
+  anti_browsing_intensity = "Browsing\nprotection"#,
+ # grndwrk_intensity       = "Soil\npreparation"
 )
 
 
 # ── Rerun pvals_mng ───────────────────────────────────────────────────────────
-pvals_mng <- map_dfr(fin.models.all,
+pvals_mng <- map_dfr(fin.models.all_spatial,
                      ~ broom::tidy(.x, parametric = TRUE),
                      .id = "model") %>%
   filter(term %in% c("planting_intensity", "anti_browsing_intensity",
-                     "grndwrk_intensity",
-                     "planting_pred", "browsing_pred", "grndwrk_pred")) %>%
+                   #  "grndwrk_intensity",
+                     "planting_pred", "browsing_pred" #, "grndwrk_pred"
+                   )) %>%
   mutate(
     focal_term = recode(term,
                         "planting_pred"          = "planting_intensity",
                         "browsing_pred"          = "anti_browsing_intensity",
-                        "grndwrk_pred"           = "grndwrk_intensity",
+                    #    "grndwrk_pred"           = "grndwrk_intensity",
                         "planting_intensity"     = "planting_intensity",
                         "anti_browsing_intensity"= "anti_browsing_intensity",
-                        "grndwrk_intensity"      = "grndwrk_intensity")
+                    #    "grndwrk_intensity"      = "grndwrk_intensity"
+                    )
   ) %>%
   transmute(model, focal_term, p.value,
             p_label = case_when(p.value < 0.001 ~ "<0.001",
@@ -2911,8 +2917,9 @@ get_mng_emm <- function(model, model_name, focal_term) {
   actual_term <- if (uses_pred) {
     recode(focal_term,
            "planting_intensity"      = "planting_pred",
-           "anti_browsing_intensity" = "browsing_pred",
-           "grndwrk_intensity"       = "grndwrk_pred")
+           "anti_browsing_intensity" = "browsing_pred" #,
+           #"grndwrk_intensity"       = "grndwrk_pred"
+           )
   } else {
     focal_term
   }
@@ -2942,19 +2949,20 @@ get_mng_emm <- function(model, model_name, focal_term) {
     # ── standardize column names back to _intensity ──────────────────────────
     rename_with(~ recode(.x,
                          "planting_pred"  = "planting_intensity",
-                         "browsing_pred"  = "anti_browsing_intensity",
-                         "grndwrk_pred"   = "grndwrk_intensity")) %>%
+                         "browsing_pred"  = "anti_browsing_intensity" #,
+                         #"grndwrk_pred"   = "grndwrk_intensity"
+                         )) %>%
     mutate(model = model_name, focal_term = focal_term)
 }
 
 # ── Run pipeline ──────────────────────────────────────────────────────────────
 emm_mng <- map_dfr(
-  names(fin.models.all),
+  names(fin.models.all_spatial),
   function(nm) {
     bind_rows(
-      get_mng_emm(fin.models.all[[nm]], nm, "planting_intensity"),
-      get_mng_emm(fin.models.all[[nm]], nm, "anti_browsing_intensity"),
-      get_mng_emm(fin.models.all[[nm]], nm, "grndwrk_intensity")
+      get_mng_emm(fin.models.all_spatial[[nm]], nm, "planting_intensity"),
+      get_mng_emm(fin.models.all_spatial[[nm]], nm, "anti_browsing_intensity")#,
+     # get_mng_emm(fin.models.all_spatial[[nm]], nm, "grndwrk_intensity")
     )
   }
 )
@@ -2968,10 +2976,10 @@ emm_mng2 <- emm_mng %>%
   mutate(
     intensity = case_when(
       focal_term == "planting_intensity"      ~ planting_intensity,
-      focal_term == "anti_browsing_intensity" ~ anti_browsing_intensity,
-      focal_term == "grndwrk_intensity"       ~ grndwrk_intensity
+      focal_term == "anti_browsing_intensity" ~ anti_browsing_intensity#,
+     # focal_term == "grndwrk_intensity"       ~ grndwrk_intensity
     ),
-    response_plot = dplyr::coalesce(response, emmean),
+    response_plot = response, #dplyr::coalesce(response, emmean),
     response_lab  = recode(model, !!!response_labels),
     term          = recode(focal_term, !!!term_labels)
   )
@@ -3052,13 +3060,14 @@ model_intensity_all_df_pct_mng <- emm_mng2 %>%
     upper_pct    = 100 * (upper.CL_1  - lower.CL_0) / response_0,  # <-- upper of diff
     sig_col      = ifelse(p.value < 0.05, "sig", "n.s."),
     response     = factor(response_lab,
-                          levels = c("Mean height [m]", "CV [%]",
-                                     "Effective species [#]",
-                                     "Species richness [#]",
-                                     "Dissimilarity [dim.]",
-                                     "Climate-adapted share [%] ",
-                                     "Norway spruce share [%]"))
-  )
+                          levels = response_labels
+                          # levels = c("Mean height [m]", "CV [%]",
+                          #            "Effective species [#]",
+                          #            "Species richness [#]",
+                          #            "Bray-Curtis dissimilarity [dim.]",
+                          #            "More drought-tolerant share [%] " ,
+                          #            "Norway spruce share [%]"))
+  ))
 
 # ── Verify ────────────────────────────────────────────────────────────────────
 model_intensity_all_df_pct_mng %>%
@@ -3083,48 +3092,48 @@ model_intensity_all_df_pct_mng %>%
 ## 6e. Time since disturbance x scale (panel)
 ylim_hgt  <- c(0.2, 2.0)
 ylim_cv   <- c(10, 85)
-ylim_eff  <- c(1, 12)
-ylim_rich <- c(0.8, 7)
+ylim_eff  <- c(1, 7)
+ylim_rich <- c(1, 7)
 
 y_time_hgt  <- ylim_hgt[2]  * 0.98
 y_time_cv   <- ylim_cv[2]   * 0.98
 y_time_eff  <- ylim_eff[2]  * 0.98
 y_time_rich <- ylim_rich[2] * 0.98
 
-p_hgt <- pp(fin.models.all$hgt,
+p_hgt <- pp(fin.models.all_spatial$hgt,
             terms   = c("time_snc_full_disturbance[0:7]", "level"),
             ylab    = "Mean height [m]",
             annot   = "Time:\np = 0.004",
             ylim    = ylim_hgt)
 
-p_cv_pos <- pp(fin.models.all$cvpos,
+p_cv_pos <- pp(fin.models.all_spatial$cvpos,
                terms   = c("time_snc_full_disturbance[0:7]", "level"),
                ylab    = "CV [%]",
                scale_y = 100,
                annot   = "Time:\np = 0.763",
                ylim    = ylim_cv)
 
-p_eff <- pp(fin.models.all$eff,
+p_eff <- pp(fin.models.all_spatial$eff,
             terms   = c("time_snc_full_disturbance[0:7]", "level"),
             xlab    = "Time since disturbance\n(years)",
             ylab    = "Effective species [#]",
             annot   = "Time:\np = 0.571",
             ylim    = ylim_eff)
 
-p_rich <- pp(fin.models.all$rich,
+p_rich <- pp(fin.models.all_spatial$rich,
              terms   = c("time_snc_full_disturbance[0:7]", "level"),
              xlab    = "Time since disturbance\n(years)",
              ylab    = "Species richness [#]",
              annot   = "Time:\np = 0.840",
              ylim    = ylim_rich)
 
-p_inset_hgt  <- pp_inset_model(fin.models.all$hgt,   scale_y = 1,
+p_inset_hgt  <- pp_inset_model(fin.models.all_spatial$hgt,   scale_y = 1,
                                p_lab = "Scale:\np < 0.001", ylim = ylim_hgt)
-p_inset_cv   <- pp_inset_model(fin.models.all$cvpos, scale_y = 100,
+p_inset_cv   <- pp_inset_model(fin.models.all_spatial$cvpos, scale_y = 100,
                                p_lab = "Scale:\np < 0.001", ylim = ylim_cv)
-p_inset_eff  <- pp_inset_model(fin.models.all$eff,   scale_y = 1,
+p_inset_eff  <- pp_inset_model(fin.models.all_spatial$eff,   scale_y = 1,
                                p_lab = "Scale:\np < 0.001", ylim = ylim_eff)
-p_inset_rich <- pp_inset_model(fin.models.all$rich,  scale_y = 1,
+p_inset_rich <- pp_inset_model(fin.models.all_spatial$rich,  scale_y = 1,
                                p_lab = "Scale:\np < 0.001", ylim = ylim_rich)
 
 pair_hgt  <- (p_hgt  + p_inset_hgt)  + plot_layout(widths = c(2.6, 1)) + plot_annotation(title = "[a]")
@@ -3148,8 +3157,8 @@ response_colors <- c(
   "CV [%]"                      = "#92c5de",  # light blue — structural variation
   "Effective species [#]"       = "#b2abd2",  # soft purple — diversity
   "Species richness [#]"        = "#8073ac",  # deeper purple — diversity
-  "Dissimilarity [dim.]"        = "#d9d9d9",  # neutral grey — turnover/composition
-  "Climate-adapted share [%] "  = "#d73027",  # deep red — fixed
+  "Bray-Curtis dissimilarity [dim.]"        = "#d9d9d9",  # neutral grey — turnover/composition
+  "More drought-tolerant share [%]"  = "#d73027",  # deep red — fixed
   "Norway spruce share [%]"     = "#1a5c1a"   # dark green — fixed
 )
 
@@ -3207,6 +3216,95 @@ p_model_response <- ggplot(
 
 p_model_response
 
+
+# pair comparisoon between planting present/absent
+
+my_cols_planting_present_absent <- c(absent = "grey70", present = "#2e7d32")
+
+
+df_pair_bars <- emm_mng2 %>%
+  filter(focal_term %in% c("planting_intensity", "anti_browsing_intensity")) %>%
+  select(model, focal_term, response_lab, intensity, response_plot, lower.CL, upper.CL) %>%
+  mutate(across(c(response_plot, lower.CL, upper.CL),
+                ~ if_else(model %in% c("adapt", "spruce"), .x * 100, .x))) %>%
+  left_join(pvals_mng, by = c("model", "focal_term")) %>%
+  arrange(match(model, names(response_labels))) %>%
+  mutate(
+    strip_lab   = paste0(response_lab, "\np ",
+                         if_else(p_label == "<0.001", "< 0.001", paste0("= ", p_label))),
+    strip_lab   = factor(strip_lab, levels = unique(strip_lab)),
+    intensity_f = factor(intensity, levels = c(0, 1), labels = c("absent", "present")),
+    fill_present = unname(response_colors[as.character(response_lab)]),  # as.character: response_lab is a factor now
+    fill_hex     = if_else(intensity == 1,
+                           fill_present,
+                           scales::alpha(fill_present, 0.35)),   # pale version of the same colour
+        response_lab = factor(response_lab, levels = unique(response_lab)),
+         p_text = if_else(p_label == "<0.001", "p < 0.001", paste0("p = ", p_label))
+  )
+
+plot_mng_pairs_row <- function(focal_term_name, row_label, show_strip = TRUE,
+                               models_to_show = unique(df_pair_bars$model)) {
+  df_row   <- df_pair_bars %>% filter(focal_term == focal_term_name, model %in% models_to_show)
+  df_ptext <- df_row %>% distinct(response_lab, p_text)
+  
+  ggplot(df_row, aes(intensity_f, response_plot, 
+                     fill = fill_hex
+                     #fill = intensity_f
+                     )) +
+    geom_col(width = 0.6, colour = "black", linewidth = 0.4) +
+    geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), width = 0.15) +
+    geom_text(aes(y = upper.CL, label = round(response_plot, 2)),
+              vjust = -0.5, size = 2.6, fontface = "bold") +
+    geom_text(data = df_ptext, aes(x = 1.5, y = Inf, label = p_text),
+              inherit.aes = FALSE, vjust = 1.4, size = 2.6) +
+    scale_fill_identity() +
+   # scale_fill_manual(values = my_cols_planting_present_absent, guide = "none") +
+    scale_y_continuous(expand = expansion(mult = c(0, 0.25))) +
+    facet_wrap(~ response_lab, scales = "free_y", nrow = 1) +
+    labs(x = NULL, y = row_label) +
+    theme_classic(base_size = 8) +
+    theme(strip.background = element_blank(),
+          strip.text = if (show_strip) element_text(face = "bold", size = 8) else element_blank())
+}
+
+p_pairs_planting <- plot_mng_pairs_row("planting_intensity", "Planting",           show_strip = TRUE)
+p_pairs_browsing <- plot_mng_pairs_row("anti_browsing_intensity", "Browsing protection", show_strip = FALSE)
+
+p_pairs_two_rows <- p_pairs_planting / p_pairs_browsing +
+  plot_annotation(tag_levels = list(c("[a]", "[b]")))
+p_pairs_two_rows
+
+ggsave("outFigsCZ/p_pairs_two_rows.png", p_pairs_two_rows,
+       width = 9, height = 4.5, dpi = 300, bg = "white")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # plot effect sizes as betas 
 
 # START
@@ -3228,8 +3326,8 @@ log_link_models  <- c("hgt", "cvpos", "eff", "rich")   # exp(β) → IRR / multi
 identity_models  <- c("beta")                            # β on response scale
 logit_models     <- c("adapt", "spruce")                 # exp(β) → OR, or marginal Δp
 
-coef_df <- map_dfr(names(fin.models.all), function(nm) {
-  broom::tidy(fin.models.all[[nm]], parametric = TRUE, conf.int = TRUE) %>%
+coef_df <- map_dfr(names(fin.models.all_spatial), function(nm) {
+  broom::tidy(fin.models.all_spatial[[nm]], parametric = TRUE, conf.int = TRUE) %>%
     filter(term %in% names(focal_terms_map)) %>%
     mutate(
       model      = nm,
@@ -3418,15 +3516,17 @@ dev.off()
 # the fitted models carry their own fitting data + family/link info,
 # so this alone is enough to rebuild coefficient plots AND prediction
 # gradients later, with no need to re-run data prep or model fitting
-saveRDS(fin.models.all, "outModel/final_gam_models.rds")
+saveRDS(fin.models.all_spatial, "outModel/final_gam_models_spatial.rds")
+saveRDS(fin.models.all, "outModel/final_gam_models_no_spatial.rds")
+
 
 # optional convenience: pre-tidied coefficients, so a plotting script
 # that only needs the bar-plot numbers doesn't have to load mgcv at all
 final_coefs <- purrr::imap_dfr(
-  fin.models.all,
+  saveRDS(fin.models.all_spatial, "outModel/final_gam_models.rds"),
   ~ broom::tidy(.x, parametric = TRUE) %>% mutate(model = .y)
 )
-write.csv(final_coefs, "outModel/final_gam_coefficients.csv", row.names = FALSE)
+write.csv(final_coefs, "outModel/final_gam_coefficients_spatial.csv", row.names = FALSE)
 
 # only needed if you also want to remake any spatial/cluster diagnostic
 # figure later without rerunning today's checks
@@ -3552,8 +3652,8 @@ extract_gam_summary <- function(model, model_name) {
   list(pvalues = all_terms, metrics = model_metrics)
 }
 
-results <- map2(fin.models.all, 
-                names(fin.models.all), extract_gam_summary)
+results <- map2(fin.models.all_spatial, 
+                names(fin.models.all_spatial), extract_gam_summary)
 
 # pvals_fmt <- map_dfr(results, "pvalues") %>%
 #   select(model, term_clean, pval_fmt) %>%
